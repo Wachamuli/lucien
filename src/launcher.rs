@@ -9,7 +9,7 @@ use iced::{
     },
     window,
 };
-// use iced_layershell::to_layer_message;
+use iced_layershell::to_layer_message;
 
 use crate::app::{App, all_apps};
 
@@ -19,7 +19,7 @@ pub struct Launcher {
     apps: Vec<App>,
 }
 
-// #[to_layer_message]
+#[to_layer_message]
 #[derive(Debug, Clone)]
 pub enum Message {
     InputChange(String),
@@ -53,6 +53,13 @@ impl Launcher {
                 std::process::exit(0);
             }
             Message::SystemEventOccurred(_) => Task::none(),
+            Message::AnchorChange(anchor) => todo!(),
+            Message::SetInputRegion(action_callback) => todo!(),
+            Message::AnchorSizeChange(anchor, _) => todo!(),
+            Message::LayerChange(layer) => todo!(),
+            Message::MarginChange(_) => todo!(),
+            Message::SizeChange(_) => todo!(),
+            Message::VirtualKeyboardPressed { time, key } => todo!(),
         }
     }
 
@@ -211,6 +218,5 @@ impl Launcher {
                 gap: None,
             }),
         ]
-        .padding(3)
     }
 }
