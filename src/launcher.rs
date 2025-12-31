@@ -120,25 +120,34 @@ impl Launcher {
             .collect();
 
         iced::widget::column![
-            iced::widget::text_input("Type to search...", &self.input)
-                .on_input(Message::InputChange)
-                .on_submit(Message::Open(0))
-                .padding(20)
-                .style(|theme, status| {
-                    iced::widget::text_input::Style {
-                        background: iced::Background::Color(iced::Color::BLACK),
-                        border: iced::border::Border {
-                            radius: iced::border::top(20),
-                            color: iced::Color::WHITE,
-                            width: 1.,
-                            ..Default::default()
-                        },
-                        icon: iced::Color::WHITE,
-                        placeholder: iced::Color::WHITE,
-                        value: iced::Color::WHITE,
-                        selection: iced::Color::WHITE,
-                    }
-                }),
+            container(
+                iced::widget::text_input("Type to search...", &self.input)
+                    .on_input(Message::InputChange)
+                    .on_submit(Message::Open(0))
+                    .padding(10)
+                    .style(|_, _| {
+                        iced::widget::text_input::Style {
+                            background: iced::Background::Color(iced::Color::BLACK),
+                            border: iced::border::Border {
+                                radius: iced::border::radius(10),
+                                ..Default::default()
+                            },
+                            icon: iced::Color::WHITE,
+                            placeholder: iced::Color::WHITE,
+                            value: iced::Color::WHITE,
+                            selection: iced::Color::WHITE,
+                        }
+                    })
+            )
+            .style(|_| container::Style {
+                background: Some(iced::Background::Color(iced::Color::BLACK)),
+                border: iced::border::Border {
+                    radius: iced::border::top(20),
+                    ..Default::default()
+                },
+                ..Default::default()
+            })
+            .padding(10),
             iced::widget::scrollable(
                 Column::with_children(app_items)
                     .padding(10)
@@ -186,7 +195,7 @@ impl Launcher {
                     },
                 },
                 gap: None,
-            })
+            }),
         ]
         .padding(3)
     }
