@@ -1,5 +1,3 @@
-use std::{env, path::PathBuf};
-
 use crate::launcher::Launcher;
 
 mod app;
@@ -12,10 +10,10 @@ mod launcher;
 // };
 
 pub fn main() -> iced::Result {
-
     iced::application("application_launcher", Launcher::update, Launcher::view)
         .window_size((500.0, 500.0))
         .antialiasing(true)
+        .subscription(Launcher::subscription)
         .run_with(Launcher::init)
 
     // .settings(MainSettings {

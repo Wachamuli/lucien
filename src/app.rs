@@ -60,7 +60,6 @@ fn get_icon_path_from_xdgicon(iconname: &str) -> Option<PathBuf> {
 pub fn get_icon(icon: Option<Icon>) -> Option<PathBuf> {
     let path = icon?.to_string()?;
     if let Some(xdg_icon_path) = get_icon_path_from_xdgicon(&path) {
-        dbg!(&xdg_icon_path);
         return Some(xdg_icon_path);
     }
 

@@ -1,11 +1,13 @@
 use gio::{AppInfo, AppLaunchContext, prelude::AppInfoExt};
 use iced::{
-    Element, Length, Task,
+    Element, Event, Length, Subscription, Task, event,
+    keyboard::{self, Key},
     widget::{
         Column, Container, Scrollable, Text, button, column, container, row,
         scrollable::{self, Rail},
         text,
     },
+    window,
 };
 // use iced_layershell::to_layer_message;
 
@@ -21,7 +23,8 @@ pub struct Launcher {
 #[derive(Debug, Clone)]
 pub enum Message {
     InputChange(String),
-    Open(usize),
+    OpenApp(usize),
+    SystemEventOccurred(Event),
 }
 
 impl Launcher {
@@ -35,7 +38,7 @@ impl Launcher {
 
     pub fn update(&mut self, message: Message) -> Task<Message> {
         match message {
-            Message::Open(index) => {
+            Message::OpenApp(index) => {
                 self.apps[index].launch();
                 std::process::exit(0)
             }
@@ -43,7 +46,18 @@ impl Launcher {
                 self.input = input;
                 iced::Task::none()
             }
+            Message::SystemEventOccurred(Event::Keyboard(keyboard::Event::KeyPressed {
+                key: Key::Named(keyboard::key::Named::Escape),
+                ..
+            })) => {
+                std::process::exit(0);
+            }
+            Message::SystemEventOccurred(_) => Task::none(),
         }
+    }
+
+    pub fn subscription(&self) -> Subscription<Message> {
+        event::listen().map(Message::SystemEventOccurred)
     }
 
     pub fn view<'a>(&'a self) -> Column<'a, Message> {
@@ -96,7 +110,7 @@ impl Launcher {
                     ]
                     .spacing(10),
                 )
-                .on_press(Message::Open(index))
+                .on_press(Message::OpenApp(index))
                 .padding(10)
                 .style(|_, status| match status {
                     button::Status::Hovered => button::Style {
@@ -123,7 +137,7 @@ impl Launcher {
             container(
                 iced::widget::text_input("Type to search...", &self.input)
                     .on_input(Message::InputChange)
-                    .on_submit(Message::Open(0))
+                    .on_submit(Message::OpenApp(0))
                     .padding(10)
                     .style(|_, _| {
                         iced::widget::text_input::Style {
