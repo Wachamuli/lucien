@@ -2,7 +2,7 @@ use gio::{AppInfo, AppLaunchContext, prelude::AppInfoExt};
 use iced::{
     Element, Length, Task,
     widget::{
-        Column, Container, Scrollable, Text, button, column, row,
+        Column, Container, Scrollable, Text, button, column, container, row,
         scrollable::{self, Rail},
         text,
     },
@@ -37,7 +37,7 @@ impl Launcher {
         match message {
             Message::Open(index) => {
                 self.apps[index].launch();
-                iced::window::get_latest().and_then(iced::window::close)
+                std::process::exit(0)
             }
             Message::InputChange(input) => {
                 self.input = input;
@@ -50,6 +50,14 @@ impl Launcher {
         let app_items: Vec<Element<Message>> = self
             .apps
             .iter()
+            .filter(|app| {
+                regex::RegexBuilder::new(&self.input)
+                    .case_insensitive(true)
+                    .ignore_whitespace(true)
+                    .build()
+                    .unwrap()
+                    .is_match(&app.name)
+            })
             .enumerate()
             .map(|(index, app)| {
                 let file_ext = app
@@ -63,33 +71,40 @@ impl Launcher {
                     "svg" => iced::widget::svg(iced::widget::svg::Handle::from_path(
                         app.icon.clone().unwrap_or_default(),
                     ))
-                    .width(64)
-                    .height(64)
+                    .width(32)
+                    .height(32)
                     .into(),
                     _ => iced::widget::image(iced::widget::image::Handle::from_path(
                         app.icon.clone().unwrap_or_default(),
                     ))
-                    .width(64)
-                    .height(64)
+                    .width(32)
+                    .height(32)
                     .into(),
                 };
 
-                button(iced::widget::column![
-                    icon_view,
-                    text(app.name.clone()),
-                    text(app.description.clone())
-                        .width(Length::Fill)
-                        .wrapping(text::Wrapping::Glyph)
-                        .line_height(1.0)
-                ])
+                button(
+                    row![
+                        icon_view,
+                        iced::widget::column![
+                            text(&app.name),
+                            text(&app.description)
+                                .width(Length::Fill)
+                                .size(12)
+                                .wrapping(text::Wrapping::Glyph)
+                                .line_height(1.0)
+                        ],
+                    ]
+                    .spacing(10),
+                )
                 .on_press(Message::Open(index))
+                .padding(10)
                 .style(|_, status| match status {
                     button::Status::Hovered => button::Style {
                         background: Some(iced::Background::Color(iced::Color::from_rgb(
                             0.3, 0.3, 0.3,
                         ))),
                         text_color: iced::Color::WHITE,
-                        border: iced::border::rounded(20),
+                        border: iced::border::rounded(10),
                         shadow: Default::default(),
                     },
                     _ => button::Style {
@@ -105,15 +120,37 @@ impl Launcher {
             .collect();
 
         iced::widget::column![
-            iced::widget::text_input("Type ", &self.input).on_input(Message::InputChange),
+            iced::widget::text_input("Type to search...", &self.input)
+                .on_input(Message::InputChange)
+                .on_submit(Message::Open(0))
+                .padding(20)
+                .style(|theme, status| {
+                    iced::widget::text_input::Style {
+                        background: iced::Background::Color(iced::Color::BLACK),
+                        border: iced::border::Border {
+                            radius: iced::border::top(20),
+                            color: iced::Color::WHITE,
+                            width: 1.,
+                            ..Default::default()
+                        },
+                        icon: iced::Color::WHITE,
+                        placeholder: iced::Color::WHITE,
+                        value: iced::Color::WHITE,
+                        selection: iced::Color::WHITE,
+                    }
+                }),
             iced::widget::scrollable(
                 Column::with_children(app_items)
-                    .spacing(10)
+                    .padding(10)
                     .width(Length::Fill),
             )
             .style(|_, _| scrollable::Style {
                 container: iced::widget::container::Style {
                     background: Some(iced::Background::Color(iced::Color::BLACK)),
+                    border: iced::Border {
+                        radius: iced::border::bottom(20),
+                        ..Default::default()
+                    },
                     ..Default::default()
                 },
                 vertical_rail: Rail {
@@ -129,7 +166,7 @@ impl Launcher {
                     border: iced::Border {
                         color: iced::Color::WHITE,
                         width: 0.0,
-                        radius: iced::border::Radius::new(20.0),
+                        radius: iced::border::bottom(20.0),
                     },
                 },
                 horizontal_rail: Rail {
@@ -145,12 +182,12 @@ impl Launcher {
                     border: iced::Border {
                         color: iced::Color::WHITE,
                         width: 0.0,
-                        radius: iced::border::Radius::new(20.0),
+                        radius: iced::border::bottom(20.0),
                     },
                 },
                 gap: None,
             })
         ]
-        .padding(10)
+        .padding(3)
     }
 }
