@@ -67,7 +67,7 @@ impl Launcher {
                     .case_insensitive(true)
                     .ignore_whitespace(true)
                     .build()
-                    .unwrap();
+                    .unwrap(); // TODO: Handle this case
 
                 self.apps = all_apps()
                     .into_iter()
@@ -82,8 +82,12 @@ impl Launcher {
                 std::process::exit(0);
             }
             Message::AltDigitShortcut(n) => {
-                self.apps[n - 1].launch();
-                std::process::exit(0);
+                if n - 1 < self.apps.len() {
+                    self.apps[n - 1].launch();
+                    std::process::exit(0);
+                }
+
+                Task::none()
             }
             Message::SystemEvent(iced::Event::Keyboard(keyboard::Event::KeyPressed {
                 key: Key::Named(keyboard::key::Named::Tab),
