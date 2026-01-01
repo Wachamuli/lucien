@@ -56,19 +56,18 @@ impl Launcher {
                 std::process::exit(0)
             }
             Message::InputChange(input) => {
-                self.input = input;
-                self.scroll_position = 0;
+                let regex_builder = regex::RegexBuilder::new(&input)
+                    .case_insensitive(true)
+                    .ignore_whitespace(true)
+                    .build()
+                    .unwrap();
+
                 self.apps = all_apps()
                     .into_iter()
-                    .filter(|app| {
-                        regex::RegexBuilder::new(&self.input)
-                            .case_insensitive(true)
-                            .ignore_whitespace(true)
-                            .build()
-                            .unwrap()
-                            .is_match(&app.name)
-                    })
+                    .filter(|app| regex_builder.is_match(&app.name))
                     .collect();
+                self.input = input;
+                self.scroll_position = 0;
 
                 iced::Task::none()
             }
