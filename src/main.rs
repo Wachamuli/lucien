@@ -20,7 +20,7 @@ pub fn main() -> iced_layershell::Result {
     .settings(MainSettings {
         antialiasing: true,
         layer_settings: LayerShellSettings {
-            size: Some((500, 500)),
+            size: Some((700, 500)),
             anchor: Anchor::Bottom | Anchor::Left | Anchor::Right | Anchor::Top,
             keyboard_interactivity: KeyboardInteractivity::Exclusive,
             layer: Layer::Overlay,

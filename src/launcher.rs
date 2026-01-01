@@ -73,7 +73,7 @@ impl Launcher {
                 modifiers,
                 ..
             })) if modifiers.shift() => {
-                self.scroll_position = self.scroll_position.saturating_sub(1);
+                self.scroll_position = wrapped_index(self.scroll_position, 5, -1);
                 Task::none()
             }
             Message::SystemEvent(iced::Event::Keyboard(keyboard::Event::KeyPressed {
@@ -83,11 +83,11 @@ impl Launcher {
                 use iced::keyboard::key::Named as kp;
 
                 if let kp::ArrowDown | kp::Tab = key_pressed {
-                    self.scroll_position += 1;
+                    self.scroll_position = wrapped_index(self.scroll_position, 5, 1);
                 }
 
                 if let keyboard::key::Named::ArrowUp = key_pressed {
-                    self.scroll_position = self.scroll_position.saturating_sub(1);
+                    self.scroll_position = wrapped_index(self.scroll_position, 5, -1);
                 }
 
                 Task::none()
@@ -242,14 +242,14 @@ impl Launcher {
                     .padding(10)
                     .style(|_, _| {
                         iced::widget::text_input::Style {
-                            background: iced::Background::Color(iced::Color::BLACK),
+                            background: iced::Background::Color(iced::Color::WHITE),
                             border: iced::border::Border {
                                 radius: iced::border::radius(10),
                                 ..Default::default()
                             },
                             icon: iced::Color::WHITE,
-                            placeholder: iced::Color::WHITE,
-                            value: iced::Color::WHITE,
+                            placeholder: iced::Color::BLACK,
+                            value: iced::Color::BLACK,
                             selection: iced::Color::WHITE,
                         }
                     })
@@ -323,4 +323,12 @@ impl Launcher {
             ..Default::default()
         })
     }
+}
+
+fn wrapped_index(index: usize, array_len: usize, step: isize) -> usize {
+    if step >= 0 {
+        return (index + step as usize) % array_len;
+    }
+    let abs_offset = step.unsigned_abs();
+    (index + array_len - (abs_offset % array_len)) % array_len
 }
