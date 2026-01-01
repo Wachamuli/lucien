@@ -40,13 +40,13 @@ static SCROLLABLE_ID: LazyLock<scrollable::Id> = std::sync::LazyLock::new(scroll
 impl Launcher {
     pub fn init() -> (Self, Task<Message>) {
         let auto_focus_task = text_input::focus(TEXT_INPUT_ID.clone());
-        let launcher = Self {
+        let initial_values = Self {
             input: String::new(),
             apps: all_apps(),
             scroll_position: 0,
         };
 
-        (launcher, auto_focus_task)
+        (initial_values, auto_focus_task)
     }
 
     pub fn update(&mut self, message: Message) -> Task<Message> {
@@ -58,6 +58,17 @@ impl Launcher {
             Message::InputChange(input) => {
                 self.input = input;
                 self.scroll_position = 0;
+                self.apps = all_apps()
+                    .into_iter()
+                    .filter(|app| {
+                        regex::RegexBuilder::new(&self.input)
+                            .case_insensitive(true)
+                            .ignore_whitespace(true)
+                            .build()
+                            .unwrap()
+                            .is_match(&app.name)
+                    })
+                    .collect();
 
                 iced::Task::none()
             }
@@ -73,7 +84,7 @@ impl Launcher {
                 modifiers,
                 ..
             })) if modifiers.shift() => {
-                self.scroll_position = wrapped_index(self.scroll_position, 5, -1);
+                self.scroll_position = wrapped_index(self.scroll_position, self.apps.len(), -1);
                 Task::none()
             }
             Message::SystemEvent(iced::Event::Keyboard(keyboard::Event::KeyPressed {
@@ -83,11 +94,11 @@ impl Launcher {
                 use iced::keyboard::key::Named as kp;
 
                 if let kp::ArrowDown | kp::Tab = key_pressed {
-                    self.scroll_position = wrapped_index(self.scroll_position, 5, 1);
+                    self.scroll_position = wrapped_index(self.scroll_position, self.apps.len(), 1);
                 }
 
                 if let keyboard::key::Named::ArrowUp = key_pressed {
-                    self.scroll_position = wrapped_index(self.scroll_position, 5, -1);
+                    self.scroll_position = wrapped_index(self.scroll_position, self.apps.len(), -1);
                 }
 
                 Task::none()
@@ -141,14 +152,6 @@ impl Launcher {
         let app_items: Vec<Element<Message>> = self
             .apps
             .iter()
-            .filter(|app| {
-                regex::RegexBuilder::new(&self.input)
-                    .case_insensitive(true)
-                    .ignore_whitespace(true)
-                    .build()
-                    .unwrap()
-                    .is_match(&app.name)
-            })
             .enumerate()
             .map(|(index, app)| {
                 let file_ext = app
