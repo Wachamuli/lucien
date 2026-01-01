@@ -1,11 +1,13 @@
+use std::sync::LazyLock;
+
 use gio::{AppInfo, AppLaunchContext, prelude::AppInfoExt};
 use iced::{
-    Element, Event, Length, Subscription, Task, event,
+    Element, Event, Font, Length, Pixels, Subscription, Task, event,
     keyboard::{self, Key},
     widget::{
         Column, Container, Scrollable, Text, button, column, container, row,
         scrollable::{self, Rail},
-        text,
+        text, text_input,
     },
     window,
 };
@@ -27,13 +29,16 @@ pub enum Message {
     SystemEventOccurred(Event),
 }
 
+static TEXT_INPUT_ID: LazyLock<text_input::Id> =
+    std::sync::LazyLock::new(|| text_input::Id::unique());
+
 impl Launcher {
     pub fn init() -> (Self, Task<Message>) {
         let launcher = Self {
             input: String::new(),
             apps: all_apps(),
         };
-        (launcher, Task::none())
+        (launcher, text_input::focus(TEXT_INPUT_ID.clone()))
     }
 
     pub fn update(&mut self, message: Message) -> Task<Message> {
@@ -81,31 +86,31 @@ impl Launcher {
             })
             .enumerate()
             .map(|(index, app)| {
-                let file_ext = app
-                    .icon
-                    .as_ref()
-                    .and_then(|path| path.extension())
-                    .and_then(|ext| ext.to_str())
-                    .unwrap_or_default();
+                // let file_ext = app
+                //     .icon
+                //     .as_ref()
+                //     .and_then(|path| path.extension())
+                //     .and_then(|ext| ext.to_str())
+                //     .unwrap_or_default();
 
-                let icon_view: Element<Message> = match file_ext {
-                    "svg" => iced::widget::svg(iced::widget::svg::Handle::from_path(
-                        app.icon.clone().unwrap_or_default(),
-                    ))
-                    .width(32)
-                    .height(32)
-                    .into(),
-                    _ => iced::widget::image(iced::widget::image::Handle::from_path(
-                        app.icon.clone().unwrap_or_default(),
-                    ))
-                    .width(32)
-                    .height(32)
-                    .into(),
-                };
+                // let icon_view: Element<Message> = match file_ext {
+                //     "svg" => iced::widget::svg(iced::widget::svg::Handle::from_path(
+                //         app.icon.clone().unwrap_or_default(),
+                //     ))
+                //     .width(32)
+                //     .height(32)
+                //     .into(),
+                //     _ => iced::widget::image(iced::widget::image::Handle::from_path(
+                //         app.icon.clone().unwrap_or_default(),
+                //     ))
+                //     .width(32)
+                //     .height(32)
+                //     .into(),
+                // };
 
                 button(
                     row![
-                        icon_view,
+                        // icon_view,
                         iced::widget::column![
                             text(&app.name),
                             text(&app.description)
@@ -143,6 +148,7 @@ impl Launcher {
         iced::widget::column![
             container(
                 iced::widget::text_input("Type to search...", &self.input)
+                    .id(TEXT_INPUT_ID.clone())
                     .on_input(Message::InputChange)
                     .on_submit(Message::OpenApp(0))
                     .padding(10)
