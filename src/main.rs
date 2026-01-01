@@ -6,7 +6,7 @@ mod launcher;
 use iced_layershell::{
     Appearance,
     build_pattern::MainSettings,
-    reexport::{Anchor, KeyboardInteractivity},
+    reexport::{Anchor, KeyboardInteractivity, Layer},
     settings::LayerShellSettings,
 };
 
@@ -23,6 +23,7 @@ pub fn main() -> iced_layershell::Result {
             size: Some((500, 500)),
             anchor: Anchor::Bottom | Anchor::Left | Anchor::Right | Anchor::Top,
             keyboard_interactivity: KeyboardInteractivity::Exclusive,
+            layer: Layer::Overlay,
             ..Default::default()
         },
         ..Default::default()

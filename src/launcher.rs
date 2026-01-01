@@ -26,7 +26,7 @@ pub struct Launcher {
 pub enum Message {
     InputChange(String),
     OpenApp(usize),
-    SystemEventOccurred(Event),
+    EscPressed,
 }
 
 static TEXT_INPUT_ID: LazyLock<text_input::Id> =
@@ -34,11 +34,13 @@ static TEXT_INPUT_ID: LazyLock<text_input::Id> =
 
 impl Launcher {
     pub fn init() -> (Self, Task<Message>) {
+        let auto_focus_task = text_input::focus(TEXT_INPUT_ID.clone());
         let launcher = Self {
             input: String::new(),
             apps: all_apps(),
         };
-        (launcher, text_input::focus(TEXT_INPUT_ID.clone()))
+
+        (launcher, auto_focus_task)
     }
 
     pub fn update(&mut self, message: Message) -> Task<Message> {
@@ -51,13 +53,9 @@ impl Launcher {
                 self.input = input;
                 iced::Task::none()
             }
-            Message::SystemEventOccurred(Event::Keyboard(keyboard::Event::KeyPressed {
-                key: Key::Named(keyboard::key::Named::Escape),
-                ..
-            })) => {
+            Message::EscPressed => {
                 std::process::exit(0);
             }
-            Message::SystemEventOccurred(_) => Task::none(),
             Message::AnchorChange(anchor) => todo!(),
             Message::SetInputRegion(action_callback) => todo!(),
             Message::AnchorSizeChange(anchor, _) => todo!(),
@@ -69,7 +67,16 @@ impl Launcher {
     }
 
     pub fn subscription(&self) -> Subscription<Message> {
-        event::listen().map(Message::SystemEventOccurred)
+        event::listen_with(|event, status, _id| match (event, status) {
+            (
+                Event::Keyboard(keyboard::Event::KeyPressed {
+                    key: keyboard::Key::Named(keyboard::key::Named::Escape),
+                    ..
+                }),
+                _,
+            ) => Some(Message::EscPressed),
+            _ => None,
+        })
     }
 
     pub fn view<'a>(&'a self) -> Column<'a, Message> {
