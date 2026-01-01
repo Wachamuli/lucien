@@ -59,12 +59,20 @@ impl Launcher {
                 std::process::exit(0);
             }
             Message::SystemEvent(iced::Event::Keyboard(keyboard::Event::KeyPressed {
+                key: Key::Named(keyboard::key::Named::Tab),
+                modifiers,
+                ..
+            })) if modifiers.shift() => {
+                self.scroll_position = self.scroll_position.saturating_sub(1);
+                Task::none()
+            }
+            Message::SystemEvent(iced::Event::Keyboard(keyboard::Event::KeyPressed {
                 key: Key::Named(key_pressed),
                 ..
             })) => {
-                dbg!(self.scroll_position);
+                use iced::keyboard::key::Named as kp;
 
-                if let keyboard::key::Named::ArrowDown = key_pressed {
+                if let kp::ArrowDown | kp::Tab = key_pressed {
                     self.scroll_position += 1;
                 }
 
