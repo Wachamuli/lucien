@@ -2,11 +2,13 @@ use std::sync::LazyLock;
 
 use gio::{AppInfo, AppLaunchContext, prelude::AppInfoExt};
 use iced::{
-    Element, Event, Font, Length, Pixels, Subscription, Task, event,
+    Border, Element, Event, Font, Length, Pixels, Subscription, Task,
+    alignment::Vertical,
+    event,
     keyboard::{self, Key},
     widget::{
         self, Column, Container, Scrollable, Text, button, column, container, row,
-        scrollable::{self, Rail},
+        scrollable::{self, Anchor, Rail},
         text, text_input,
     },
     window,
@@ -29,9 +31,11 @@ pub enum Message {
     OpenApp(usize),
     SystemEvent(iced::Event),
     EscPressed,
+    AltDigitShortcut(usize),
 }
 
 static TEXT_INPUT_ID: LazyLock<text_input::Id> = std::sync::LazyLock::new(text_input::Id::unique);
+static SCROLLABLE_ID: LazyLock<scrollable::Id> = std::sync::LazyLock::new(scrollable::Id::unique);
 
 impl Launcher {
     pub fn init() -> (Self, Task<Message>) {
@@ -53,9 +57,15 @@ impl Launcher {
             }
             Message::InputChange(input) => {
                 self.input = input;
+                self.scroll_position = 0;
+
                 iced::Task::none()
             }
             Message::EscPressed => {
+                std::process::exit(0);
+            }
+            Message::AltDigitShortcut(n) => {
+                self.apps[n - 1].launch();
                 std::process::exit(0);
             }
             Message::SystemEvent(iced::Event::Keyboard(keyboard::Event::KeyPressed {
@@ -104,12 +114,27 @@ impl Launcher {
                     }),
                     _,
                 ) => Some(Message::EscPressed),
+                (
+                    Event::Keyboard(keyboard::Event::KeyPressed {
+                        physical_key: keyboard::key::Physical::Code(physical_key_pressed),
+                        modifiers,
+                        ..
+                    }),
+                    _,
+                ) if modifiers.alt() => match physical_key_pressed {
+                    keyboard::key::Code::Digit1 => Some(Message::AltDigitShortcut(1)),
+                    keyboard::key::Code::Digit2 => Some(Message::AltDigitShortcut(2)),
+                    keyboard::key::Code::Digit3 => Some(Message::AltDigitShortcut(3)),
+                    keyboard::key::Code::Digit4 => Some(Message::AltDigitShortcut(4)),
+                    keyboard::key::Code::Digit5 => Some(Message::AltDigitShortcut(5)),
+                    _ => None,
+                },
                 _ => None,
             }),
         ])
     }
 
-    pub fn view<'a>(&'a self) -> Column<'a, Message> {
+    pub fn view<'a>(&'a self) -> Container<'a, Message> {
         let app_items: Vec<Element<Message>> = self
             .apps
             .iter()
@@ -145,6 +170,12 @@ impl Launcher {
                     .into(),
                 };
 
+                let shortcut_label = match index {
+                    n if self.scroll_position == n => "Enter".to_string(),
+                    n @ 0..5 => format!("Alt+{}", n + 1),
+                    _ => "".to_string(),
+                };
+
                 button(
                     row![
                         icon_view,
@@ -156,7 +187,11 @@ impl Launcher {
                                 .wrapping(text::Wrapping::Glyph)
                                 .line_height(1.0)
                         ],
+                        text(shortcut_label)
+                            .size(12)
+                            .color(iced::Color::from_rgba(255., 255., 255., 0.2))
                     ]
+                    .align_y(Vertical::Center)
                     .spacing(10),
                 )
                 .on_press(Message::OpenApp(index))
@@ -195,7 +230,7 @@ impl Launcher {
             })
             .collect();
 
-        iced::widget::column![
+        container(iced::widget::column![
             container(
                 iced::widget::text_input("Type to search...", &self.input)
                     .id(TEXT_INPUT_ID.clone())
@@ -230,6 +265,7 @@ impl Launcher {
                     .padding(10)
                     .width(Length::Fill),
             )
+            .id(SCROLLABLE_ID.clone())
             .style(|_, _| scrollable::Style {
                 container: iced::widget::container::Style {
                     background: Some(iced::Background::Color(iced::Color::BLACK)),
@@ -273,6 +309,15 @@ impl Launcher {
                 },
                 gap: None,
             }),
-        ]
+        ])
+        .padding(2)
+        .style(|_| container::Style {
+            border: Border {
+                width: 2.,
+                color: iced::Color::WHITE,
+                radius: iced::border::radius(20),
+            },
+            ..Default::default()
+        })
     }
 }
