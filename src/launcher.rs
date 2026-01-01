@@ -29,8 +29,7 @@ pub enum Message {
     EscPressed,
 }
 
-static TEXT_INPUT_ID: LazyLock<text_input::Id> =
-    std::sync::LazyLock::new(|| text_input::Id::unique());
+static TEXT_INPUT_ID: LazyLock<text_input::Id> = std::sync::LazyLock::new(text_input::Id::unique);
 
 impl Launcher {
     pub fn init() -> (Self, Task<Message>) {
@@ -56,13 +55,13 @@ impl Launcher {
             Message::EscPressed => {
                 std::process::exit(0);
             }
-            Message::AnchorChange(anchor) => todo!(),
-            Message::SetInputRegion(action_callback) => todo!(),
-            Message::AnchorSizeChange(anchor, _) => todo!(),
-            Message::LayerChange(layer) => todo!(),
+            Message::AnchorChange(_anchor) => todo!(),
+            Message::SetInputRegion(_action_callback) => todo!(),
+            Message::AnchorSizeChange(_anchor, _) => todo!(),
+            Message::LayerChange(_layer) => todo!(),
             Message::MarginChange(_) => todo!(),
             Message::SizeChange(_) => todo!(),
-            Message::VirtualKeyboardPressed { time, key } => todo!(),
+            Message::VirtualKeyboardPressed { .. } => todo!(),
         }
     }
 
@@ -93,31 +92,31 @@ impl Launcher {
             })
             .enumerate()
             .map(|(index, app)| {
-                // let file_ext = app
-                //     .icon
-                //     .as_ref()
-                //     .and_then(|path| path.extension())
-                //     .and_then(|ext| ext.to_str())
-                //     .unwrap_or_default();
+                let file_ext = app
+                    .icon
+                    .as_ref()
+                    .and_then(|path| path.extension())
+                    .and_then(|ext| ext.to_str())
+                    .unwrap_or_default();
 
-                // let icon_view: Element<Message> = match file_ext {
-                //     "svg" => iced::widget::svg(iced::widget::svg::Handle::from_path(
-                //         app.icon.clone().unwrap_or_default(),
-                //     ))
-                //     .width(32)
-                //     .height(32)
-                //     .into(),
-                //     _ => iced::widget::image(iced::widget::image::Handle::from_path(
-                //         app.icon.clone().unwrap_or_default(),
-                //     ))
-                //     .width(32)
-                //     .height(32)
-                //     .into(),
-                // };
+                let icon_view: Element<Message> = match file_ext {
+                    "svg" => iced::widget::svg(iced::widget::svg::Handle::from_path(
+                        app.icon.clone().unwrap_or_default(),
+                    ))
+                    .width(32)
+                    .height(32)
+                    .into(),
+                    _ => iced::widget::image(iced::widget::image::Handle::from_path(
+                        app.icon.clone().unwrap_or_default(),
+                    ))
+                    .width(32)
+                    .height(32)
+                    .into(),
+                };
 
                 button(
                     row![
-                        // icon_view,
+                        icon_view,
                         iced::widget::column![
                             text(&app.name),
                             text(&app.description)

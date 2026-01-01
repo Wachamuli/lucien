@@ -1,5 +1,5 @@
 use gio::{Icon, prelude::IconExt};
-use std::{env, path::PathBuf};
+use std::path::PathBuf;
 
 use gio::{AppInfo, AppLaunchContext, prelude::AppInfoExt};
 
@@ -8,7 +8,7 @@ pub struct App {
     pub info: AppInfo,
     pub name: String,
     pub description: String,
-    // pub icon: Option<PathBuf>,
+    pub icon: Option<PathBuf>,
 }
 
 pub fn all_apps() -> Vec<App> {
@@ -19,7 +19,7 @@ pub fn all_apps() -> Vec<App> {
             info: app.clone(),
             name: app.name().to_string(),
             description: app.description().unwrap_or_default().to_string(),
-            // icon: get_icon(app.icon()),
+            icon: get_icon(app.icon()),
         })
         .collect()
 }
