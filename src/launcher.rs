@@ -5,7 +5,7 @@ use iced::{
     Element, Event, Font, Length, Pixels, Subscription, Task, event,
     keyboard::{self, Key},
     widget::{
-        Column, Container, Scrollable, Text, button, column, container, row,
+        self, Column, Container, Scrollable, Text, button, column, container, row,
         scrollable::{self, Rail},
         text, text_input,
     },
@@ -19,6 +19,7 @@ use crate::app::{App, all_apps};
 pub struct Launcher {
     input: String,
     apps: Vec<App>,
+    scroll_position: usize,
 }
 
 #[to_layer_message]
@@ -26,6 +27,7 @@ pub struct Launcher {
 pub enum Message {
     InputChange(String),
     OpenApp(usize),
+    SystemEvent(iced::Event),
     EscPressed,
 }
 
@@ -37,6 +39,7 @@ impl Launcher {
         let launcher = Self {
             input: String::new(),
             apps: all_apps(),
+            scroll_position: 0,
         };
 
         (launcher, auto_focus_task)
@@ -55,6 +58,23 @@ impl Launcher {
             Message::EscPressed => {
                 std::process::exit(0);
             }
+            Message::SystemEvent(iced::Event::Keyboard(keyboard::Event::KeyPressed {
+                key: Key::Named(key_pressed),
+                ..
+            })) => {
+                dbg!(self.scroll_position);
+
+                if let keyboard::key::Named::ArrowDown = key_pressed {
+                    self.scroll_position += 1;
+                }
+
+                if let keyboard::key::Named::ArrowUp = key_pressed {
+                    self.scroll_position = self.scroll_position.saturating_sub(1);
+                }
+
+                Task::none()
+            }
+            Message::SystemEvent(_) => Task::none(),
             Message::AnchorChange(_anchor) => todo!(),
             Message::SetInputRegion(_action_callback) => todo!(),
             Message::AnchorSizeChange(_anchor, _) => todo!(),
@@ -66,16 +86,19 @@ impl Launcher {
     }
 
     pub fn subscription(&self) -> Subscription<Message> {
-        event::listen_with(|event, status, _id| match (event, status) {
-            (
-                Event::Keyboard(keyboard::Event::KeyPressed {
-                    key: keyboard::Key::Named(keyboard::key::Named::Escape),
-                    ..
-                }),
-                _,
-            ) => Some(Message::EscPressed),
-            _ => None,
-        })
+        Subscription::batch([
+            event::listen().map(Message::SystemEvent),
+            event::listen_with(|event, status, _id| match (event, status) {
+                (
+                    Event::Keyboard(keyboard::Event::KeyPressed {
+                        key: keyboard::Key::Named(keyboard::key::Named::Escape),
+                        ..
+                    }),
+                    _,
+                ) => Some(Message::EscPressed),
+                _ => None,
+            }),
+        ])
     }
 
     pub fn view<'a>(&'a self) -> Column<'a, Message> {
@@ -130,21 +153,34 @@ impl Launcher {
                 )
                 .on_press(Message::OpenApp(index))
                 .padding(10)
-                .style(|_, status| match status {
-                    button::Status::Hovered => button::Style {
-                        background: Some(iced::Background::Color(iced::Color::from_rgb(
-                            0.3, 0.3, 0.3,
-                        ))),
-                        text_color: iced::Color::WHITE,
-                        border: iced::border::rounded(10),
-                        shadow: Default::default(),
-                    },
-                    _ => button::Style {
-                        background: Some(iced::Background::Color(iced::color!(0, 0, 0))),
-                        text_color: iced::Color::WHITE,
-                        border: iced::border::rounded(20),
-                        shadow: Default::default(),
-                    },
+                .style(move |_, status| {
+                    if index == self.scroll_position {
+                        return button::Style {
+                            background: Some(iced::Background::Color(iced::Color::from_rgb(
+                                0.3, 0.3, 0.3,
+                            ))),
+                            text_color: iced::Color::WHITE,
+                            border: iced::border::rounded(10),
+                            shadow: Default::default(),
+                        };
+                    }
+
+                    match status {
+                        button::Status::Hovered => button::Style {
+                            background: Some(iced::Background::Color(iced::Color::from_rgb(
+                                0.3, 0.3, 0.3,
+                            ))),
+                            text_color: iced::Color::WHITE,
+                            border: iced::border::rounded(10),
+                            shadow: Default::default(),
+                        },
+                        _ => button::Style {
+                            background: Some(iced::Background::Color(iced::color!(0, 0, 0))),
+                            text_color: iced::Color::WHITE,
+                            border: iced::border::rounded(20),
+                            shadow: Default::default(),
+                        },
+                    }
                 })
                 .width(Length::Fill)
                 .into()
@@ -156,7 +192,7 @@ impl Launcher {
                 iced::widget::text_input("Type to search...", &self.input)
                     .id(TEXT_INPUT_ID.clone())
                     .on_input(Message::InputChange)
-                    .on_submit(Message::OpenApp(0))
+                    .on_submit(Message::OpenApp(self.scroll_position))
                     .padding(10)
                     .style(|_, _| {
                         iced::widget::text_input::Style {
@@ -200,8 +236,8 @@ impl Launcher {
                     scroller: scrollable::Scroller {
                         color: iced::Color::WHITE,
                         border: iced::Border {
-                            color: iced::Color::WHITE,
-                            width: 20.0,
+                            color: iced::Color::from_rgb(255., 0., 0.),
+                            width: 0.0,
                             radius: iced::border::Radius::new(20.0),
                         },
                     },

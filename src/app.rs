@@ -1,7 +1,16 @@
 use gio::{Icon, prelude::IconExt};
+use iced::{
+    Element, Length,
+    widget::{
+        button::{self},
+        row, text,
+    },
+};
 use std::path::PathBuf;
 
 use gio::{AppInfo, AppLaunchContext, prelude::AppInfoExt};
+
+use crate::launcher::Message;
 
 #[derive(Debug)]
 pub struct App {
@@ -72,4 +81,77 @@ impl App {
             dbg!(e);
         }
     }
+
+    // pub fn view(&self, index: usize) -> Element<Message> {
+    //     let i = index;
+    //     let file_ext = self
+    //         .icon
+    //         .as_ref()
+    //         .and_then(|path| path.extension())
+    //         .and_then(|ext| ext.to_str())
+    //         .unwrap_or_default();
+
+    //     let icon_view: Element<Message> = match file_ext {
+    //         "svg" => iced::widget::svg(iced::widget::svg::Handle::from_path(
+    //             self.icon.clone().unwrap_or_default(),
+    //         ))
+    //         .width(32)
+    //         .height(32)
+    //         .into(),
+    //         _ => iced::widget::image(iced::widget::image::Handle::from_path(
+    //             self.icon.clone().unwrap_or_default(),
+    //         ))
+    //         .width(32)
+    //         .height(32)
+    //         .into(),
+    //     };
+
+    //     iced::widget::button(
+    //         row![
+    //             icon_view,
+    //             iced::widget::column![
+    //                 iced::widget::text(&self.name),
+    //                 iced::widget::text(&self.description)
+    //                     .width(Length::Fill)
+    //                     .size(12)
+    //                     .wrapping(text::Wrapping::Glyph)
+    //                     .line_height(1.0)
+    //             ],
+    //         ]
+    //         .spacing(10),
+    //     )
+    //     .on_press(Message::OpenApp(index))
+    //     .padding(10)
+    //     .style(move |_, status| {
+    //         if index == 0 {
+    //             return button::Style {
+    //                 background: Some(iced::Background::Color(iced::Color::from_rgb(
+    //                     0.3, 0.3, 0.3,
+    //                 ))),
+    //                 text_color: iced::Color::WHITE,
+    //                 border: iced::border::rounded(10),
+    //                 shadow: Default::default(),
+    //             };
+    //         }
+
+    //         match status {
+    //             button::Status::Hovered => button::Style {
+    //                 background: Some(iced::Background::Color(iced::Color::from_rgb(
+    //                     0.3, 0.3, 0.3,
+    //                 ))),
+    //                 text_color: iced::Color::WHITE,
+    //                 border: iced::border::rounded(10),
+    //                 shadow: Default::default(),
+    //             },
+    //             _ => button::Style {
+    //                 background: Some(iced::Background::Color(iced::color!(0, 0, 0))),
+    //                 text_color: iced::Color::WHITE,
+    //                 border: iced::border::rounded(20),
+    //                 shadow: Default::default(),
+    //             },
+    //         }
+    //     })
+    //     .width(Length::Fill)
+    //     .into()
+    // }
 }
