@@ -92,6 +92,9 @@ impl Launcher {
 
                 Task::none()
             }
+            Message::SystemEvent(iced::Event::Mouse(iced::mouse::Event::ButtonPressed(_))) => {
+                std::process::exit(0)
+            }
             Message::SystemEvent(_) => Task::none(),
             Message::AnchorChange(_anchor) => todo!(),
             Message::SetInputRegion(_action_callback) => todo!(),
