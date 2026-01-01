@@ -8,7 +8,7 @@ use iced::{
     keyboard::{self, Key},
     widget::{
         self, Column, Container, Scrollable, Text, button, column, container, row,
-        scrollable::{self, Anchor, Rail},
+        scrollable::{self, AbsoluteOffset, Anchor, Rail, RelativeOffset},
         text, text_input,
     },
     window,
@@ -22,6 +22,7 @@ pub struct Launcher {
     input: String,
     apps: Vec<App>,
     scroll_position: usize,
+    last_viewport: Option<iced::widget::scrollable::Viewport>,
 }
 
 #[to_layer_message]
@@ -32,6 +33,7 @@ pub enum Message {
     SystemEvent(iced::Event),
     EscPressed,
     AltDigitShortcut(usize),
+    ScrollableViewport(iced::widget::scrollable::Viewport),
 }
 
 static TEXT_INPUT_ID: LazyLock<text_input::Id> = std::sync::LazyLock::new(text_input::Id::unique);
@@ -44,6 +46,7 @@ impl Launcher {
             input: String::new(),
             apps: all_apps(),
             scroll_position: 0,
+            last_viewport: None,
         };
 
         (initial_values, auto_focus_task)
@@ -51,6 +54,10 @@ impl Launcher {
 
     pub fn update(&mut self, message: Message) -> Task<Message> {
         match message {
+            Message::ScrollableViewport(viewport) => {
+                self.last_viewport = Some(viewport);
+                Task::none()
+            }
             Message::OpenApp(index) => {
                 self.apps[index].launch();
                 std::process::exit(0)
@@ -83,7 +90,14 @@ impl Launcher {
                 modifiers,
                 ..
             })) if modifiers.shift() => {
+                let old_pos = self.scroll_position;
+
                 self.scroll_position = wrapped_index(self.scroll_position, self.apps.len(), -1);
+
+                if old_pos != self.scroll_position {
+                    return self.snap_if_needed();
+                }
+
                 Task::none()
             }
             Message::SystemEvent(iced::Event::Keyboard(keyboard::Event::KeyPressed {
@@ -91,6 +105,7 @@ impl Launcher {
                 ..
             })) => {
                 use iced::keyboard::key::Named as kp;
+                let old_pos = self.scroll_position;
 
                 if let kp::ArrowDown | kp::Tab = key_pressed {
                     self.scroll_position = wrapped_index(self.scroll_position, self.apps.len(), 1);
@@ -98,6 +113,10 @@ impl Launcher {
 
                 if let keyboard::key::Named::ArrowUp = key_pressed {
                     self.scroll_position = wrapped_index(self.scroll_position, self.apps.len(), -1);
+                }
+
+                if old_pos != self.scroll_position {
+                    return self.snap_if_needed();
                 }
 
                 Task::none()
@@ -270,6 +289,7 @@ impl Launcher {
                     .padding(10)
                     .width(Length::Fill),
             )
+            .on_scroll(Message::ScrollableViewport)
             .id(SCROLLABLE_ID.clone())
             .style(|_, _| scrollable::Style {
                 container: iced::widget::container::Style {
@@ -324,6 +344,49 @@ impl Launcher {
             },
             ..Default::default()
         })
+    }
+
+    fn snap_if_needed(&self) -> Task<Message> {
+        let Some(viewport) = &self.last_viewport else {
+            return Task::none();
+        };
+
+        let item_height = 56.0;
+
+        let v_top = viewport.absolute_offset().y;
+        let v_height = viewport.bounds().height;
+        let v_bottom = v_top + v_height;
+
+        let content_height = viewport.content_bounds().height;
+        let max_scroll = content_height - v_height;
+
+        if max_scroll <= 0.0 {
+            return Task::none();
+        }
+
+        let i_top = self.scroll_position as f32 * item_height;
+        let i_bottom = i_top + item_height;
+
+        let mut target_y = None;
+
+        if i_top < v_top {
+            target_y = Some(i_top);
+        } else if i_bottom > v_bottom {
+            target_y = Some(i_bottom - v_height);
+        }
+
+        if let Some(y_px) = target_y {
+            let relative_y = (y_px / max_scroll).clamp(0.0, 1.0);
+            return scrollable::snap_to(
+                SCROLLABLE_ID.clone(),
+                RelativeOffset {
+                    x: 0.0,
+                    y: relative_y,
+                },
+            );
+        }
+
+        Task::none()
     }
 }
 
