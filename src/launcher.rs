@@ -1,14 +1,15 @@
 use std::sync::LazyLock;
 
 use iced::{
-    Alignment, Border, Element, Event, Length, Subscription, Task,
+    Alignment, Border, Element, Event, Font, Length, Subscription, Task,
     alignment::Vertical,
     event,
     keyboard::{self, Key},
     widget::{
         Column, Container, button, container, row,
         scrollable::{self, Rail, RelativeOffset},
-        text, text_input,
+        text,
+        text_input::{self, Icon},
     },
 };
 use iced_layershell::to_layer_message;
@@ -278,10 +279,18 @@ impl Launcher {
             .into()
         };
 
+        let search_icon = Icon {
+            font: Font::with_name("SF Pro Display"),
+            code_point: '\u{2315}',
+            size: Some(iced::Pixels(16.4)),
+            spacing: 8.,
+            side: text_input::Side::Left,
+        };
+
         container(iced::widget::column![
-            // Search bar section
             container(
                 iced::widget::text_input("Search...", &self.input)
+                    .icon(search_icon)
                     .id(TEXT_INPUT_ID.clone())
                     .on_input(Message::InputChange)
                     .on_submit(Message::OpenApp(self.scroll_position))
@@ -313,7 +322,6 @@ impl Launcher {
                 ..Default::default()
             })
             .padding(15),
-            // Results list section
             iced::widget::scrollable(app_list_content)
                 .on_scroll(Message::ScrollableViewport)
                 .id(SCROLLABLE_ID.clone())
