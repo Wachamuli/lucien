@@ -2,12 +2,13 @@ use std::sync::LazyLock;
 
 use gio::{AppInfo, AppLaunchContext, prelude::AppInfoExt};
 use iced::{
-    Border, Element, Event, Font, Length, Pixels, Subscription, Task,
+    Alignment, Border, Element, Event, Font, Length, Pixels, Subscription, Task,
     alignment::Vertical,
     event,
     keyboard::{self, Key},
     widget::{
-        self, Column, Container, Scrollable, Text, button, column, container, row,
+        self, Column, Container, Scrollable, Text, button, column, container, horizontal_space,
+        row,
         scrollable::{self, AbsoluteOffset, Anchor, Rail, RelativeOffset},
         text, text_input,
     },
@@ -59,8 +60,12 @@ impl Launcher {
                 Task::none()
             }
             Message::OpenApp(index) => {
-                self.apps[index].launch();
-                std::process::exit(0)
+                if let Some(app) = self.apps.get(index) {
+                    app.launch();
+                    std::process::exit(0)
+                }
+
+                Task::none()
             }
             Message::InputChange(input) => {
                 let regex_builder = regex::RegexBuilder::new(&input)
@@ -82,8 +87,9 @@ impl Launcher {
                 std::process::exit(0);
             }
             Message::AltDigitShortcut(n) => {
-                if n - 1 < self.apps.len() {
-                    self.apps[n - 1].launch();
+                // FIXME: Fix alt keys bug
+                if let Some(app) = self.apps.get(n - 1) {
+                    app.launch();
                     std::process::exit(0);
                 }
 
@@ -158,6 +164,7 @@ impl Launcher {
                     }),
                     _,
                 ) if modifiers.alt() => match physical_key_pressed {
+                    // FIXME: Fix alt keys bugs
                     keyboard::key::Code::Digit1 => Some(Message::AltDigitShortcut(1)),
                     keyboard::key::Code::Digit2 => Some(Message::AltDigitShortcut(2)),
                     keyboard::key::Code::Digit3 => Some(Message::AltDigitShortcut(3)),
@@ -258,6 +265,19 @@ impl Launcher {
             })
             .collect();
 
+        let app_list = if app_items.len() > 0 {
+            Column::with_children(app_items)
+                .padding(10)
+                .width(Length::Fill)
+        } else {
+            Column::with_children([text("No Results Were Found")
+                .color(iced::Color::WHITE)
+                .align_x(Alignment::Center)
+                .into()])
+            .padding(10)
+            .width(Length::Fill)
+        };
+
         container(iced::widget::column![
             container(
                 iced::widget::text_input("Type to search...", &self.input)
@@ -288,56 +308,52 @@ impl Launcher {
                 ..Default::default()
             })
             .padding(10),
-            iced::widget::scrollable(
-                Column::with_children(app_items)
-                    .padding(10)
-                    .width(Length::Fill),
-            )
-            .on_scroll(Message::ScrollableViewport)
-            .id(SCROLLABLE_ID.clone())
-            .style(|_, _| scrollable::Style {
-                container: iced::widget::container::Style {
-                    background: Some(iced::Background::Color(iced::Color::BLACK)),
-                    border: iced::Border {
-                        radius: iced::border::bottom(20),
+            iced::widget::scrollable(app_list)
+                .on_scroll(Message::ScrollableViewport)
+                .id(SCROLLABLE_ID.clone())
+                .style(|_, _| scrollable::Style {
+                    container: iced::widget::container::Style {
+                        background: Some(iced::Background::Color(iced::Color::BLACK)),
+                        border: iced::Border {
+                            radius: iced::border::bottom(20),
+                            ..Default::default()
+                        },
                         ..Default::default()
                     },
-                    ..Default::default()
-                },
-                vertical_rail: Rail {
-                    background: Some(iced::Background::Color(iced::Color::BLACK)),
-                    scroller: scrollable::Scroller {
-                        color: iced::Color::WHITE,
-                        border: iced::Border {
-                            color: iced::Color::from_rgb(255., 0., 0.),
-                            width: 0.0,
-                            radius: iced::border::Radius::new(20.0),
+                    vertical_rail: Rail {
+                        background: Some(iced::Background::Color(iced::Color::BLACK)),
+                        scroller: scrollable::Scroller {
+                            color: iced::Color::WHITE,
+                            border: iced::Border {
+                                color: iced::Color::from_rgb(255., 0., 0.),
+                                width: 0.0,
+                                radius: iced::border::Radius::new(20.0),
+                            },
                         },
-                    },
-                    border: iced::Border {
-                        color: iced::Color::WHITE,
-                        width: 0.0,
-                        radius: iced::border::bottom(20.0),
-                    },
-                },
-                horizontal_rail: Rail {
-                    background: Some(iced::Background::Color(iced::Color::BLACK)),
-                    scroller: scrollable::Scroller {
-                        color: iced::Color::WHITE,
                         border: iced::Border {
                             color: iced::Color::WHITE,
-                            width: 20.0,
-                            radius: iced::border::Radius::new(20.0),
+                            width: 0.0,
+                            radius: iced::border::bottom(20.0),
                         },
                     },
-                    border: iced::Border {
-                        color: iced::Color::WHITE,
-                        width: 0.0,
-                        radius: iced::border::bottom(20.0),
+                    horizontal_rail: Rail {
+                        background: Some(iced::Background::Color(iced::Color::BLACK)),
+                        scroller: scrollable::Scroller {
+                            color: iced::Color::WHITE,
+                            border: iced::Border {
+                                color: iced::Color::WHITE,
+                                width: 20.0,
+                                radius: iced::border::Radius::new(20.0),
+                            },
+                        },
+                        border: iced::Border {
+                            color: iced::Color::WHITE,
+                            width: 0.0,
+                            radius: iced::border::bottom(20.0),
+                        },
                     },
-                },
-                gap: None,
-            }),
+                    gap: None,
+                }),
         ])
         .padding(2)
         .style(|_| container::Style {
