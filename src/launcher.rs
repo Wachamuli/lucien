@@ -175,6 +175,11 @@ impl Launcher {
     }
 
     pub fn view<'a>(&'a self) -> Container<'a, Message> {
+        let base_black = iced::Color::from_rgba(0.01, 0.01, 0.01, 0.82);
+        let border_color = iced::Color::from_rgba(1.0, 1.0, 1.0, 0.18);
+        let transparent_gray = iced::Color::from_rgba(1.0, 1.0, 1.0, 0.04);
+        let highlight_gray = iced::Color::from_rgba(1.0, 1.0, 1.0, 0.10);
+
         let app_items: Vec<Element<Message>> = self
             .apps
             .iter()
@@ -191,20 +196,20 @@ impl Launcher {
                     "svg" => iced::widget::svg(iced::widget::svg::Handle::from_path(
                         app.icon.clone().unwrap_or_default(),
                     ))
-                    .width(32)
-                    .height(32)
+                    .width(28)
+                    .height(28)
                     .into(),
                     _ => iced::widget::image(iced::widget::image::Handle::from_path(
                         app.icon.clone().unwrap_or_default(),
                     ))
-                    .width(32)
-                    .height(32)
+                    .width(28)
+                    .height(28)
                     .into(),
                 };
 
                 let shortcut_label = match index {
                     n if self.scroll_position == n => "Enter".to_string(),
-                    n @ 0..5 => format!("Alt+{}", n + 1),
+                    n @ 0..7 => format!("Alt+{}", n + 1),
                     _ => "".to_string(),
                 };
 
@@ -212,49 +217,43 @@ impl Launcher {
                     row![
                         icon_view,
                         iced::widget::column![
-                            text(&app.name),
+                            text(&app.name).size(14),
                             text(&app.description)
                                 .width(Length::Fill)
-                                .size(12)
+                                .size(11)
+                                .color(iced::Color::from_rgba(1.0, 1.0, 1.0, 0.3)) // Dimmer description
                                 .wrapping(text::Wrapping::Glyph)
                                 .line_height(1.0)
                         ],
                         text(shortcut_label)
-                            .size(12)
-                            .color(iced::Color::from_rgba(255., 255., 255., 0.2))
+                            .size(11)
+                            .color(iced::Color::from_rgba(1.0, 1.0, 1.0, 0.2))
                     ]
                     .align_y(Vertical::Center)
-                    .spacing(10),
+                    .spacing(12),
                 )
                 .on_press(Message::OpenApp(index))
-                .padding(10)
+                .padding(8)
                 .style(move |_, status| {
-                    if index == self.scroll_position {
-                        return button::Style {
-                            background: Some(iced::Background::Color(iced::Color::from_rgb(
-                                0.3, 0.3, 0.3,
-                            ))),
-                            text_color: iced::Color::WHITE,
-                            border: iced::border::rounded(10),
-                            shadow: Default::default(),
-                        };
-                    }
+                    let is_selected = index == self.scroll_position;
 
-                    match status {
-                        button::Status::Hovered => button::Style {
-                            background: Some(iced::Background::Color(iced::Color::from_rgb(
-                                0.3, 0.3, 0.3,
-                            ))),
-                            text_color: iced::Color::WHITE,
-                            border: iced::border::rounded(10),
-                            shadow: Default::default(),
+                    let bg = if is_selected {
+                        highlight_gray
+                    } else if status == button::Status::Hovered {
+                        transparent_gray
+                    } else {
+                        iced::Color::TRANSPARENT
+                    };
+
+                    button::Style {
+                        background: Some(iced::Background::Color(bg)),
+                        text_color: iced::Color::WHITE,
+                        border: Border {
+                            radius: iced::border::radius(8),
+                            width: 0.0,
+                            color: iced::Color::TRANSPARENT,
                         },
-                        _ => button::Style {
-                            background: Some(iced::Background::Color(iced::color!(0, 0, 0))),
-                            text_color: iced::Color::WHITE,
-                            border: iced::border::rounded(20),
-                            shadow: Default::default(),
-                        },
+                        shadow: Default::default(),
                     }
                 })
                 .width(Length::Fill)
@@ -262,101 +261,105 @@ impl Launcher {
             })
             .collect();
 
-        let app_list = if app_items.len() > 0 {
+        let app_list_content: Element<_> = if !app_items.is_empty() {
             Column::with_children(app_items)
                 .padding(10)
                 .width(Length::Fill)
+                .into()
         } else {
-            Column::with_children([text("No Results Were Found")
-                .color(iced::Color::WHITE)
-                .align_x(Alignment::Center)
-                .into()])
-            .padding(10)
+            container(
+                text("No results")
+                    .size(13)
+                    .color(iced::Color::from_rgba(1.0, 1.0, 1.0, 0.4)),
+            )
             .width(Length::Fill)
+            .align_x(Alignment::Center)
+            .padding(20)
+            .into()
         };
 
         container(iced::widget::column![
+            // Search bar section
             container(
-                iced::widget::text_input("Type to search...", &self.input)
+                iced::widget::text_input("Search...", &self.input)
                     .id(TEXT_INPUT_ID.clone())
                     .on_input(Message::InputChange)
                     .on_submit(Message::OpenApp(self.scroll_position))
                     .padding(10)
-                    .style(|_, _| {
+                    .size(14)
+                    .style(move |_, _| {
                         iced::widget::text_input::Style {
-                            background: iced::Background::Color(iced::Color::WHITE),
-                            border: iced::border::Border {
-                                radius: iced::border::radius(10),
-                                ..Default::default()
+                            background: iced::Background::Color(iced::Color::from_rgba(
+                                1.0, 1.0, 1.0, 0.03,
+                            )),
+                            border: Border {
+                                radius: iced::border::radius(8),
+                                width: 1.0,
+                                color: border_color,
                             },
                             icon: iced::Color::WHITE,
-                            placeholder: iced::Color::BLACK,
-                            value: iced::Color::BLACK,
-                            selection: iced::Color::WHITE,
+                            placeholder: iced::Color::from_rgba(1.0, 1.0, 1.0, 0.2),
+                            value: iced::Color::WHITE,
+                            selection: iced::Color::from_rgba(1.0, 1.0, 1.0, 0.1),
                         }
                     })
             )
-            .style(|_| container::Style {
-                background: Some(iced::Background::Color(iced::Color::BLACK)),
-                border: iced::border::Border {
-                    radius: iced::border::top(20),
+            .style(move |_| container::Style {
+                background: Some(iced::Background::Color(base_black)),
+                border: Border {
+                    radius: iced::border::top(18),
                     ..Default::default()
                 },
                 ..Default::default()
             })
-            .padding(10),
-            iced::widget::scrollable(app_list)
+            .padding(15),
+            // Results list section
+            iced::widget::scrollable(app_list_content)
                 .on_scroll(Message::ScrollableViewport)
                 .id(SCROLLABLE_ID.clone())
-                .style(|_, _| scrollable::Style {
+                .style(move |_, _| scrollable::Style {
                     container: iced::widget::container::Style {
-                        background: Some(iced::Background::Color(iced::Color::BLACK)),
-                        border: iced::Border {
-                            radius: iced::border::bottom(20),
+                        background: Some(iced::Background::Color(base_black)),
+                        border: Border {
+                            radius: iced::border::bottom(18),
                             ..Default::default()
                         },
                         ..Default::default()
                     },
                     vertical_rail: Rail {
-                        background: Some(iced::Background::Color(iced::Color::BLACK)),
+                        background: Some(iced::Background::Color(iced::Color::TRANSPARENT)),
                         scroller: scrollable::Scroller {
-                            color: iced::Color::WHITE,
-                            border: iced::Border {
-                                color: iced::Color::from_rgb(255., 0., 0.),
+                            color: iced::Color::TRANSPARENT,
+                            border: Border {
+                                radius: iced::border::Radius::new(10.0),
                                 width: 0.0,
-                                radius: iced::border::Radius::new(20.0),
+                                color: iced::Color::TRANSPARENT,
                             },
                         },
-                        border: iced::Border {
-                            color: iced::Color::WHITE,
-                            width: 0.0,
-                            radius: iced::border::bottom(20.0),
-                        },
+                        border: Border::default(),
                     },
+
                     horizontal_rail: Rail {
-                        background: Some(iced::Background::Color(iced::Color::BLACK)),
+                        background: None,
                         scroller: scrollable::Scroller {
-                            color: iced::Color::WHITE,
-                            border: iced::Border {
-                                color: iced::Color::WHITE,
-                                width: 20.0,
-                                radius: iced::border::Radius::new(20.0),
+                            color: border_color,
+                            border: Border {
+                                radius: iced::border::Radius::new(10.0),
+                                width: 0.0,
+                                color: iced::Color::TRANSPARENT,
                             },
                         },
-                        border: iced::Border {
-                            color: iced::Color::WHITE,
-                            width: 0.0,
-                            radius: iced::border::bottom(20.0),
-                        },
+                        border: Border::default(),
                     },
-                    gap: None,
+                    gap: None
                 }),
         ])
-        .padding(2)
-        .style(|_| container::Style {
+        .padding(1)
+        .style(move |_| container::Style {
+            // Subtle outer border ring
             border: Border {
-                width: 2.,
-                color: iced::Color::WHITE,
+                width: 1.0,
+                color: border_color,
                 radius: iced::border::radius(20),
             },
             ..Default::default()
