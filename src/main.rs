@@ -3,12 +3,15 @@ use crate::launcher::Launcher;
 mod app;
 mod launcher;
 
+use iced::Font;
 use iced_layershell::{
     Appearance,
     build_pattern::MainSettings,
     reexport::{Anchor, KeyboardInteractivity, Layer},
     settings::LayerShellSettings,
 };
+
+pub const SF_PRO_FONT: &[u8] = include_bytes!("../fonts/SF-Pro-Display-Regular.otf");
 
 pub fn main() -> iced_layershell::Result {
     iced_layershell::build_pattern::application(
@@ -28,6 +31,8 @@ pub fn main() -> iced_layershell::Result {
         },
         ..Default::default()
     })
+    .font(SF_PRO_FONT)
+    .default_font(Font::with_name("SF Pro Display"))
     .style(|_state, _theme| Appearance {
         background_color: iced::Color::TRANSPARENT,
         text_color: Default::default(),
