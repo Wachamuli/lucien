@@ -5,7 +5,7 @@ use iced::{
     Alignment, Border, Element, Event, Font, Length, Pixels, Subscription, Task,
     alignment::Vertical,
     event,
-    keyboard::{self, Key},
+    keyboard::{self, Key, Modifiers},
     widget::{
         self, Column, Container, Scrollable, Text, button, column, container, horizontal_space,
         row,
@@ -71,23 +71,23 @@ impl Launcher {
                 let regex_builder = regex::RegexBuilder::new(&input)
                     .case_insensitive(true)
                     .ignore_whitespace(true)
-                    .build()
-                    .unwrap(); // TODO: Handle this case
+                    .build();
 
-                self.apps = all_apps()
-                    .into_iter()
-                    .filter(|app| regex_builder.is_match(&app.name))
-                    .collect();
+                if let Ok(regex) = regex_builder {
+                    self.apps = all_apps()
+                        .into_iter()
+                        .filter(|app| regex.is_match(&app.name))
+                        .collect();
+                }
+
                 self.input = input;
                 self.scroll_position = 0;
-
                 iced::Task::none()
             }
             Message::EscPressed => {
                 std::process::exit(0);
             }
             Message::AltDigitShortcut(n) => {
-                // FIXME: Fix alt keys bug
                 if let Some(app) = self.apps.get(n - 1) {
                     app.launch();
                     std::process::exit(0);
