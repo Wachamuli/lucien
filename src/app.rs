@@ -1,16 +1,7 @@
 use gio::{Icon, prelude::IconExt};
-use iced::{
-    Element, Length,
-    widget::{
-        button::{self},
-        row, text,
-    },
-};
 use std::path::PathBuf;
 
 use gio::{AppInfo, AppLaunchContext, prelude::AppInfoExt};
-
-use crate::launcher::Message;
 
 #[derive(Debug)]
 pub struct App {

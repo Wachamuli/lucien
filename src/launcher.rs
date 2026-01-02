@@ -1,18 +1,15 @@
 use std::sync::LazyLock;
 
-use gio::{AppInfo, AppLaunchContext, prelude::AppInfoExt};
 use iced::{
-    Alignment, Border, Element, Event, Font, Length, Pixels, Subscription, Task,
+    Alignment, Border, Element, Event, Length, Subscription, Task,
     alignment::Vertical,
     event,
-    keyboard::{self, Key, Modifiers},
+    keyboard::{self, Key},
     widget::{
-        self, Column, Container, Scrollable, Text, button, column, container, horizontal_space,
-        row,
-        scrollable::{self, AbsoluteOffset, Anchor, Rail, RelativeOffset},
+        Column, Container, button, container, row,
+        scrollable::{self, Rail, RelativeOffset},
         text, text_input,
     },
-    window,
 };
 use iced_layershell::to_layer_message;
 
