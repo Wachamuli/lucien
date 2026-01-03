@@ -242,17 +242,15 @@ impl Launcher {
                     .id(TEXT_INPUT_ID.clone())
                     .on_input(Message::InputChange)
                     .on_submit(Message::OpenApp(self.scroll_position))
-                    .padding(10)
-                    .size(14)
+                    .padding(5)
+                    .size(16)
                     .style(move |_, _| {
                         iced::widget::text_input::Style {
-                            background: iced::Background::Color(iced::Color::from_rgba(
-                                1.0, 1.0, 1.0, 0.03,
-                            )),
+                            // Changed: Now uses the same background color as the app
+                            background: iced::Background::Color(iced::Color::TRANSPARENT),
                             border: Border {
-                                radius: iced::border::radius(8),
-                                width: 1.0,
-                                color: border_color,
+                                width: 0.0,
+                                ..Default::default()
                             },
                             icon: iced::Color::WHITE,
                             placeholder: iced::Color::from_rgba(1.0, 1.0, 1.0, 0.2),
@@ -270,6 +268,12 @@ impl Launcher {
                 ..Default::default()
             })
             .padding(15),
+            iced::widget::horizontal_rule(1).style(move |_| iced::widget::rule::Style {
+                color: border_color,
+                width: 1,
+                radius: iced::border::radius(0),
+                fill_mode: iced::widget::rule::FillMode::Full,
+            }),
             iced::widget::scrollable(app_list_content)
                 .on_scroll(Message::ScrollableViewport)
                 .id(SCROLLABLE_ID.clone())
@@ -294,7 +298,6 @@ impl Launcher {
                         },
                         border: Border::default(),
                     },
-
                     horizontal_rail: Rail {
                         background: None,
                         scroller: scrollable::Scroller {
