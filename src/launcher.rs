@@ -1,5 +1,6 @@
 use std::sync::LazyLock;
 
+use fuzzy_matcher::{FuzzyMatcher, skim::SkimMatcherV2};
 use iced::{
     Alignment, Border, Element, Event, Font, Length, Subscription, Task, event,
     keyboard::{self, Key},
@@ -64,18 +65,20 @@ impl Launcher {
                 Task::none()
             }
             Message::InputChange(input) => {
-                let regex_builder = regex::RegexBuilder::new(&input)
-                    .case_insensitive(true)
-                    .ignore_whitespace(true)
-                    .build();
+                let matcher = SkimMatcherV2::default();
 
-                if let Ok(regex) = regex_builder {
-                    self.apps = all_apps()
-                        .into_iter()
-                        .filter(|app| regex.is_match(&app.name))
-                        .collect();
-                }
+                let mut ranked_apps: Vec<(i64, App)> = all_apps()
+                    .into_iter()
+                    .filter_map(|app| {
+                        matcher
+                            .fuzzy_match(&app.name, &input)
+                            .map(|score| (score, app))
+                    })
+                    .collect();
 
+                ranked_apps.sort_by(|a, b| b.0.cmp(&a.0));
+
+                self.apps = ranked_apps.into_iter().map(|(_score, app)| app).collect();
                 self.input = input;
                 self.scroll_position = 0;
                 iced::Task::none()
