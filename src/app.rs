@@ -108,13 +108,13 @@ impl App {
                     text(&self.name).size(14),
                     text(&self.description)
                         .size(11)
-                        .color([0.5, 0.5, 0.5])
+                        .color(iced::Color::from_rgba(1.0, 1.0, 1.0, 0.5))
                         .width(Length::Fill),
                 ]
                 .spacing(2),
                 text(shortcut_label)
                     .size(11)
-                    .color([0.5, 0.5, 0.5])
+                    .color(iced::Color::from_rgba(1.0, 1.0, 1.0, 0.5))
                     .align_x(Alignment::End),
             ]
             .spacing(12)

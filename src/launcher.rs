@@ -174,10 +174,11 @@ impl Launcher {
     }
 
     pub fn view<'a>(&'a self) -> Container<'a, Message> {
-        let base_black = iced::Color::from_rgba(0.01, 0.01, 0.01, 0.82);
-        let border_color = iced::Color::from_rgba(1.0, 1.0, 1.0, 0.18);
-        let transparent_gray = iced::Color::from_rgba(1.0, 1.0, 1.0, 0.04);
-        let highlight_gray = iced::Color::from_rgba(1.0, 1.0, 1.0, 0.10);
+        let background = iced::Color::from_rgba(0.07, 0.07, 0.07, 0.98);
+        let border_color = iced::Color::from_rgba(1.0, 1.0, 1.0, 0.35);
+        let highlight_gray = iced::Color::from_rgba(1.0, 1.0, 1.0, 0.1);
+        let transparent_highlight_gray = iced::Color::from_rgba(1.0, 1.0, 1.0, 0.06);
+        let dim_text_color = iced::Color::from_rgba(1.0, 1.0, 1.0, 0.65);
 
         let app_items: Vec<Element<Message>> = self
             .apps
@@ -191,14 +192,14 @@ impl Launcher {
                         let bg = if is_selected {
                             highlight_gray
                         } else if status == button::Status::Hovered {
-                            transparent_gray
+                            transparent_highlight_gray
                         } else {
                             iced::Color::TRANSPARENT
                         };
 
                         button::Style {
                             background: Some(iced::Background::Color(bg)),
-                            text_color: iced::Color::WHITE,
+                            text_color: dim_text_color,
                             border: iced::Border {
                                 radius: iced::border::radius(8),
                                 ..Default::default()
@@ -212,7 +213,8 @@ impl Launcher {
 
         let app_list_content: Element<_> = if !app_items.is_empty() {
             Column::with_children(app_items)
-                .padding(10)
+                .padding(8)
+                .spacing(2)
                 .width(Length::Fill)
                 .into()
         } else {
@@ -238,7 +240,6 @@ impl Launcher {
         container(iced::widget::column![
             container(
                 iced::widget::text_input("Search...", &self.input)
-                    .icon(search_icon)
                     .id(TEXT_INPUT_ID.clone())
                     .on_input(Message::InputChange)
                     .on_submit(Message::OpenApp(self.scroll_position))
@@ -246,7 +247,6 @@ impl Launcher {
                     .size(16)
                     .style(move |_, _| {
                         iced::widget::text_input::Style {
-                            // Changed: Now uses the same background color as the app
                             background: iced::Background::Color(iced::Color::TRANSPARENT),
                             border: Border {
                                 width: 0.0,
@@ -260,7 +260,7 @@ impl Launcher {
                     })
             )
             .style(move |_| container::Style {
-                background: Some(iced::Background::Color(base_black)),
+                background: Some(iced::Background::Color(background)),
                 border: Border {
                     radius: iced::border::top(18),
                     ..Default::default()
@@ -279,7 +279,7 @@ impl Launcher {
                 .id(SCROLLABLE_ID.clone())
                 .style(move |_, _| scrollable::Style {
                     container: iced::widget::container::Style {
-                        background: Some(iced::Background::Color(base_black)),
+                        background: Some(iced::Background::Color(background)),
                         border: Border {
                             radius: iced::border::bottom(18),
                             ..Default::default()
@@ -329,7 +329,7 @@ impl Launcher {
             return Task::none();
         };
 
-        let item_height = 56.0;
+        let item_height = 58.0;
 
         let v_top = viewport.absolute_offset().y;
         let v_height = viewport.bounds().height;
