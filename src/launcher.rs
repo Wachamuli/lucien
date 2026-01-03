@@ -1,12 +1,10 @@
 use std::sync::LazyLock;
 
 use iced::{
-    Alignment, Border, Element, Event, Font, Length, Subscription, Task,
-    alignment::Vertical,
-    event,
+    Alignment, Border, Element, Event, Font, Length, Subscription, Task, event,
     keyboard::{self, Key},
     widget::{
-        Column, Container, button, container, row,
+        Column, Container, button, container,
         scrollable::{self, Rail, RelativeOffset},
         text,
         text_input::{self, Icon},
@@ -186,79 +184,29 @@ impl Launcher {
             .iter()
             .enumerate()
             .map(|(index, app)| {
-                let file_ext = app
-                    .icon
-                    .as_ref()
-                    .and_then(|path| path.extension())
-                    .and_then(|ext| ext.to_str())
-                    .unwrap_or_default();
+                app.itemlist(self.scroll_position, index)
+                    .style(move |_, status| {
+                        let is_selected = self.scroll_position == index;
 
-                let icon_view: Element<Message> = match file_ext {
-                    "svg" => iced::widget::svg(iced::widget::svg::Handle::from_path(
-                        app.icon.clone().unwrap_or_default(),
-                    ))
-                    .width(28)
-                    .height(28)
-                    .into(),
-                    _ => iced::widget::image(iced::widget::image::Handle::from_path(
-                        app.icon.clone().unwrap_or_default(),
-                    ))
-                    .width(28)
-                    .height(28)
-                    .into(),
-                };
+                        let bg = if is_selected {
+                            highlight_gray
+                        } else if status == button::Status::Hovered {
+                            transparent_gray
+                        } else {
+                            iced::Color::TRANSPARENT
+                        };
 
-                let shortcut_label = match index {
-                    n if self.scroll_position == n => "Enter".to_string(),
-                    n @ 0..7 => format!("Alt+{}", n + 1),
-                    _ => "".to_string(),
-                };
-
-                button(
-                    row![
-                        icon_view,
-                        iced::widget::column![
-                            text(&app.name).size(14),
-                            text(&app.description)
-                                .width(Length::Fill)
-                                .size(11)
-                                .color(iced::Color::from_rgba(1.0, 1.0, 1.0, 0.3)) // Dimmer description
-                                .wrapping(text::Wrapping::Glyph)
-                                .line_height(1.0)
-                        ],
-                        text(shortcut_label)
-                            .size(11)
-                            .color(iced::Color::from_rgba(1.0, 1.0, 1.0, 0.2))
-                    ]
-                    .align_y(Vertical::Center)
-                    .spacing(12),
-                )
-                .on_press(Message::OpenApp(index))
-                .padding(8)
-                .style(move |_, status| {
-                    let is_selected = index == self.scroll_position;
-
-                    let bg = if is_selected {
-                        highlight_gray
-                    } else if status == button::Status::Hovered {
-                        transparent_gray
-                    } else {
-                        iced::Color::TRANSPARENT
-                    };
-
-                    button::Style {
-                        background: Some(iced::Background::Color(bg)),
-                        text_color: iced::Color::WHITE,
-                        border: Border {
-                            radius: iced::border::radius(8),
-                            width: 0.0,
-                            color: iced::Color::TRANSPARENT,
-                        },
-                        shadow: Default::default(),
-                    }
-                })
-                .width(Length::Fill)
-                .into()
+                        button::Style {
+                            background: Some(iced::Background::Color(bg)),
+                            text_color: iced::Color::WHITE,
+                            border: iced::Border {
+                                radius: iced::border::radius(8),
+                                ..Default::default()
+                            },
+                            ..Default::default()
+                        }
+                    })
+                    .into()
             })
             .collect();
 
@@ -364,7 +312,6 @@ impl Launcher {
         ])
         .padding(1)
         .style(move |_| container::Style {
-            // Subtle outer border ring
             border: Border {
                 width: 1.0,
                 color: border_color,

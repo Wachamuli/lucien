@@ -1,14 +1,26 @@
 use gio::{Icon, prelude::IconExt};
+use iced::{
+    Alignment, Element, Length,
+    widget::{Button, button, image, row, svg, text},
+};
 use std::path::PathBuf;
 
 use gio::{AppInfo, AppLaunchContext, prelude::AppInfoExt};
 
-#[derive(Debug)]
+use crate::launcher::Message;
+
+#[derive(Debug, Clone)]
+pub enum IconHandle {
+    Svg(svg::Handle),
+    Raster(image::Handle),
+}
+
+#[derive(Debug, Clone)]
 pub struct App {
     pub info: AppInfo,
     pub name: String,
     pub description: String,
-    pub icon: Option<PathBuf>,
+    pub icon: Option<IconHandle>,
 }
 
 pub fn all_apps() -> Vec<App> {
@@ -19,7 +31,7 @@ pub fn all_apps() -> Vec<App> {
             info: app.clone(),
             name: app.name().to_string(),
             description: app.description().unwrap_or_default().to_string(),
-            icon: get_icon(app.icon()),
+            icon: load_icon_handle(app.icon()),
         })
         .collect()
 }
@@ -57,13 +69,16 @@ fn get_icon_path_from_xdgicon(iconname: &str) -> Option<PathBuf> {
     None
 }
 
-pub fn get_icon(icon: Option<Icon>) -> Option<PathBuf> {
+fn load_icon_handle(icon: Option<Icon>) -> Option<IconHandle> {
     let path = icon?.to_string()?;
-    if let Some(xdg_icon_path) = get_icon_path_from_xdgicon(&path) {
-        return Some(xdg_icon_path);
-    }
+    let path = get_icon_path_from_xdgicon(&path)?;
+    let extension = path.extension()?.to_str()?.to_lowercase();
 
-    None
+    match extension.as_str() {
+        "svg" => Some(IconHandle::Svg(svg::Handle::from_path(path))),
+        "png" | "jpg" | "jpeg" => Some(IconHandle::Raster(image::Handle::from_path(path))),
+        _ => None,
+    }
 }
 
 impl App {
@@ -73,76 +88,40 @@ impl App {
         }
     }
 
-    // pub fn view(&self, index: usize) -> Element<Message> {
-    //     let i = index;
-    //     let file_ext = self
-    //         .icon
-    //         .as_ref()
-    //         .and_then(|path| path.extension())
-    //         .and_then(|ext| ext.to_str())
-    //         .unwrap_or_default();
+    pub fn itemlist<'a>(&'a self, current_index: usize, index: usize) -> Button<'a, Message> {
+        let icon_view: Element<Message> = match &self.icon {
+            Some(IconHandle::Svg(handle)) => svg(handle.clone()).width(32).height(32).into(),
+            Some(IconHandle::Raster(handle)) => image(handle.clone()).width(32).height(32).into(),
+            None => iced::widget::horizontal_space().width(32).into(),
+        };
 
-    //     let icon_view: Element<Message> = match file_ext {
-    //         "svg" => iced::widget::svg(iced::widget::svg::Handle::from_path(
-    //             self.icon.clone().unwrap_or_default(),
-    //         ))
-    //         .width(32)
-    //         .height(32)
-    //         .into(),
-    //         _ => iced::widget::image(iced::widget::image::Handle::from_path(
-    //             self.icon.clone().unwrap_or_default(),
-    //         ))
-    //         .width(32)
-    //         .height(32)
-    //         .into(),
-    //     };
+        let shortcut_label = match index {
+            n if n == current_index => "Enter".to_string(),
+            n @ 0..7 => format!("Alt-{}", n + 1),
+            _ => "".to_string(),
+        };
 
-    //     iced::widget::button(
-    //         row![
-    //             icon_view,
-    //             iced::widget::column![
-    //                 iced::widget::text(&self.name),
-    //                 iced::widget::text(&self.description)
-    //                     .width(Length::Fill)
-    //                     .size(12)
-    //                     .wrapping(text::Wrapping::Glyph)
-    //                     .line_height(1.0)
-    //             ],
-    //         ]
-    //         .spacing(10),
-    //     )
-    //     .on_press(Message::OpenApp(index))
-    //     .padding(10)
-    //     .style(move |_, status| {
-    //         if index == 0 {
-    //             return button::Style {
-    //                 background: Some(iced::Background::Color(iced::Color::from_rgb(
-    //                     0.3, 0.3, 0.3,
-    //                 ))),
-    //                 text_color: iced::Color::WHITE,
-    //                 border: iced::border::rounded(10),
-    //                 shadow: Default::default(),
-    //             };
-    //         }
-
-    //         match status {
-    //             button::Status::Hovered => button::Style {
-    //                 background: Some(iced::Background::Color(iced::Color::from_rgb(
-    //                     0.3, 0.3, 0.3,
-    //                 ))),
-    //                 text_color: iced::Color::WHITE,
-    //                 border: iced::border::rounded(10),
-    //                 shadow: Default::default(),
-    //             },
-    //             _ => button::Style {
-    //                 background: Some(iced::Background::Color(iced::color!(0, 0, 0))),
-    //                 text_color: iced::Color::WHITE,
-    //                 border: iced::border::rounded(20),
-    //                 shadow: Default::default(),
-    //             },
-    //         }
-    //     })
-    //     .width(Length::Fill)
-    //     .into()
-    // }
+        button(
+            row![
+                icon_view,
+                iced::widget::column![
+                    text(&self.name).size(14),
+                    text(&self.description)
+                        .size(11)
+                        .color([0.5, 0.5, 0.5])
+                        .width(Length::Fill),
+                ]
+                .spacing(2),
+                text(shortcut_label)
+                    .size(11)
+                    .color([0.5, 0.5, 0.5])
+                    .align_x(Alignment::End),
+            ]
+            .spacing(12)
+            .align_y(iced::Alignment::Center),
+        )
+        .on_press(Message::OpenApp(index))
+        .padding(10)
+        .width(Length::Fill)
+    }
 }
