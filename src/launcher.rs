@@ -17,7 +17,8 @@ use crate::app::{App, all_apps};
 #[derive(Debug, Default)]
 pub struct Lucien {
     input: String,
-    apps: Vec<App>,
+    all_apps: Vec<App>,
+    filtered_apps: Vec<App>,
     scroll_position: usize,
     last_viewport: Option<iced::widget::scrollable::Viewport>,
 }
@@ -46,9 +47,11 @@ static MAGNIFIER: &[u8] = include_bytes!("../assets/magnifier.png");
 impl Lucien {
     pub fn init() -> (Self, Task<Message>) {
         let auto_focus_task = text_input::focus(TEXT_INPUT_ID.clone());
+        let all = all_apps();
         let initial_values = Self {
             input: String::new(),
-            apps: all_apps(),
+            all_apps: all.clone(),
+            filtered_apps: all,
             scroll_position: 0,
             last_viewport: None,
         };
@@ -59,7 +62,7 @@ impl Lucien {
     pub fn update(&mut self, message: Message) -> Task<Message> {
         match message {
             Message::OpenApp(index) | Message::AltDigitShortcut(index) => {
-                let Some(app) = self.apps.get(index) else {
+                let Some(app) = self.filtered_apps.get(index) else {
                     return Task::none();
                 };
 
@@ -71,18 +74,19 @@ impl Lucien {
             Message::InputChange(input) => {
                 let matcher = SkimMatcherV2::default();
 
-                let mut ranked_apps: Vec<(i64, App)> = all_apps()
-                    .into_iter()
+                let mut ranked_apps: Vec<(i64, App)> = self
+                    .all_apps
+                    .iter()
                     .filter_map(|app| {
                         matcher
                             .fuzzy_match(&app.name, &input)
-                            .map(|score| (score, app))
+                            .map(|score| (score, app.clone()))
                     })
                     .collect();
 
                 ranked_apps.sort_by(|a, b| b.0.cmp(&a.0));
 
-                self.apps = ranked_apps.into_iter().map(|(_score, app)| app).collect();
+                self.filtered_apps = ranked_apps.into_iter().map(|(_score, app)| app).collect();
                 self.input = input;
                 self.scroll_position = 0;
 
@@ -108,7 +112,8 @@ impl Lucien {
             })) if modifiers.shift() => {
                 let old_pos = self.scroll_position;
 
-                self.scroll_position = wrapped_index(self.scroll_position, self.apps.len(), -1);
+                self.scroll_position =
+                    wrapped_index(self.scroll_position, self.filtered_apps.len(), -1);
 
                 if old_pos != self.scroll_position {
                     return self.snap_if_needed();
@@ -125,11 +130,13 @@ impl Lucien {
                 let old_pos = self.scroll_position;
 
                 if let kp::ArrowDown | kp::Tab = key_pressed {
-                    self.scroll_position = wrapped_index(self.scroll_position, self.apps.len(), 1);
+                    self.scroll_position =
+                        wrapped_index(self.scroll_position, self.filtered_apps.len(), 1);
                 }
 
                 if let kp::ArrowUp = key_pressed {
-                    self.scroll_position = wrapped_index(self.scroll_position, self.apps.len(), -1);
+                    self.scroll_position =
+                        wrapped_index(self.scroll_position, self.filtered_apps.len(), -1);
                 }
 
                 if old_pos != self.scroll_position {
@@ -203,7 +210,7 @@ impl Lucien {
         let text_dim = iced::Color::from_rgba(1.0, 1.0, 1.0, 0.5);
 
         let app_items: Vec<Element<Message>> = self
-            .apps
+            .filtered_apps
             .iter()
             .enumerate()
             .map(|(index, app)| {
@@ -381,7 +388,7 @@ impl Lucien {
             return Task::none();
         };
 
-        let item_height = 58.0;
+        let item_height = 62.0;
 
         let v_top = viewport.absolute_offset().y;
         let v_height = viewport.bounds().height;
