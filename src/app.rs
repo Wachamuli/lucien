@@ -1,11 +1,10 @@
+use gio::{AppInfo, prelude::AppInfoExt};
 use gio::{Icon, prelude::IconExt};
 use iced::{
     Alignment, Element, Length,
     widget::{Button, button, image, row, svg, text},
 };
-use std::path::PathBuf;
-
-use gio::{AppInfo, AppLaunchContext, prelude::AppInfoExt};
+use std::{io, os::unix::process::CommandExt, path::PathBuf, process};
 
 use crate::launcher::Message;
 
@@ -84,10 +83,30 @@ fn load_icon_handle(icon: Option<Icon>) -> Option<IconHandle> {
 }
 
 impl App {
-    pub fn launch(&self) {
-        if let Err(e) = self.info.launch(&[], AppLaunchContext::NONE) {
-            dbg!(e);
+    pub fn launch(&self) -> io::Result<process::Child> {
+        let raw_cmd = self.info.commandline().ok_or_else(|| {
+            std::io::Error::new(std::io::ErrorKind::NotFound, "No command line found")
+        })?;
+        let clean_cmd = raw_cmd
+            .to_str()
+            .unwrap_or("")
+            .split_whitespace()
+            .filter(|arg| !arg.starts_with('%'))
+            .collect::<Vec<_>>()
+            .join(" ");
+        let mut shell = process::Command::new("sh");
+
+        unsafe {
+            shell
+                .arg("-c")
+                .arg(format!("{} &", clean_cmd))
+                .pre_exec(|| {
+                    libc::setsid();
+                    Ok(())
+                });
         }
+
+        shell.spawn()
     }
 
     pub fn itemlist<'a>(&'a self, current_index: usize, index: usize) -> Button<'a, Message> {

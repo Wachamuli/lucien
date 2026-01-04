@@ -32,6 +32,7 @@ pub enum Message {
     EscPressed,
     AltDigitShortcut(usize),
     ScrollableViewport(iced::widget::scrollable::Viewport),
+    Close,
 }
 
 static TEXT_INPUT_ID: LazyLock<text_input::Id> = std::sync::LazyLock::new(text_input::Id::unique);
@@ -54,17 +55,15 @@ impl Lucien {
 
     pub fn update(&mut self, message: Message) -> Task<Message> {
         match message {
-            Message::ScrollableViewport(viewport) => {
-                self.last_viewport = Some(viewport);
-                Task::none()
-            }
-            Message::OpenApp(index) => {
-                if let Some(app) = self.apps.get(index) {
-                    app.launch();
-                    std::process::exit(0)
-                }
+            Message::OpenApp(index) | Message::AltDigitShortcut(index) => {
+                let Some(app) = self.apps.get(index) else {
+                    return Task::none();
+                };
 
-                Task::none()
+                match app.launch() {
+                    Ok(_) => iced::exit(),
+                    Err(_) => Task::none(), // TODO: Handle this error
+                }
             }
             Message::InputChange(input) => {
                 let matcher = SkimMatcherV2::default();
@@ -95,15 +94,8 @@ impl Lucien {
 
                 Task::none()
             }
-            Message::EscPressed => {
-                std::process::exit(0);
-            }
-            Message::AltDigitShortcut(n) => {
-                if let Some(app) = self.apps.get(n - 1) {
-                    app.launch();
-                    std::process::exit(0);
-                }
-
+            Message::ScrollableViewport(viewport) => {
+                self.last_viewport = Some(viewport);
                 Task::none()
             }
             Message::SystemEvent(iced::Event::Keyboard(keyboard::Event::KeyPressed {
@@ -142,8 +134,10 @@ impl Lucien {
 
                 Task::none()
             }
-            Message::SystemEvent(iced::Event::Mouse(iced::mouse::Event::ButtonPressed(_))) => {
-                std::process::exit(0)
+            Message::Close
+            | Message::EscPressed
+            | Message::SystemEvent(iced::Event::Mouse(iced::mouse::Event::ButtonPressed(_))) => {
+                iced::exit()
             }
             Message::SystemEvent(_) => Task::none(),
             Message::AnchorChange(_anchor) => todo!(),
@@ -242,14 +236,6 @@ impl Lucien {
             .align_x(Alignment::Center)
             .padding(20)
             .into()
-        };
-
-        let search_icon = Icon {
-            font: Font::with_name("SF Pro Display"),
-            code_point: '\u{2315}',
-            size: Some(iced::Pixels(16.4)),
-            spacing: 8.,
-            side: text_input::Side::Left,
         };
 
         container(iced::widget::column![
