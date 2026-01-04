@@ -39,9 +39,9 @@ static SCROLLABLE_ID: LazyLock<scrollable::Id> = std::sync::LazyLock::new(scroll
 
 // #EBECF2
 static MAGNIFIER: &[u8] = include_bytes!("../assets/magnifier.png");
-static TERMINAL_PROMPT: &[u8] = include_bytes!("../assets/terminal-prompt.png");
-static FOLDER: &[u8] = include_bytes!("../assets/folder.png");
-static CLIPBOARD: &[u8] = include_bytes!("../assets/clipboard.png");
+// static TERMINAL_PROMPT: &[u8] = include_bytes!("../assets/terminal-prompt.png");
+// static FOLDER: &[u8] = include_bytes!("../assets/folder.png");
+// static CLIPBOARD: &[u8] = include_bytes!("../assets/clipboard.png");
 
 impl Lucien {
     pub fn init() -> (Self, Task<Message>) {
@@ -187,6 +187,14 @@ impl Lucien {
     }
 
     pub fn view<'a>(&'a self) -> Container<'a, Message> {
+        // Lighter variant
+        // let background = iced::Color::from_rgba(0.12, 0.12, 0.12, 0.85);
+        // let border_color = iced::Color::from_rgba(1.0, 1.0, 1.0, 0.15);
+        // let inner_glow = iced::Color::from_rgba(1.0, 1.0, 1.0, 0.08);
+        // let active_selection = iced::Color::from_rgba(1.0, 1.0, 1.0, 0.12);
+        // let text_main = iced::Color::from_rgba(0.95, 0.95, 0.95, 1.0);
+        // let text_dim = iced::Color::from_rgba(1.0, 1.0, 1.0, 0.5);
+
         let background = iced::Color::from_rgba(0.12, 0.12, 0.12, 0.95);
         let border_color = iced::Color::from_rgba(0.65, 0.65, 0.65, 0.15);
         let inner_glow = iced::Color::from_rgba(1.0, 1.0, 1.0, 0.08);
@@ -248,7 +256,7 @@ impl Lucien {
                 .on_input(Message::InputChange)
                 .on_submit(Message::OpenApp(self.scroll_position))
                 .padding(8)
-                .size(15)
+                .size(18)
                 .style(move |_, _| {
                     iced::widget::text_input::Style {
                         background: iced::Background::Color(iced::Color::TRANSPARENT),
@@ -303,19 +311,57 @@ impl Lucien {
                 gap: None,
             });
 
+        // let mode_circle = |bytes: &'static [u8]| {
+        //     container(
+        //         iced::widget::image(iced::widget::image::Handle::from_bytes(bytes))
+        //             .width(28)
+        //             .height(28),
+        //     )
+        //     .padding(18)
+        //     .style(move |_| container::Style {
+        //         background: Some(iced::Background::Color(background)),
+        //         border: Border {
+        //             width: 1.0,
+        //             color: border_color,
+        //             radius: iced::border::radius(36),
+        //         },
+        //         ..Default::default()
+        //     })
+        // };
+
+        // let modes_island = container(
+        //     row![
+        //         mode_circle(MAGNIFIER),
+        //         mode_circle(FOLDER),
+        //         mode_circle(TERMINAL_PROMPT),
+        //         mode_circle(CLIPBOARD),
+        //     ]
+        //     .spacing(10),
+        // )
+        // .align_y(Alignment::Center)
+        // .style(move |_| container::Style {
+        //     background: Some(iced::Background::Color(iced::Color::TRANSPARENT)),
+        //     ..Default::default()
+        // });
+
         container(
             iced::widget::column![
-                container(row![prompt].spacing(10).align_y(Alignment::Center))
-                    .padding(15)
-                    .style(move |_| container::Style {
-                        background: Some(iced::Background::Color(background)),
-                        border: Border {
-                            width: 1.0,
-                            color: border_color,
-                            radius: iced::border::radius(20),
-                        },
-                        ..Default::default()
-                    }),
+                row![
+                    container(prompt)
+                        .padding(15)
+                        .style(move |_| container::Style {
+                            background: Some(iced::Background::Color(background)),
+                            border: Border {
+                                width: 1.0,
+                                color: border_color,
+                                radius: iced::border::radius(20),
+                            },
+                            ..Default::default()
+                        }),
+                    // modes_island
+                ]
+                .spacing(10)
+                .align_y(Alignment::Center),
                 container(results).style(move |_| container::Style {
                     background: Some(iced::Background::Color(background)),
                     border: Border {
