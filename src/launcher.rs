@@ -37,7 +37,11 @@ pub enum Message {
 static TEXT_INPUT_ID: LazyLock<text_input::Id> = std::sync::LazyLock::new(text_input::Id::unique);
 static SCROLLABLE_ID: LazyLock<scrollable::Id> = std::sync::LazyLock::new(scrollable::Id::unique);
 
-static GLASSES_ICON: &[u8] = include_bytes!("../assets/glasses.png");
+// #EBECF2
+static MAGNIFIER: &[u8] = include_bytes!("../assets/magnifier.png");
+static TERMINAL_PROMPT: &[u8] = include_bytes!("../assets/terminal-prompt.png");
+static FOLDER: &[u8] = include_bytes!("../assets/folder.png");
+static CLIPBOARD: &[u8] = include_bytes!("../assets/clipboard.png");
 
 impl Lucien {
     pub fn init() -> (Self, Task<Message>) {
@@ -183,8 +187,8 @@ impl Lucien {
     }
 
     pub fn view<'a>(&'a self) -> Container<'a, Message> {
-        let background = iced::Color::from_rgba(0.12, 0.12, 0.12, 0.85);
-        let border_color = iced::Color::from_rgba(1.0, 1.0, 1.0, 0.15);
+        let background = iced::Color::from_rgba(0.12, 0.12, 0.12, 0.95);
+        let border_color = iced::Color::from_rgba(0.65, 0.65, 0.65, 0.15);
         let inner_glow = iced::Color::from_rgba(1.0, 1.0, 1.0, 0.08);
         let active_selection = iced::Color::from_rgba(1.0, 1.0, 1.0, 0.12);
         let text_main = iced::Color::from_rgba(0.95, 0.95, 0.95, 1.0);
@@ -235,96 +239,95 @@ impl Lucien {
                 .into()
         };
 
-        container(iced::widget::column![
-            container(
-                row![
-                    iced::widget::image(iced::widget::image::Handle::from_bytes(GLASSES_ICON))
-                        .width(28)
-                        .height(28),
-                    iced::widget::text_input("Search...", &self.input)
-                        .id(TEXT_INPUT_ID.clone())
-                        .on_input(Message::InputChange)
-                        .on_submit(Message::OpenApp(self.scroll_position))
-                        .padding(8)
-                        .size(15)
-                        .style(move |_, _| {
-                            iced::widget::text_input::Style {
-                                background: iced::Background::Color(iced::Color::TRANSPARENT),
-                                border: Border {
-                                    width: 0.0,
-                                    ..Default::default()
-                                },
-                                icon: text_main,
-                                placeholder: text_dim,
-                                value: text_main,
-                                selection: active_selection,
-                            }
-                        })
-                ]
-                .spacing(10)
-                .align_y(Alignment::Center)
-            )
-            .padding(15)
-            .style(move |_| container::Style {
-                background: Some(iced::Background::Color(background)),
-                border: Border {
-                    radius: iced::border::top(18),
-                    ..Default::default()
-                },
-                ..Default::default()
-            }),
-            iced::widget::horizontal_rule(1).style(move |_| iced::widget::rule::Style {
-                color: border_color,
-                width: 1,
-                radius: iced::border::radius(0),
-                fill_mode: iced::widget::rule::FillMode::Full,
-            }),
-            iced::widget::scrollable(app_list_content)
-                .on_scroll(Message::ScrollableViewport)
-                .id(SCROLLABLE_ID.clone())
-                .style(move |_, _| scrollable::Style {
-                    container: iced::widget::container::Style {
-                        background: Some(iced::Background::Color(background)),
+        let prompt = row![
+            iced::widget::image(iced::widget::image::Handle::from_bytes(MAGNIFIER))
+                .width(28)
+                .height(28),
+            iced::widget::text_input("Search...", &self.input)
+                .id(TEXT_INPUT_ID.clone())
+                .on_input(Message::InputChange)
+                .on_submit(Message::OpenApp(self.scroll_position))
+                .padding(8)
+                .size(15)
+                .style(move |_, _| {
+                    iced::widget::text_input::Style {
+                        background: iced::Background::Color(iced::Color::TRANSPARENT),
                         border: Border {
-                            radius: iced::border::bottom(18),
+                            width: 0.0,
                             ..Default::default()
                         },
+                        icon: text_main,
+                        placeholder: text_dim,
+                        value: text_main,
+                        selection: active_selection,
+                    }
+                }),
+        ]
+        .spacing(10)
+        .align_y(Alignment::Center);
+
+        let results = iced::widget::scrollable(app_list_content)
+            .on_scroll(Message::ScrollableViewport)
+            .id(SCROLLABLE_ID.clone())
+            .style(move |_, _| scrollable::Style {
+                container: iced::widget::container::Style {
+                    background: Some(iced::Background::Color(iced::Color::TRANSPARENT)),
+                    border: Border {
+                        radius: iced::border::radius(20),
                         ..Default::default()
                     },
-                    vertical_rail: Rail {
-                        background: Some(iced::Background::Color(iced::Color::TRANSPARENT)),
-                        scroller: scrollable::Scroller {
-                            color: iced::Color::TRANSPARENT,
-                            border: Border {
-                                width: 0.0,
-                                ..Default::default()
-                            }
+                    ..Default::default()
+                },
+                vertical_rail: Rail {
+                    background: Some(iced::Background::Color(iced::Color::TRANSPARENT)),
+                    scroller: scrollable::Scroller {
+                        color: iced::Color::TRANSPARENT,
+                        border: Border {
+                            width: 0.0,
+                            ..Default::default()
                         },
-                        border: Border::default(),
                     },
-                    horizontal_rail: Rail {
-                        background: None,
-                        scroller: scrollable::Scroller {
+                    border: Border::default(),
+                },
+                horizontal_rail: Rail {
+                    background: None,
+                    scroller: scrollable::Scroller {
+                        color: border_color,
+                        border: Border {
+                            radius: iced::border::radius(5),
+                            ..Default::default()
+                        },
+                    },
+                    border: Border::default(),
+                },
+                gap: None,
+            });
+
+        container(
+            iced::widget::column![
+                container(row![prompt].spacing(10).align_y(Alignment::Center))
+                    .padding(15)
+                    .style(move |_| container::Style {
+                        background: Some(iced::Background::Color(background)),
+                        border: Border {
+                            width: 1.0,
                             color: border_color,
-                            border: Border {
-                                radius: iced::border::radius(5),
-                                ..Default::default()
-                            },
+                            radius: iced::border::radius(20),
                         },
-                        border: Border::default(),
+                        ..Default::default()
+                    }),
+                container(results).style(move |_| container::Style {
+                    background: Some(iced::Background::Color(background)),
+                    border: Border {
+                        width: 1.0,
+                        color: border_color,
+                        radius: iced::border::radius(20),
                     },
-                    gap: None
-                }),
-        ])
-        .padding(1)
-        .style(move |_| container::Style {
-            border: Border {
-                width: 1.0,
-                color: border_color,
-                radius: iced::border::radius(20),
-            },
-            ..Default::default()
-        })
+                    ..Default::default()
+                })
+            ]
+            .spacing(10),
+        )
     }
 
     fn snap_if_needed(&self) -> Task<Message> {

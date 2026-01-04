@@ -124,7 +124,7 @@ impl App {
                 .into(),
             n @ 0..7 => text(format!("Alt+{}", n + 1))
                 .size(11)
-                .color(iced::Color::from_rgba(1.0, 1.0, 1.0, 0.5))
+                .color([1.0, 1.0, 1.0, 0.5])
                 .align_x(Alignment::End)
                 .into(),
             _ => text("").into(),
