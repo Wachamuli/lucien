@@ -23,6 +23,8 @@ pub struct App {
     pub icon: Option<IconHandle>,
 }
 
+static ENTER: &[u8] = include_bytes!("../assets/enter.png");
+
 pub fn all_apps() -> Vec<App> {
     gio::AppInfo::all()
         .iter()
@@ -95,10 +97,18 @@ impl App {
             None => iced::widget::horizontal_space().width(32).into(),
         };
 
-        let shortcut_label = match index {
-            n if n == current_index => "Enter".to_string(),
-            n @ 0..7 => format!("Alt-{}", n + 1),
-            _ => "".to_string(),
+        use iced::widget::image;
+        let shortcut_label: Element<_> = match index {
+            n if n == current_index => image(image::Handle::from_bytes(ENTER))
+                .width(18)
+                .height(18)
+                .into(),
+            n @ 0..7 => text(format!("Alt+{}", n + 1))
+                .size(11)
+                .color(iced::Color::from_rgba(1.0, 1.0, 1.0, 0.5))
+                .align_x(Alignment::End)
+                .into(),
+            _ => text("").into(),
         };
 
         button(
@@ -112,10 +122,7 @@ impl App {
                         .width(Length::Fill),
                 ]
                 .spacing(2),
-                text(shortcut_label)
-                    .size(11)
-                    .color(iced::Color::from_rgba(1.0, 1.0, 1.0, 0.5))
-                    .align_x(Alignment::End),
+                shortcut_label
             ]
             .spacing(12)
             .align_y(iced::Alignment::Center),

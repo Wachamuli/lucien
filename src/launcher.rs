@@ -5,7 +5,7 @@ use iced::{
     Alignment, Border, Element, Event, Font, Length, Subscription, Task, event,
     keyboard::{self, Key},
     widget::{
-        Column, Container, button, container,
+        Column, Container, button, container, row,
         scrollable::{self, Rail, RelativeOffset},
         text,
         text_input::{self, Icon},
@@ -16,7 +16,7 @@ use iced_layershell::to_layer_message;
 use crate::app::{App, all_apps};
 
 #[derive(Debug, Default)]
-pub struct Launcher {
+pub struct Lucien {
     input: String,
     apps: Vec<App>,
     scroll_position: usize,
@@ -37,7 +37,9 @@ pub enum Message {
 static TEXT_INPUT_ID: LazyLock<text_input::Id> = std::sync::LazyLock::new(text_input::Id::unique);
 static SCROLLABLE_ID: LazyLock<scrollable::Id> = std::sync::LazyLock::new(scrollable::Id::unique);
 
-impl Launcher {
+static GLASSES_ICON: &[u8] = include_bytes!("../assets/glasses.png");
+
+impl Lucien {
     pub fn init() -> (Self, Task<Message>) {
         let auto_focus_task = text_input::focus(TEXT_INPUT_ID.clone());
         let initial_values = Self {
@@ -252,25 +254,31 @@ impl Launcher {
 
         container(iced::widget::column![
             container(
-                iced::widget::text_input("Search...", &self.input)
-                    .id(TEXT_INPUT_ID.clone())
-                    .on_input(Message::InputChange)
-                    .on_submit(Message::OpenApp(self.scroll_position))
-                    .padding(5)
-                    .size(16)
-                    .style(move |_, _| {
-                        iced::widget::text_input::Style {
-                            background: iced::Background::Color(iced::Color::TRANSPARENT),
-                            border: Border {
-                                width: 0.0,
-                                ..Default::default()
-                            },
-                            icon: iced::Color::WHITE,
-                            placeholder: iced::Color::from_rgba(1.0, 1.0, 1.0, 0.2),
-                            value: iced::Color::WHITE,
-                            selection: iced::Color::from_rgba(1.0, 1.0, 1.0, 0.1),
-                        }
-                    })
+                row![
+                    iced::widget::image(iced::widget::image::Handle::from_bytes(GLASSES_ICON))
+                        .width(32)
+                        .height(32),
+                    iced::widget::text_input("Search...", &self.input)
+                        .id(TEXT_INPUT_ID.clone())
+                        .on_input(Message::InputChange)
+                        .on_submit(Message::OpenApp(self.scroll_position))
+                        .padding(5)
+                        .size(16)
+                        .style(move |_, _| {
+                            iced::widget::text_input::Style {
+                                background: iced::Background::Color(iced::Color::TRANSPARENT),
+                                border: Border {
+                                    width: 0.0,
+                                    ..Default::default()
+                                },
+                                icon: iced::Color::WHITE,
+                                placeholder: iced::Color::from_rgba(1.0, 1.0, 1.0, 0.2),
+                                value: iced::Color::WHITE,
+                                selection: iced::Color::from_rgba(1.0, 1.0, 1.0, 0.1),
+                            }
+                        })
+                ]
+                .spacing(4)
             )
             .style(move |_| container::Style {
                 background: Some(iced::Background::Color(background)),

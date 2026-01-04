@@ -1,4 +1,4 @@
-use crate::launcher::Launcher;
+use crate::launcher::Lucien;
 
 mod app;
 mod launcher;
@@ -20,15 +20,15 @@ pub fn main() -> iced_layershell::Result {
 
     iced_layershell::build_pattern::application(
         "application_launcher",
-        Launcher::update,
-        Launcher::view,
+        Lucien::update,
+        Lucien::view,
     )
-    .subscription(Launcher::subscription)
+    .subscription(Lucien::subscription)
     .layer_settings(layershell_settings)
     .antialiasing(true)
     .style(|_state, _theme| Appearance {
         background_color: iced::Color::TRANSPARENT,
         text_color: Default::default(),
     })
-    .run_with(Launcher::init)
+    .run_with(Lucien::init)
 }
