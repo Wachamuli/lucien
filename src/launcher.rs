@@ -2,13 +2,12 @@ use std::sync::LazyLock;
 
 use fuzzy_matcher::{FuzzyMatcher, skim::SkimMatcherV2};
 use iced::{
-    Alignment, Border, Element, Event, Font, Length, Subscription, Task, event,
+    Alignment, Border, Element, Event, Length, Subscription, Task, event,
     keyboard::{self, Key},
     widget::{
         Column, Container, button, container, row,
         scrollable::{self, Rail, RelativeOffset},
-        text,
-        text_input::{self, Icon},
+        text, text_input,
     },
 };
 use iced_layershell::to_layer_message;
@@ -118,13 +117,14 @@ impl Lucien {
                 ..
             })) => {
                 use iced::keyboard::key::Named as kp;
+
                 let old_pos = self.scroll_position;
 
                 if let kp::ArrowDown | kp::Tab = key_pressed {
                     self.scroll_position = wrapped_index(self.scroll_position, self.apps.len(), 1);
                 }
 
-                if let keyboard::key::Named::ArrowUp = key_pressed {
+                if let kp::ArrowUp = key_pressed {
                     self.scroll_position = wrapped_index(self.scroll_position, self.apps.len(), -1);
                 }
 
@@ -183,11 +183,12 @@ impl Lucien {
     }
 
     pub fn view<'a>(&'a self) -> Container<'a, Message> {
-        let background = iced::Color::from_rgba(0.07, 0.07, 0.07, 0.98);
-        let border_color = iced::Color::from_rgba(1.0, 1.0, 1.0, 0.35);
-        let highlight_gray = iced::Color::from_rgba(1.0, 1.0, 1.0, 0.1);
-        let transparent_highlight_gray = iced::Color::from_rgba(1.0, 1.0, 1.0, 0.06);
-        let dim_text_color = iced::Color::from_rgba(1.0, 1.0, 1.0, 0.5);
+        let background = iced::Color::from_rgba(0.12, 0.12, 0.12, 0.85);
+        let border_color = iced::Color::from_rgba(1.0, 1.0, 1.0, 0.15);
+        let inner_glow = iced::Color::from_rgba(1.0, 1.0, 1.0, 0.08);
+        let active_selection = iced::Color::from_rgba(1.0, 1.0, 1.0, 0.12);
+        let text_main = iced::Color::from_rgba(0.95, 0.95, 0.95, 1.0);
+        let text_dim = iced::Color::from_rgba(1.0, 1.0, 1.0, 0.5);
 
         let app_items: Vec<Element<Message>> = self
             .apps
@@ -199,18 +200,18 @@ impl Lucien {
                         let is_selected = self.scroll_position == index;
 
                         let bg = if is_selected {
-                            highlight_gray
+                            active_selection
                         } else if status == button::Status::Hovered {
-                            transparent_highlight_gray
+                            inner_glow
                         } else {
                             iced::Color::TRANSPARENT
                         };
 
                         button::Style {
                             background: Some(iced::Background::Color(bg)),
-                            text_color: dim_text_color,
+                            text_color: if is_selected { text_main } else { text_dim },
                             border: iced::Border {
-                                radius: iced::border::radius(8),
+                                radius: iced::border::radius(10),
                                 ..Default::default()
                             },
                             ..Default::default()
@@ -222,34 +223,30 @@ impl Lucien {
 
         let app_list_content: Element<_> = if !app_items.is_empty() {
             Column::with_children(app_items)
-                .padding(8)
-                .spacing(2)
+                .padding(10)
+                .spacing(4)
                 .width(Length::Fill)
                 .into()
         } else {
-            container(
-                text("No results")
-                    .size(13)
-                    .color(iced::Color::from_rgba(1.0, 1.0, 1.0, 0.4)),
-            )
-            .width(Length::Fill)
-            .align_x(Alignment::Center)
-            .padding(20)
-            .into()
+            container(text("No Results Found").size(14).color(text_dim))
+                .width(Length::Fill)
+                .align_x(Alignment::Center)
+                .padding(25)
+                .into()
         };
 
         container(iced::widget::column![
             container(
                 row![
                     iced::widget::image(iced::widget::image::Handle::from_bytes(GLASSES_ICON))
-                        .width(32)
-                        .height(32),
+                        .width(28)
+                        .height(28),
                     iced::widget::text_input("Search...", &self.input)
                         .id(TEXT_INPUT_ID.clone())
                         .on_input(Message::InputChange)
                         .on_submit(Message::OpenApp(self.scroll_position))
-                        .padding(5)
-                        .size(16)
+                        .padding(8)
+                        .size(15)
                         .style(move |_, _| {
                             iced::widget::text_input::Style {
                                 background: iced::Background::Color(iced::Color::TRANSPARENT),
@@ -257,15 +254,17 @@ impl Lucien {
                                     width: 0.0,
                                     ..Default::default()
                                 },
-                                icon: iced::Color::WHITE,
-                                placeholder: iced::Color::from_rgba(1.0, 1.0, 1.0, 0.2),
-                                value: iced::Color::WHITE,
-                                selection: iced::Color::from_rgba(1.0, 1.0, 1.0, 0.1),
+                                icon: text_main,
+                                placeholder: text_dim,
+                                value: text_main,
+                                selection: active_selection,
                             }
                         })
                 ]
-                .spacing(4)
+                .spacing(10)
+                .align_y(Alignment::Center)
             )
+            .padding(15)
             .style(move |_| container::Style {
                 background: Some(iced::Background::Color(background)),
                 border: Border {
@@ -273,8 +272,7 @@ impl Lucien {
                     ..Default::default()
                 },
                 ..Default::default()
-            })
-            .padding(15),
+            }),
             iced::widget::horizontal_rule(1).style(move |_| iced::widget::rule::Style {
                 color: border_color,
                 width: 1,
@@ -298,10 +296,9 @@ impl Lucien {
                         scroller: scrollable::Scroller {
                             color: iced::Color::TRANSPARENT,
                             border: Border {
-                                radius: iced::border::Radius::new(10.0),
                                 width: 0.0,
-                                color: iced::Color::TRANSPARENT,
-                            },
+                                ..Default::default()
+                            }
                         },
                         border: Border::default(),
                     },
@@ -310,9 +307,8 @@ impl Lucien {
                         scroller: scrollable::Scroller {
                             color: border_color,
                             border: Border {
-                                radius: iced::border::Radius::new(10.0),
-                                width: 0.0,
-                                color: iced::Color::TRANSPARENT,
+                                radius: iced::border::radius(5),
+                                ..Default::default()
                             },
                         },
                         border: Border::default(),

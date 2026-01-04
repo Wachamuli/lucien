@@ -134,10 +134,10 @@ impl App {
             row![
                 icon_view,
                 iced::widget::column![
-                    text(&self.name).size(14),
+                    text(&self.name).size(14).color([0.95, 0.95, 0.95, 1.0]),
                     text(&self.description)
                         .size(11)
-                        .color(iced::Color::from_rgba(1.0, 1.0, 1.0, 0.5))
+                        .color([1.0, 1.0, 1.0, 0.5])
                         .width(Length::Fill),
                 ]
                 .spacing(2),
