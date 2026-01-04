@@ -81,7 +81,17 @@ impl Launcher {
                 self.apps = ranked_apps.into_iter().map(|(_score, app)| app).collect();
                 self.input = input;
                 self.scroll_position = 0;
-                iced::Task::none()
+
+                if let Some(viewport) = self.last_viewport {
+                    if viewport.absolute_offset().y > 0.0 {
+                        return scrollable::snap_to(
+                            SCROLLABLE_ID.clone(),
+                            RelativeOffset { x: 0.0, y: 0.0 },
+                        );
+                    }
+                }
+
+                Task::none()
             }
             Message::EscPressed => {
                 std::process::exit(0);
@@ -181,7 +191,7 @@ impl Launcher {
         let border_color = iced::Color::from_rgba(1.0, 1.0, 1.0, 0.35);
         let highlight_gray = iced::Color::from_rgba(1.0, 1.0, 1.0, 0.1);
         let transparent_highlight_gray = iced::Color::from_rgba(1.0, 1.0, 1.0, 0.06);
-        let dim_text_color = iced::Color::from_rgba(1.0, 1.0, 1.0, 0.65);
+        let dim_text_color = iced::Color::from_rgba(1.0, 1.0, 1.0, 0.5);
 
         let app_items: Vec<Element<Message>> = self
             .apps
