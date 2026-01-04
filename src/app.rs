@@ -4,22 +4,17 @@ use iced::{
     Alignment, Element, Length,
     widget::{Button, button, image, row, svg, text},
 };
+use resvg::tiny_skia;
 use std::{io, os::unix::process::CommandExt, path::PathBuf, process};
 
 use crate::launcher::Message;
-
-#[derive(Debug, Clone)]
-pub enum IconHandle {
-    Svg(svg::Handle),
-    Raster(image::Handle),
-}
 
 #[derive(Debug, Clone)]
 pub struct App {
     pub info: AppInfo,
     pub name: String,
     pub description: String,
-    pub icon: Option<IconHandle>,
+    pub icon: Option<iced::widget::image::Handle>,
 }
 
 static ENTER: &[u8] = include_bytes!("../assets/enter.png");
@@ -32,7 +27,7 @@ pub fn all_apps() -> Vec<App> {
             info: app.clone(),
             name: app.name().to_string(),
             description: app.description().unwrap_or_default().to_string(),
-            icon: load_icon_handle(app.icon()),
+            icon: load_raster_icon(app.icon()),
         })
         .collect()
 }
@@ -70,14 +65,28 @@ fn get_icon_path_from_xdgicon(iconname: &str) -> Option<PathBuf> {
     None
 }
 
-fn load_icon_handle(icon: Option<Icon>) -> Option<IconHandle> {
-    let path = icon?.to_string()?;
-    let path = get_icon_path_from_xdgicon(&path)?;
-    let extension = path.extension()?.to_str()?.to_lowercase();
+fn rasterize_svg(path: PathBuf, size: u32) -> Option<image::Handle> {
+    let svg_data = std::fs::read(path).ok()?;
+    let tree = resvg::usvg::Tree::from_data(&svg_data, &resvg::usvg::Options::default()).ok()?;
 
-    match extension.as_str() {
-        "svg" => Some(IconHandle::Svg(svg::Handle::from_path(path))),
-        "png" | "jpg" | "jpeg" => Some(IconHandle::Raster(image::Handle::from_path(path))),
+    let mut pixmap = tiny_skia::Pixmap::new(size, size)?;
+    let transform = tiny_skia::Transform::from_scale(
+        size as f32 / tree.size().width(),
+        size as f32 / tree.size().height(),
+    );
+
+    resvg::render(&tree, transform, &mut pixmap.as_mut());
+    Some(image::Handle::from_rgba(size, size, pixmap.data().to_vec()))
+}
+
+fn load_raster_icon(icon: Option<Icon>) -> Option<image::Handle> {
+    let path_str = icon?.to_string()?;
+    let path = get_icon_path_from_xdgicon(&path_str)?;
+    let extension = path.extension()?.to_str()?;
+
+    match extension {
+        "svg" => rasterize_svg(path, 64),
+        "png" | "jpg" | "jpeg" => Some(image::Handle::from_path(path)),
         _ => None,
     }
 }
@@ -111,8 +120,7 @@ impl App {
 
     pub fn itemlist<'a>(&'a self, current_index: usize, index: usize) -> Button<'a, Message> {
         let icon_view: Element<Message> = match &self.icon {
-            Some(IconHandle::Svg(handle)) => svg(handle.clone()).width(32).height(32).into(),
-            Some(IconHandle::Raster(handle)) => image(handle.clone()).width(32).height(32).into(),
+            Some(handle) => image(handle.clone()).width(32).height(32).into(),
             None => iced::widget::horizontal_space().width(32).into(),
         };
 
@@ -148,6 +156,7 @@ impl App {
         )
         .on_press(Message::OpenApp(index))
         .padding(10)
+        .height(58)
         .width(Length::Fill)
     }
 }
