@@ -91,19 +91,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "app_launcher"
-version = "0.1.0"
-dependencies = [
- "fuzzy-matcher",
- "gio",
- "iced",
- "iced_layershell",
- "libc",
- "resvg 0.45.1",
- "xdg",
-]
-
-[[package]]
 name = "approx"
 version = "0.5.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2140,6 +2127,19 @@ name = "lru"
 version = "0.12.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "234cf4f4a04dc1f57e24b96cc0cd600cf2af460d4161ac5ecdd0af8e1f3b2a38"
+
+[[package]]
+name = "lucien"
+version = "0.1.0"
+dependencies = [
+ "fuzzy-matcher",
+ "gio",
+ "iced",
+ "iced_layershell",
+ "libc",
+ "resvg 0.45.1",
+ "xdg",
+]
 
 [[package]]
 name = "malloc_buf"
