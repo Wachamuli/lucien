@@ -1,4 +1,4 @@
-use gio::{AppInfo, prelude::AppInfoExt};
+use gio::prelude::AppInfoExt;
 use gio::{Icon, prelude::IconExt};
 use iced::{
     Alignment, Element, Length,
@@ -11,9 +11,9 @@ use crate::launcher::Message;
 
 #[derive(Debug, Clone)]
 pub struct App {
-    pub info: AppInfo,
+    commandline: Option<PathBuf>,
     pub name: String,
-    pub description: String,
+    pub description: Option<String>,
     pub icon: Option<iced::widget::image::Handle>,
 }
 
@@ -24,9 +24,9 @@ pub fn all_apps() -> Vec<App> {
         .iter()
         .filter(|app| app.should_show())
         .map(|app| App {
-            info: app.clone(),
+            commandline: app.commandline(),
             name: app.name().to_string(),
-            description: app.description().unwrap_or_default().to_string(),
+            description: app.description().map(String::from),
             icon: load_raster_icon(app.icon()),
         })
         .collect()
@@ -90,7 +90,7 @@ fn load_raster_icon(icon: Option<Icon>) -> Option<image::Handle> {
 
 impl App {
     pub fn launch(&self) -> io::Result<process::Child> {
-        let raw_cmd = self.info.commandline().ok_or_else(|| {
+        let raw_cmd = self.commandline.as_ref().ok_or_else(|| {
             std::io::Error::new(std::io::ErrorKind::NotFound, "No command line found")
         })?;
         let clean_cmd = raw_cmd
@@ -135,17 +135,19 @@ impl App {
             _ => text("").into(),
         };
 
+        let description = self.description.as_ref().map(|desc| {
+            text(desc)
+                .size(11)
+                .color([1.0, 1.0, 1.0, 0.5])
+                .width(Length::Fill)
+        });
+
         button(
             row![
                 icon_view,
-                iced::widget::column![
-                    text(&self.name).size(14).color([0.95, 0.95, 0.95, 1.0]),
-                    text(&self.description)
-                        .size(11)
-                        .color([1.0, 1.0, 1.0, 0.5])
-                        .width(Length::Fill),
-                ]
-                .spacing(2),
+                iced::widget::column![text(&self.name).size(14).color([0.95, 0.95, 0.95, 1.0]),]
+                    .push_maybe(description)
+                    .spacing(2),
                 shortcut_label
             ]
             .spacing(12)

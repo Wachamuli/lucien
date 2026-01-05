@@ -190,19 +190,19 @@ impl Lucien {
 
     pub fn view(&self) -> Container<'_, Message> {
         // Lighter variant
-        // let background = iced::Color::from_rgba(0.12, 0.12, 0.12, 0.85);
-        // let border_color = iced::Color::from_rgba(1.0, 1.0, 1.0, 0.15);
-        // let inner_glow = iced::Color::from_rgba(1.0, 1.0, 1.0, 0.08);
-        // let active_selection = iced::Color::from_rgba(1.0, 1.0, 1.0, 0.12);
-        // let text_main = iced::Color::from_rgba(0.95, 0.95, 0.95, 1.0);
-        // let text_dim = iced::Color::from_rgba(1.0, 1.0, 1.0, 0.5);
-
-        let background = iced::Color::from_rgba(0.12, 0.12, 0.12, 0.95);
-        let border_color = iced::Color::from_rgba(0.65, 0.65, 0.65, 0.15);
+        let background = iced::Color::from_rgba(0.12, 0.12, 0.12, 0.85);
+        let border_color = iced::Color::from_rgba(1.0, 1.0, 1.0, 0.15);
         let inner_glow = iced::Color::from_rgba(1.0, 1.0, 1.0, 0.08);
         let active_selection = iced::Color::from_rgba(1.0, 1.0, 1.0, 0.12);
         let text_main = iced::Color::from_rgba(0.95, 0.95, 0.95, 1.0);
         let text_dim = iced::Color::from_rgba(1.0, 1.0, 1.0, 0.5);
+
+        // let background = iced::Color::from_rgba(0.12, 0.12, 0.12, 0.95);
+        // let border_color = iced::Color::from_rgba(0.65, 0.65, 0.65, 0.10);
+        // let inner_glow = iced::Color::from_rgba(1.0, 1.0, 1.0, 0.08);
+        // let active_selection = iced::Color::from_rgba(1.0, 1.0, 1.0, 0.12);
+        // let text_main = iced::Color::from_rgba(0.95, 0.95, 0.95, 1.0);
+        // let text_dim = iced::Color::from_rgba(1.0, 1.0, 1.0, 0.5);
 
         let app_items: Vec<Element<Message>> = self
             .filtered_apps
