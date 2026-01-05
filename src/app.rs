@@ -127,7 +127,7 @@ impl App {
                 .width(18)
                 .height(18)
                 .into(),
-            n @ 0..7 => text(format!("Alt+{}", n + 1))
+            n @ 0..5 => text(format!("Alt+{}", n + 1))
                 .size(11)
                 .color([1.0, 1.0, 1.0, 0.5])
                 .align_x(Alignment::End)

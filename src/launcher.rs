@@ -26,6 +26,7 @@ static MAGNIFIER: &[u8] = include_bytes!("../assets/magnifier.png");
 #[derive(Debug, Default)]
 pub struct Lucien {
     prompt: String,
+    keyboard_modifiers: keyboard::Modifiers,
     all_apps: Vec<App>,
     filtered_apps: Vec<App>,
     scroll_position: usize,
@@ -44,17 +45,18 @@ pub enum Message {
 
 impl Lucien {
     pub fn init() -> (Self, Task<Message>) {
-        let auto_focus_task = text_input::focus(TEXT_INPUT_ID.clone());
-        let all = all_apps();
+        let all_apps = all_apps();
+        let auto_focus_prompt_task = text_input::focus(TEXT_INPUT_ID.clone());
         let initial_values = Self {
             prompt: String::new(),
-            all_apps: all.clone(),
-            filtered_apps: all,
+            keyboard_modifiers: keyboard::Modifiers::empty(),
+            all_apps: all_apps.clone(),
+            filtered_apps: all_apps,
             scroll_position: 0,
             last_viewport: None,
         };
 
-        (initial_values, auto_focus_task)
+        (initial_values, auto_focus_prompt_task)
     }
 
     pub fn update(&mut self, message: Message) -> Task<Message> {
@@ -70,6 +72,10 @@ impl Lucien {
                 }
             }
             Message::PromptChange(prompt) => {
+                if self.keyboard_modifiers.alt() {
+                    return Task::none();
+                }
+
                 let matcher = SkimMatcherV2::default();
 
                 let mut ranked_apps: Vec<(i64, App)> = self
@@ -134,6 +140,12 @@ impl Lucien {
             | Message::SystemEvent(iced::Event::Mouse(iced::mouse::Event::ButtonPressed(_))) => {
                 iced::exit()
             }
+            Message::SystemEvent(iced::Event::Keyboard(keyboard::Event::ModifiersChanged(
+                modifiers,
+            ))) => {
+                self.keyboard_modifiers = modifiers;
+                Task::none()
+            }
             Message::SystemEvent(_) => Task::none(),
             Message::AnchorChange(_anchor) => todo!(),
             Message::SetInputRegion(_action_callback) => todo!(),
@@ -164,7 +176,6 @@ impl Lucien {
                     }),
                     _,
                 ) if modifiers.alt() => match physical_key_pressed {
-                    // FIXME: Fix alt keys bugs
                     keyboard::key::Code::Digit1 => Some(Message::LaunchApp(0)),
                     keyboard::key::Code::Digit2 => Some(Message::LaunchApp(1)),
                     keyboard::key::Code::Digit3 => Some(Message::LaunchApp(2)),
@@ -386,7 +397,7 @@ impl Lucien {
         }
 
         let i_top = self.scroll_position as f32 * item_height;
-        let i_bottom = i_top + item_height;
+        let i_bottom = i_top + item_height + 12.0;
 
         let mut target_y = None;
 
