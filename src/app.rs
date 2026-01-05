@@ -2,7 +2,7 @@ use gio::{AppInfo, prelude::AppInfoExt};
 use gio::{Icon, prelude::IconExt};
 use iced::{
     Alignment, Element, Length,
-    widget::{Button, button, image, row, svg, text},
+    widget::{Button, button, image, row, text},
 };
 use resvg::tiny_skia;
 use std::{io, os::unix::process::CommandExt, path::PathBuf, process};
@@ -37,28 +37,25 @@ fn get_icon_path_from_xdgicon(iconname: &str) -> Option<PathBuf> {
         return Some(PathBuf::from(iconname));
     }
 
-    let scalable_icon_path = xdg::BaseDirectories::with_prefix("icons/hicolor/scalable/apps");
+    let xdg_dirs = xdg::BaseDirectories::new();
 
-    if let Some(iconpath) = scalable_icon_path.find_data_file(format!("{iconname}.svg")) {
-        return Some(iconpath);
+    let sizes = [
+        "scalable", "512x512", "256x256", "128x128", "96x96", "64x64", "48x48", "32x32",
+    ];
+
+    for size in sizes {
+        let extension = if size == "scalable" { "svg" } else { "png" };
+        let sub_path = format!("icons/hicolor/{size}/apps/{iconname}.{extension}");
+
+        if let Some(path) = xdg_dirs.find_data_file(&sub_path) {
+            return Some(path);
+        }
     }
 
-    let pixmappath = xdg::BaseDirectories::with_prefix("pixmaps");
-
-    if let Some(iconpath) = pixmappath.find_data_file(format!("{iconname}.svg")) {
-        return Some(iconpath);
-    }
-
-    if let Some(iconpath) = pixmappath.find_data_file(format!("{iconname}.png")) {
-        return Some(iconpath);
-    }
-
-    for prefix in [
-        "256x256", "128x128", "96x96", "64x64", "48x48", "32x32", "24x24", "16x16",
-    ] {
-        let iconpath = xdg::BaseDirectories::with_prefix(&format!("icons/hicolor/{prefix}/apps"));
-        if let Some(iconpath) = iconpath.find_data_file(format!("{iconname}.png")) {
-            return Some(iconpath);
+    for ext in ["svg", "png", "ico"] {
+        let pixmap_path = format!("pixmaps/{}.{}", iconname, ext);
+        if let Some(path) = xdg_dirs.find_data_file(&pixmap_path) {
+            return Some(path);
         }
     }
 
@@ -121,7 +118,7 @@ impl App {
     pub fn itemlist<'a>(&'a self, current_index: usize, index: usize) -> Button<'a, Message> {
         let icon_view: Element<Message> = match &self.icon {
             Some(handle) => image(handle.clone()).width(32).height(32).into(),
-            None => iced::widget::horizontal_space().width(32).into(),
+            None => iced::widget::horizontal_space().width(0).into(),
         };
 
         use iced::widget::image;
