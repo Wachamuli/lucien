@@ -273,7 +273,7 @@ impl Lucien {
                     }
                 }),
         ]
-        .spacing(10)
+        .spacing(2)
         .align_y(Alignment::Center);
 
         let results = iced::widget::scrollable(app_list_content)
@@ -397,7 +397,7 @@ impl Lucien {
         }
 
         let i_top = self.scroll_position as f32 * item_height;
-        let i_bottom = i_top + item_height + 12.0;
+        let i_bottom = i_top + item_height + 15.0;
 
         let mut target_y = None;
 
