@@ -6,34 +6,13 @@ use iced::{
     keyboard::{self, Key},
     widget::{
         Column, Container, button, container, row,
-        scrollable::{self, Rail, RelativeOffset},
+        scrollable::{self, Rail, RelativeOffset, Viewport},
         text, text_input,
     },
 };
 use iced_layershell::to_layer_message;
 
 use crate::app::{App, all_apps};
-
-#[derive(Debug, Default)]
-pub struct Lucien {
-    input: String,
-    all_apps: Vec<App>,
-    filtered_apps: Vec<App>,
-    scroll_position: usize,
-    last_viewport: Option<iced::widget::scrollable::Viewport>,
-}
-
-#[to_layer_message]
-#[derive(Debug, Clone)]
-pub enum Message {
-    InputChange(String),
-    OpenApp(usize),
-    SystemEvent(iced::Event),
-    EscPressed,
-    AltDigitShortcut(usize),
-    ScrollableViewport(iced::widget::scrollable::Viewport),
-    Close,
-}
 
 static TEXT_INPUT_ID: LazyLock<text_input::Id> = std::sync::LazyLock::new(text_input::Id::unique);
 static SCROLLABLE_ID: LazyLock<scrollable::Id> = std::sync::LazyLock::new(scrollable::Id::unique);
@@ -44,12 +23,31 @@ static MAGNIFIER: &[u8] = include_bytes!("../assets/magnifier.png");
 // static FOLDER: &[u8] = include_bytes!("../assets/folder.png");
 // static CLIPBOARD: &[u8] = include_bytes!("../assets/clipboard.png");
 
+#[derive(Debug, Default)]
+pub struct Lucien {
+    prompt: String,
+    all_apps: Vec<App>,
+    filtered_apps: Vec<App>,
+    scroll_position: usize,
+    last_viewport: Option<Viewport>,
+}
+
+#[to_layer_message]
+#[derive(Debug, Clone)]
+pub enum Message {
+    PromptChange(String),
+    LaunchApp(usize),
+    SystemEvent(iced::Event),
+    ScrollableViewport(Viewport),
+    Exit,
+}
+
 impl Lucien {
     pub fn init() -> (Self, Task<Message>) {
         let auto_focus_task = text_input::focus(TEXT_INPUT_ID.clone());
         let all = all_apps();
         let initial_values = Self {
-            input: String::new(),
+            prompt: String::new(),
             all_apps: all.clone(),
             filtered_apps: all,
             scroll_position: 0,
@@ -61,17 +59,17 @@ impl Lucien {
 
     pub fn update(&mut self, message: Message) -> Task<Message> {
         match message {
-            Message::OpenApp(index) | Message::AltDigitShortcut(index) => {
+            Message::LaunchApp(index) => {
                 let Some(app) = self.filtered_apps.get(index) else {
                     return Task::none();
                 };
 
                 match app.launch() {
                     Ok(_) => iced::exit(),
-                    Err(_) => Task::none(), // TODO: Handle this error
+                    Err(_) => Task::none(),
                 }
             }
-            Message::InputChange(input) => {
+            Message::PromptChange(prompt) => {
                 let matcher = SkimMatcherV2::default();
 
                 let mut ranked_apps: Vec<(i64, App)> = self
@@ -79,7 +77,7 @@ impl Lucien {
                     .iter()
                     .filter_map(|app| {
                         matcher
-                            .fuzzy_match(&app.name, &input)
+                            .fuzzy_match(&app.name, &prompt)
                             .map(|score| (score, app.clone()))
                     })
                     .collect();
@@ -87,7 +85,7 @@ impl Lucien {
                 ranked_apps.sort_by(|a, b| b.0.cmp(&a.0));
 
                 self.filtered_apps = ranked_apps.into_iter().map(|(_score, app)| app).collect();
-                self.input = input;
+                self.prompt = prompt;
                 self.scroll_position = 0;
 
                 if let Some(viewport) = self.last_viewport {
@@ -106,37 +104,24 @@ impl Lucien {
                 Task::none()
             }
             Message::SystemEvent(iced::Event::Keyboard(keyboard::Event::KeyPressed {
-                key: Key::Named(keyboard::key::Named::Tab),
-                modifiers,
-                ..
-            })) if modifiers.shift() => {
-                let old_pos = self.scroll_position;
-
-                self.scroll_position =
-                    wrapped_index(self.scroll_position, self.filtered_apps.len(), -1);
-
-                if old_pos != self.scroll_position {
-                    return self.snap_if_needed();
-                }
-
-                Task::none()
-            }
-            Message::SystemEvent(iced::Event::Keyboard(keyboard::Event::KeyPressed {
                 key: Key::Named(key_pressed),
+                modifiers,
                 ..
             })) => {
                 use iced::keyboard::key::Named as kp;
 
                 let old_pos = self.scroll_position;
 
-                if let kp::ArrowDown | kp::Tab = key_pressed {
-                    self.scroll_position =
-                        wrapped_index(self.scroll_position, self.filtered_apps.len(), 1);
-                }
-
-                if let kp::ArrowUp = key_pressed {
-                    self.scroll_position =
-                        wrapped_index(self.scroll_position, self.filtered_apps.len(), -1);
+                match (key_pressed, modifiers.shift()) {
+                    (kp::ArrowDown | kp::Tab, false) => {
+                        self.scroll_position =
+                            wrapped_index(self.scroll_position, self.filtered_apps.len(), 1);
+                    }
+                    (kp::ArrowUp, false) | (kp::Tab, true) => {
+                        self.scroll_position =
+                            wrapped_index(self.scroll_position, self.filtered_apps.len(), -1);
+                    }
+                    _ => {}
                 }
 
                 if old_pos != self.scroll_position {
@@ -145,8 +130,7 @@ impl Lucien {
 
                 Task::none()
             }
-            Message::Close
-            | Message::EscPressed
+            Message::Exit
             | Message::SystemEvent(iced::Event::Mouse(iced::mouse::Event::ButtonPressed(_))) => {
                 iced::exit()
             }
@@ -171,7 +155,7 @@ impl Lucien {
                         ..
                     }),
                     _,
-                ) => Some(Message::EscPressed),
+                ) => Some(Message::Exit),
                 (
                     Event::Keyboard(keyboard::Event::KeyPressed {
                         physical_key: keyboard::key::Physical::Code(physical_key_pressed),
@@ -181,11 +165,11 @@ impl Lucien {
                     _,
                 ) if modifiers.alt() => match physical_key_pressed {
                     // FIXME: Fix alt keys bugs
-                    keyboard::key::Code::Digit1 => Some(Message::AltDigitShortcut(1)),
-                    keyboard::key::Code::Digit2 => Some(Message::AltDigitShortcut(2)),
-                    keyboard::key::Code::Digit3 => Some(Message::AltDigitShortcut(3)),
-                    keyboard::key::Code::Digit4 => Some(Message::AltDigitShortcut(4)),
-                    keyboard::key::Code::Digit5 => Some(Message::AltDigitShortcut(5)),
+                    keyboard::key::Code::Digit1 => Some(Message::LaunchApp(0)),
+                    keyboard::key::Code::Digit2 => Some(Message::LaunchApp(1)),
+                    keyboard::key::Code::Digit3 => Some(Message::LaunchApp(2)),
+                    keyboard::key::Code::Digit4 => Some(Message::LaunchApp(3)),
+                    keyboard::key::Code::Digit5 => Some(Message::LaunchApp(4)),
                     _ => None,
                 },
                 _ => None,
@@ -193,7 +177,7 @@ impl Lucien {
         ])
     }
 
-    pub fn view<'a>(&'a self) -> Container<'a, Message> {
+    pub fn view(&self) -> Container<'_, Message> {
         // Lighter variant
         // let background = iced::Color::from_rgba(0.12, 0.12, 0.12, 0.85);
         // let border_color = iced::Color::from_rgba(1.0, 1.0, 1.0, 0.15);
@@ -258,10 +242,10 @@ impl Lucien {
             iced::widget::image(iced::widget::image::Handle::from_bytes(MAGNIFIER))
                 .width(28)
                 .height(28),
-            iced::widget::text_input("Search...", &self.input)
+            iced::widget::text_input("Search...", &self.prompt)
                 .id(TEXT_INPUT_ID.clone())
-                .on_input(Message::InputChange)
-                .on_submit(Message::OpenApp(self.scroll_position))
+                .on_input(Message::PromptChange)
+                .on_submit(Message::LaunchApp(self.scroll_position))
                 .padding(8)
                 .size(18)
                 .style(move |_, _| {

@@ -4,7 +4,7 @@ use iced::{
     Alignment, Element, Length,
     widget::{Button, button, image, row, text},
 };
-use resvg::tiny_skia;
+use resvg::{tiny_skia, usvg};
 use std::{io, os::unix::process::CommandExt, path::PathBuf, process};
 
 use crate::launcher::Message;
@@ -64,7 +64,7 @@ fn get_icon_path_from_xdgicon(iconname: &str) -> Option<PathBuf> {
 
 fn rasterize_svg(path: PathBuf, size: u32) -> Option<image::Handle> {
     let svg_data = std::fs::read(path).ok()?;
-    let tree = resvg::usvg::Tree::from_data(&svg_data, &resvg::usvg::Options::default()).ok()?;
+    let tree = usvg::Tree::from_data(&svg_data, &usvg::Options::default()).ok()?;
 
     let mut pixmap = tiny_skia::Pixmap::new(size, size)?;
     let transform = tiny_skia::Transform::from_scale(
@@ -151,7 +151,7 @@ impl App {
             .spacing(12)
             .align_y(iced::Alignment::Center),
         )
-        .on_press(Message::OpenApp(index))
+        .on_press(Message::LaunchApp(index))
         .padding(10)
         .height(58)
         .width(Length::Fill)
