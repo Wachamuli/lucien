@@ -1,7 +1,7 @@
 use gio::prelude::AppInfoExt;
 use gio::{Icon, prelude::IconExt};
 use iced::{
-    Alignment, Element, Length,
+    Element, Length,
     widget::{Button, button, image, row, text},
 };
 use resvg::{tiny_skia, usvg};
@@ -128,26 +128,32 @@ impl App {
                 .height(18)
                 .into(),
             n @ 0..5 => text(format!("Alt+{}", n + 1))
-                .size(11)
+                .size(12)
                 .color([1.0, 1.0, 1.0, 0.5])
-                .align_x(Alignment::End)
                 .into(),
             _ => text("").into(),
         };
 
-        let description = self.description.as_ref().map(|desc| {
-            text(desc)
-                .size(11)
-                .color([1.0, 1.0, 1.0, 0.5])
-                .width(Length::Fill)
-        });
+        let description = self
+            .description
+            .as_ref()
+            .map(|desc| text(desc).size(12).color([1.0, 1.0, 1.0, 0.5]));
 
         button(
             row![
                 icon_view,
-                iced::widget::column![text(&self.name).size(14).color([0.95, 0.95, 0.95, 1.0]),]
-                    .push_maybe(description)
-                    .spacing(2),
+                iced::widget::column![
+                    text(&self.name)
+                        .size(14)
+                        .color([0.95, 0.95, 0.95, 1.0])
+                        .width(Length::Fill)
+                        .font(iced::Font {
+                            weight: iced::font::Weight::Bold,
+                            ..Default::default()
+                        }),
+                ]
+                .push_maybe(description)
+                .spacing(2),
                 shortcut_label
             ]
             .spacing(12)

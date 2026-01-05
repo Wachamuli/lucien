@@ -19,9 +19,13 @@ static SCROLLABLE_ID: LazyLock<scrollable::Id> = std::sync::LazyLock::new(scroll
 
 // #EBECF2
 static MAGNIFIER: &[u8] = include_bytes!("../assets/magnifier.png");
-// static TERMINAL_PROMPT: &[u8] = include_bytes!("../assets/terminal-prompt.png");
-// static FOLDER: &[u8] = include_bytes!("../assets/folder.png");
-// static CLIPBOARD: &[u8] = include_bytes!("../assets/clipboard.png");
+static CUBE_ACTIVE: &[u8] = include_bytes!("../assets/tabler--cube-active.png");
+
+// #808080
+static CUBE_INACTIVE: &[u8] = include_bytes!("../assets/tabler--cube.png");
+static TERMINAL_PROMPT_INACTIVE: &[u8] = include_bytes!("../assets/mynaui--terminal.png");
+static FOLDER_INACTIVE: &[u8] = include_bytes!("../assets/proicons--folder.png");
+static CLIPBOARD_INACTIVE: &[u8] = include_bytes!("../assets/tabler--clipboard.png");
 
 #[derive(Debug, Default)]
 pub struct Lucien {
@@ -189,20 +193,12 @@ impl Lucien {
     }
 
     pub fn view(&self) -> Container<'_, Message> {
-        // Lighter variant
-        let background = iced::Color::from_rgba(0.12, 0.12, 0.12, 0.85);
-        let border_color = iced::Color::from_rgba(1.0, 1.0, 1.0, 0.15);
+        let background = iced::Color::from_rgba(0.12, 0.12, 0.12, 0.95);
+        let border_color = iced::Color::from_rgba(0.65, 0.65, 0.65, 0.10);
         let inner_glow = iced::Color::from_rgba(1.0, 1.0, 1.0, 0.08);
         let active_selection = iced::Color::from_rgba(1.0, 1.0, 1.0, 0.12);
         let text_main = iced::Color::from_rgba(0.95, 0.95, 0.95, 1.0);
         let text_dim = iced::Color::from_rgba(1.0, 1.0, 1.0, 0.5);
-
-        // let background = iced::Color::from_rgba(0.12, 0.12, 0.12, 0.95);
-        // let border_color = iced::Color::from_rgba(0.65, 0.65, 0.65, 0.10);
-        // let inner_glow = iced::Color::from_rgba(1.0, 1.0, 1.0, 0.08);
-        // let active_selection = iced::Color::from_rgba(1.0, 1.0, 1.0, 0.12);
-        // let text_main = iced::Color::from_rgba(0.95, 0.95, 0.95, 1.0);
-        // let text_dim = iced::Color::from_rgba(1.0, 1.0, 1.0, 0.5);
 
         let app_items: Vec<Element<Message>> = self
             .filtered_apps
@@ -249,6 +245,41 @@ impl Lucien {
                 .into()
         };
 
+        let icon_grid = container(
+            iced::widget::column![
+                row![
+                    iced::widget::image(iced::widget::image::Handle::from_bytes(CUBE_ACTIVE))
+                        .width(14)
+                        .height(14),
+                    iced::widget::image(iced::widget::image::Handle::from_bytes(
+                        TERMINAL_PROMPT_INACTIVE
+                    ))
+                    .width(14)
+                    .height(14),
+                ]
+                .spacing(4),
+                row![
+                    iced::widget::image(iced::widget::image::Handle::from_bytes(FOLDER_INACTIVE))
+                        .width(14)
+                        .height(14),
+                    iced::widget::image(iced::widget::image::Handle::from_bytes(
+                        CLIPBOARD_INACTIVE
+                    ))
+                    .width(14)
+                    .height(14),
+                ]
+                .spacing(4),
+            ]
+            .spacing(4),
+        )
+        .style(move |_| container::Style {
+            border: Border {
+                radius: iced::border::radius(8),
+                ..Default::default()
+            },
+            ..Default::default()
+        });
+
         let prompt = row![
             iced::widget::image(iced::widget::image::Handle::from_bytes(MAGNIFIER))
                 .width(28)
@@ -259,6 +290,10 @@ impl Lucien {
                 .on_submit(Message::LaunchApp(self.scroll_position))
                 .padding(8)
                 .size(18)
+                .font(iced::Font {
+                    weight: iced::font::Weight::Bold,
+                    ..Default::default()
+                })
                 .style(move |_, _| {
                     iced::widget::text_input::Style {
                         background: iced::Background::Color(iced::Color::TRANSPARENT),
@@ -272,6 +307,7 @@ impl Lucien {
                         selection: active_selection,
                     }
                 }),
+            icon_grid
         ]
         .spacing(2)
         .align_y(Alignment::Center);
@@ -313,69 +349,31 @@ impl Lucien {
                 gap: None,
             });
 
-        // let mode_circle = |bytes: &'static [u8]| {
-        //     container(
-        //         iced::widget::image(iced::widget::image::Handle::from_bytes(bytes))
-        //             .width(28)
-        //             .height(28),
-        //     )
-        //     .padding(18)
-        //     .style(move |_| container::Style {
-        //         background: Some(iced::Background::Color(background)),
-        //         border: Border {
-        //             width: 1.0,
-        //             color: border_color,
-        //             radius: iced::border::radius(36),
-        //         },
-        //         ..Default::default()
-        //     })
-        // };
-
-        // let modes_island = container(
-        //     row![
-        //         mode_circle(MAGNIFIER),
-        //         mode_circle(FOLDER),
-        //         mode_circle(TERMINAL_PROMPT),
-        //         mode_circle(CLIPBOARD),
-        //     ]
-        //     .spacing(10),
-        // )
-        // .align_y(Alignment::Center)
-        // .style(move |_| container::Style {
-        //     background: Some(iced::Background::Color(iced::Color::TRANSPARENT)),
-        //     ..Default::default()
-        // });
-
-        container(
-            iced::widget::column![
-                row![
-                    container(prompt)
-                        .padding(15)
-                        .style(move |_| container::Style {
-                            background: Some(iced::Background::Color(background)),
-                            border: Border {
-                                width: 1.0,
-                                color: border_color,
-                                radius: iced::border::radius(20),
-                            },
-                            ..Default::default()
-                        }),
-                    // modes_island
-                ]
-                .spacing(10)
-                .align_y(Alignment::Center),
-                container(results).style(move |_| container::Style {
-                    background: Some(iced::Background::Color(background)),
-                    border: Border {
-                        width: 1.0,
-                        color: border_color,
-                        radius: iced::border::radius(20),
-                    },
-                    ..Default::default()
-                })
-            ]
-            .spacing(10),
-        )
+        container(iced::widget::column![
+            container(prompt).padding(15).align_y(Alignment::Center),
+            iced::widget::horizontal_rule(1).style(move |_| iced::widget::rule::Style {
+                color: border_color,
+                width: 1,
+                fill_mode: iced::widget::rule::FillMode::Padded(10),
+                radius: Default::default(),
+            }),
+            container(results),
+            iced::widget::horizontal_rule(1).style(move |_| iced::widget::rule::Style {
+                color: border_color,
+                width: 1,
+                fill_mode: iced::widget::rule::FillMode::Padded(10),
+                radius: Default::default(),
+            }),
+        ])
+        .style(move |_| container::Style {
+            background: Some(iced::Background::Color(background)),
+            border: Border {
+                width: 1.0,
+                color: border_color,
+                radius: iced::border::radius(20),
+            },
+            ..Default::default()
+        })
     }
 
     fn snap_if_needed(&self) -> Task<Message> {
