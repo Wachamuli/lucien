@@ -19,9 +19,25 @@ static SCROLLABLE_ID: LazyLock<scrollable::Id> = std::sync::LazyLock::new(scroll
 
 // #EBECF2
 static MAGNIFIER: &[u8] = include_bytes!("../assets/magnifier.png");
+static CUBE_ACTIVE: &[u8] = include_bytes!("../assets/tabler--cube-active.png");
+static TERMINAL_PROMPT_ACTIVE: &[u8] = include_bytes!("../assets/mynaui--terminal-active.png");
+
+// #808080
+static CUBE_INACTIVE: &[u8] = include_bytes!("../assets/tabler--cube.png");
+static TERMINAL_PROMPT_INACTIVE: &[u8] = include_bytes!("../assets/mynaui--terminal.png");
+// static FOLDER_INACTIVE: &[u8] = include_bytes!("../assets/proicons--folder.png");
+// static CLIPBOARD_INACTIVE: &[u8] = include_bytes!("../assets/tabler--clipboard.png");
+
+#[derive(Debug, Default)]
+enum Mode {
+    #[default]
+    Launcher,
+    Terminal,
+}
 
 #[derive(Debug, Default)]
 pub struct Lucien {
+    mode: Mode,
     prompt: String,
     keyboard_modifiers: keyboard::Modifiers,
     all_apps: Vec<App>,
@@ -45,6 +61,7 @@ impl Lucien {
         let all_apps = all_apps();
         let auto_focus_prompt_task = text_input::focus(TEXT_INPUT_ID.clone());
         let initial_values = Self {
+            mode: Mode::Launcher,
             prompt: String::new(),
             keyboard_modifiers: keyboard::Modifiers::empty(),
             all_apps: all_apps.clone(),
@@ -274,6 +291,7 @@ impl Lucien {
                         selection: active_selection,
                     }
                 }),
+            self.status_indicator()
         ]
         .spacing(2)
         .align_y(Alignment::Center);
@@ -340,6 +358,32 @@ impl Lucien {
             },
             ..Default::default()
         })
+    }
+
+    fn status_indicator<'a>(&'a self) -> Container<'a, Message> {
+        use iced::widget::image;
+
+        let launcher_icon = match self.mode {
+            Mode::Launcher => CUBE_ACTIVE,
+            _ => CUBE_INACTIVE,
+        };
+
+        let terminal_icon = match self.mode {
+            Mode::Terminal => TERMINAL_PROMPT_ACTIVE,
+            _ => TERMINAL_PROMPT_INACTIVE,
+        };
+
+        container(
+            row![
+                image(image::Handle::from_bytes(launcher_icon))
+                    .width(18)
+                    .height(18),
+                image(image::Handle::from_bytes(terminal_icon))
+                    .width(18)
+                    .height(18),
+            ]
+            .spacing(10),
+        )
     }
 
     fn snap_if_needed(&self) -> Task<Message> {
