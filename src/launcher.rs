@@ -19,13 +19,6 @@ static SCROLLABLE_ID: LazyLock<scrollable::Id> = std::sync::LazyLock::new(scroll
 
 // #EBECF2
 static MAGNIFIER: &[u8] = include_bytes!("../assets/magnifier.png");
-static CUBE_ACTIVE: &[u8] = include_bytes!("../assets/tabler--cube-active.png");
-
-// #808080
-static CUBE_INACTIVE: &[u8] = include_bytes!("../assets/tabler--cube.png");
-static TERMINAL_PROMPT_INACTIVE: &[u8] = include_bytes!("../assets/mynaui--terminal.png");
-static FOLDER_INACTIVE: &[u8] = include_bytes!("../assets/proicons--folder.png");
-static CLIPBOARD_INACTIVE: &[u8] = include_bytes!("../assets/tabler--clipboard.png");
 
 #[derive(Debug, Default)]
 pub struct Lucien {
@@ -238,47 +231,21 @@ impl Lucien {
                 .width(Length::Fill)
                 .into()
         } else {
-            container(text("No Results Found").size(14).color(text_dim))
-                .width(Length::Fill)
-                .align_x(Alignment::Center)
-                .padding(25)
-                .into()
+            container(
+                text("No Results Found")
+                    .size(14)
+                    .color(text_dim)
+                    .width(Length::Fill)
+                    .align_x(Alignment::Center)
+                    .align_y(Alignment::Center)
+                    .font(iced::Font {
+                        style: iced::font::Style::Italic,
+                        ..Default::default()
+                    }),
+            )
+            .padding(25)
+            .into()
         };
-
-        let icon_grid = container(
-            iced::widget::column![
-                row![
-                    iced::widget::image(iced::widget::image::Handle::from_bytes(CUBE_ACTIVE))
-                        .width(14)
-                        .height(14),
-                    iced::widget::image(iced::widget::image::Handle::from_bytes(
-                        TERMINAL_PROMPT_INACTIVE
-                    ))
-                    .width(14)
-                    .height(14),
-                ]
-                .spacing(4),
-                row![
-                    iced::widget::image(iced::widget::image::Handle::from_bytes(FOLDER_INACTIVE))
-                        .width(14)
-                        .height(14),
-                    iced::widget::image(iced::widget::image::Handle::from_bytes(
-                        CLIPBOARD_INACTIVE
-                    ))
-                    .width(14)
-                    .height(14),
-                ]
-                .spacing(4),
-            ]
-            .spacing(4),
-        )
-        .style(move |_| container::Style {
-            border: Border {
-                radius: iced::border::radius(8),
-                ..Default::default()
-            },
-            ..Default::default()
-        });
 
         let prompt = row![
             iced::widget::image(iced::widget::image::Handle::from_bytes(MAGNIFIER))
@@ -307,7 +274,6 @@ impl Lucien {
                         selection: active_selection,
                     }
                 }),
-            icon_grid
         ]
         .spacing(2)
         .align_y(Alignment::Center);
