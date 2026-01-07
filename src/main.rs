@@ -2,6 +2,7 @@ use crate::launcher::Lucien;
 
 mod app;
 mod launcher;
+mod preferences;
 
 use iced_layershell::{
     Appearance,

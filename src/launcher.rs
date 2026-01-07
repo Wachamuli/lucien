@@ -1,4 +1,4 @@
-use std::sync::LazyLock;
+use std::{collections::HashSet, sync::LazyLock};
 
 use fuzzy_matcher::{FuzzyMatcher, skim::SkimMatcherV2};
 use iced::{
@@ -11,8 +11,12 @@ use iced::{
     },
 };
 use iced_layershell::to_layer_message;
+use libc::clone;
 
-use crate::app::{App, all_apps};
+use crate::{
+    app::{App, all_apps},
+    preferences::Preferences,
+};
 
 static TEXT_INPUT_ID: LazyLock<text_input::Id> = std::sync::LazyLock::new(text_input::Id::unique);
 static SCROLLABLE_ID: LazyLock<scrollable::Id> = std::sync::LazyLock::new(scrollable::Id::unique);
@@ -40,10 +44,11 @@ pub struct Lucien {
     mode: Mode,
     prompt: String,
     keyboard_modifiers: keyboard::Modifiers,
-    all_apps: Vec<App>,
-    filtered_apps: Vec<App>,
+    cached_apps: Vec<App>,
+    ranked_apps: Vec<App>,
     scroll_position: usize,
     last_viewport: Option<Viewport>,
+    favorite_apps_ids: HashSet<String>,
 }
 
 #[to_layer_message]
@@ -58,16 +63,23 @@ pub enum Message {
 
 impl Lucien {
     pub fn init() -> (Self, Task<Message>) {
-        let all_apps = all_apps();
+        let preferences = Preferences::load().unwrap(); // HANDLE this error
+
+        let cached_apps = all_apps();
+        let mut ranked_apps = cached_apps.clone();
+        ranked_apps.sort_by_key(|app| !preferences.favorite_apps.contains(&app.id));
+
         let auto_focus_prompt_task = text_input::focus(TEXT_INPUT_ID.clone());
+
         let initial_values = Self {
             mode: Mode::Launcher,
             prompt: String::new(),
             keyboard_modifiers: keyboard::Modifiers::empty(),
-            all_apps: all_apps.clone(),
-            filtered_apps: all_apps,
+            cached_apps,
+            ranked_apps,
             scroll_position: 0,
             last_viewport: None,
+            favorite_apps_ids: preferences.favorite_apps,
         };
 
         (initial_values, auto_focus_prompt_task)
@@ -76,7 +88,7 @@ impl Lucien {
     pub fn update(&mut self, message: Message) -> Task<Message> {
         match message {
             Message::LaunchApp(index) => {
-                let Some(app) = self.filtered_apps.get(index) else {
+                let Some(app) = self.ranked_apps.get(index) else {
                     return Task::none();
                 };
 
@@ -93,7 +105,7 @@ impl Lucien {
                 let matcher = SkimMatcherV2::default();
 
                 let mut ranked_apps: Vec<(i64, App)> = self
-                    .all_apps
+                    .cached_apps
                     .iter()
                     .filter_map(|app| {
                         matcher
@@ -102,9 +114,18 @@ impl Lucien {
                     })
                     .collect();
 
-                ranked_apps.sort_by(|a, b| b.0.cmp(&a.0));
+                ranked_apps.sort_by(|(score_a, app_a), (score_b, app_b)| {
+                    let a_is_fav = self.favorite_apps_ids.contains(&app_a.id);
+                    let b_is_fav = self.favorite_apps_ids.contains(&app_b.id);
 
-                self.filtered_apps = ranked_apps.into_iter().map(|(_score, app)| app).collect();
+                    match (a_is_fav, b_is_fav) {
+                        (true, false) => std::cmp::Ordering::Less,
+                        (false, true) => std::cmp::Ordering::Greater,
+                        _ => score_b.cmp(score_a),
+                    }
+                });
+
+                self.ranked_apps = ranked_apps.into_iter().map(|(_score, app)| app).collect();
                 self.prompt = prompt;
                 self.scroll_position = 0;
 
@@ -135,11 +156,11 @@ impl Lucien {
                 match (key_pressed, modifiers.shift()) {
                     (kp::ArrowDown | kp::Tab, false) => {
                         self.scroll_position =
-                            wrapped_index(self.scroll_position, self.filtered_apps.len(), 1);
+                            wrapped_index(self.scroll_position, self.ranked_apps.len(), 1);
                     }
                     (kp::ArrowUp, false) | (kp::Tab, true) => {
                         self.scroll_position =
-                            wrapped_index(self.scroll_position, self.filtered_apps.len(), -1);
+                            wrapped_index(self.scroll_position, self.ranked_apps.len(), -1);
                     }
                     _ => {}
                 }
@@ -210,59 +231,92 @@ impl Lucien {
         let text_main = iced::Color::from_rgba(0.95, 0.95, 0.95, 1.0);
         let text_dim = iced::Color::from_rgba(1.0, 1.0, 1.0, 0.5);
 
-        let app_items: Vec<Element<Message>> = self
-            .filtered_apps
-            .iter()
-            .enumerate()
-            .map(|(index, app)| {
-                app.itemlist(self.scroll_position, index)
-                    .style(move |_, status| {
-                        let is_selected = self.scroll_position == index;
-
-                        let bg = if is_selected {
-                            active_selection
-                        } else if status == button::Status::Hovered {
-                            inner_glow
-                        } else {
-                            iced::Color::TRANSPARENT
-                        };
-
-                        button::Style {
-                            background: Some(iced::Background::Color(bg)),
-                            text_color: if is_selected { text_main } else { text_dim },
-                            border: iced::Border {
-                                radius: iced::border::radius(10),
-                                ..Default::default()
-                            },
-                            ..Default::default()
-                        }
-                    })
-                    .into()
-            })
-            .collect();
-
-        let app_list_content: Element<_> = if !app_items.is_empty() {
-            Column::with_children(app_items)
-                .padding(10)
-                .spacing(4)
-                .width(Length::Fill)
-                .into()
-        } else {
+        fn section(name: &str, color: iced::Color) -> Container<'_, Message> {
             container(
-                text("No Results Found")
+                text(name)
                     .size(14)
-                    .color(text_dim)
+                    .color(color)
                     .width(Length::Fill)
-                    .align_x(Alignment::Center)
-                    .align_y(Alignment::Center)
                     .font(iced::Font {
-                        style: iced::font::Style::Italic,
+                        weight: iced::font::Weight::Bold,
                         ..Default::default()
                     }),
             )
-            .padding(25)
-            .into()
-        };
+            .padding(iced::Padding {
+                top: 10.,
+                right: 0.,
+                bottom: 5.,
+                left: 10.,
+            })
+        }
+
+        let mut favorite_column = Column::new().push_maybe(
+            self.prompt
+                .is_empty()
+                .then(|| section("Favorites", text_dim)),
+        );
+
+        let mut other_column = Column::new().push_maybe(
+            self.prompt
+                .is_empty()
+                .then(|| section("Other Apps", text_dim)),
+        );
+
+        for (index, app) in self.ranked_apps.iter().enumerate() {
+            let is_selected = self.scroll_position == index;
+            let is_favorite = index < self.favorite_apps_ids.len();
+
+            let element: Element<Message> = app
+                .itemlist(self.scroll_position, index)
+                .style(move |_, status| {
+                    let bg = if is_selected {
+                        active_selection
+                    } else if status == button::Status::Hovered {
+                        inner_glow
+                    } else {
+                        iced::Color::TRANSPARENT
+                    };
+
+                    button::Style {
+                        background: Some(iced::Background::Color(bg)),
+                        text_color: if is_selected { text_main } else { text_dim },
+                        border: Border {
+                            radius: iced::border::radius(20),
+                            ..Default::default()
+                        },
+                        ..Default::default()
+                    }
+                })
+                .into();
+
+            if is_favorite {
+                favorite_column = favorite_column.push(element);
+            } else {
+                other_column = other_column.push(element);
+            }
+        }
+
+        let results_not_found: Container<_> = container(
+            text("No Results Found")
+                .size(14)
+                .color(text_dim)
+                .width(Length::Fill)
+                .align_x(Alignment::Center)
+                .align_y(Alignment::Center)
+                .font(iced::Font {
+                    style: iced::font::Style::Italic,
+                    ..Default::default()
+                }),
+        )
+        .padding(11);
+
+        let content = Column::new()
+            .push(favorite_column)
+            .push(other_column)
+            .push_maybe(self.ranked_apps.is_empty().then(|| results_not_found))
+            .padding(10)
+            .spacing(4)
+            .width(Length::Fill);
 
         let prompt = row![
             iced::widget::image(iced::widget::image::Handle::from_bytes(MAGNIFIER))
@@ -296,7 +350,7 @@ impl Lucien {
         .spacing(2)
         .align_y(Alignment::Center);
 
-        let results = iced::widget::scrollable(app_list_content)
+        let results = iced::widget::scrollable(content)
             .on_scroll(Message::ScrollableViewport)
             .id(SCROLLABLE_ID.clone())
             .style(move |_, _| scrollable::Style {

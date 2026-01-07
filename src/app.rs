@@ -12,6 +12,7 @@ use crate::launcher::Message;
 #[derive(Debug, Clone)]
 pub struct App {
     commandline: Option<PathBuf>,
+    pub id: String,
     pub name: String,
     pub description: Option<String>,
     pub icon: Option<iced::widget::image::Handle>,
@@ -24,6 +25,7 @@ pub fn all_apps() -> Vec<App> {
         .iter()
         .filter(|app| app.should_show())
         .map(|app| App {
+            id: app.id().unwrap_or_default().to_string(),
             commandline: app.commandline(),
             name: app.name().to_string(),
             description: app.description().map(String::from),
