@@ -11,7 +11,6 @@ use iced::{
     },
 };
 use iced_layershell::to_layer_message;
-use libc::clone;
 
 use crate::{
     app::{App, all_apps},
@@ -25,12 +24,14 @@ static SCROLLABLE_ID: LazyLock<scrollable::Id> = std::sync::LazyLock::new(scroll
 static MAGNIFIER: &[u8] = include_bytes!("../assets/magnifier.png");
 static CUBE_ACTIVE: &[u8] = include_bytes!("../assets/tabler--cube-active.png");
 static TERMINAL_PROMPT_ACTIVE: &[u8] = include_bytes!("../assets/mynaui--terminal-active.png");
+static STAR_ACTIVE: &[u8] = include_bytes!("../assets/star-fill.png");
 
 // #808080
+static STAR_INACTIVE: &[u8] = include_bytes!("../assets/star-line.png");
 static CUBE_INACTIVE: &[u8] = include_bytes!("../assets/tabler--cube.png");
 static TERMINAL_PROMPT_INACTIVE: &[u8] = include_bytes!("../assets/mynaui--terminal.png");
-// static FOLDER_INACTIVE: &[u8] = include_bytes!("../assets/proicons--folder.png");
-// static CLIPBOARD_INACTIVE: &[u8] = include_bytes!("../assets/tabler--clipboard.png");
+static FOLDER_INACTIVE: &[u8] = include_bytes!("../assets/proicons--folder.png");
+static CLIPBOARD_INACTIVE: &[u8] = include_bytes!("../assets/tabler--clipboard.png");
 
 #[derive(Debug, Default)]
 enum Mode {
@@ -39,16 +40,16 @@ enum Mode {
     Terminal,
 }
 
-#[derive(Debug, Default)]
+#[derive(Debug)]
 pub struct Lucien {
     mode: Mode,
     prompt: String,
     keyboard_modifiers: keyboard::Modifiers,
     cached_apps: Vec<App>,
     ranked_apps: Vec<App>,
+    preferences: Preferences,
     scroll_position: usize,
     last_viewport: Option<Viewport>,
-    favorite_apps_ids: HashSet<String>,
 }
 
 #[to_layer_message]
@@ -56,8 +57,9 @@ pub struct Lucien {
 pub enum Message {
     PromptChange(String),
     LaunchApp(usize),
-    SystemEvent(iced::Event),
+    MarkFavorite(usize),
     ScrollableViewport(Viewport),
+    SystemEvent(iced::Event),
     Exit,
 }
 
@@ -77,9 +79,9 @@ impl Lucien {
             keyboard_modifiers: keyboard::Modifiers::empty(),
             cached_apps,
             ranked_apps,
+            preferences,
             scroll_position: 0,
             last_viewport: None,
-            favorite_apps_ids: preferences.favorite_apps,
         };
 
         (initial_values, auto_focus_prompt_task)
@@ -115,8 +117,8 @@ impl Lucien {
                     .collect();
 
                 ranked_apps.sort_by(|(score_a, app_a), (score_b, app_b)| {
-                    let a_is_fav = self.favorite_apps_ids.contains(&app_a.id);
-                    let b_is_fav = self.favorite_apps_ids.contains(&app_b.id);
+                    let a_is_fav = self.preferences.favorite_apps.contains(&app_a.id);
+                    let b_is_fav = self.preferences.favorite_apps.contains(&app_b.id);
 
                     match (a_is_fav, b_is_fav) {
                         (true, false) => std::cmp::Ordering::Less,
@@ -139,6 +141,18 @@ impl Lucien {
                 }
 
                 Task::none()
+            }
+            Message::MarkFavorite(index) => {
+                let Some(app) = self.ranked_apps.get(index) else {
+                    return Task::none();
+                };
+
+                let result = self.preferences.toggle_favorite(&app.id);
+
+                match result {
+                    Ok(_) => Task::none(),
+                    Err(_) => Task::none(),
+                }
             }
             Message::ScrollableViewport(viewport) => {
                 self.last_viewport = Some(viewport);
@@ -264,10 +278,10 @@ impl Lucien {
 
         for (index, app) in self.ranked_apps.iter().enumerate() {
             let is_selected = self.scroll_position == index;
-            let is_favorite = index < self.favorite_apps_ids.len();
+            let is_favorite = self.preferences.favorite_apps.contains(&app.id);
 
             let element: Element<Message> = app
-                .itemlist(self.scroll_position, index)
+                .itemlist(self.scroll_position, index, is_favorite)
                 .style(move |_, status| {
                     let bg = if is_selected {
                         active_selection

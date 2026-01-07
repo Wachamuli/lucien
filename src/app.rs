@@ -1,5 +1,6 @@
 use gio::prelude::AppInfoExt;
 use gio::{Icon, prelude::IconExt};
+use iced::Alignment;
 use iced::{
     Element, Length,
     widget::{Button, button, image, row, text},
@@ -8,6 +9,9 @@ use resvg::{tiny_skia, usvg};
 use std::{io, os::unix::process::CommandExt, path::PathBuf, process};
 
 use crate::launcher::Message;
+
+static STAR_ACTIVE: &[u8] = include_bytes!("../assets/star-fill.png");
+static STAR_INACTIVE: &[u8] = include_bytes!("../assets/star-line.png");
 
 #[derive(Debug, Clone)]
 pub struct App {
@@ -117,7 +121,12 @@ impl App {
         shell.spawn()
     }
 
-    pub fn itemlist<'a>(&'a self, current_index: usize, index: usize) -> Button<'a, Message> {
+    pub fn itemlist<'a>(
+        &'a self,
+        current_index: usize,
+        index: usize,
+        is_favorite: bool,
+    ) -> Button<'a, Message> {
         let icon_view: Element<Message> = match &self.icon {
             Some(handle) => image(handle.clone()).width(32).height(32).into(),
             None => iced::widget::horizontal_space().width(0).into(),
@@ -135,6 +144,26 @@ impl App {
                 .into(),
             _ => text("").into(),
         };
+
+        let is_selected = current_index == index;
+
+        let star = if is_favorite {
+            image::Handle::from_bytes(STAR_ACTIVE)
+        } else {
+            image::Handle::from_bytes(STAR_INACTIVE)
+        };
+
+        let mark_favorite = button(image(star).width(18).height(18))
+            .on_press(Message::MarkFavorite(index))
+            .style(|_, _| iced::widget::button::Style {
+                background: Some(iced::Background::Color(iced::Color::TRANSPARENT)),
+                ..Default::default()
+            });
+
+        let actions = row![]
+            .push_maybe(is_selected.then(|| mark_favorite))
+            .push(shortcut_label)
+            .align_y(Alignment::Center);
 
         let description = self
             .description
@@ -156,7 +185,7 @@ impl App {
                 ]
                 .push_maybe(description)
                 .spacing(2),
-                shortcut_label
+                actions
             ]
             .spacing(12)
             .align_y(iced::Alignment::Center),
