@@ -22,27 +22,17 @@ static SCROLLABLE_ID: LazyLock<scrollable::Id> = std::sync::LazyLock::new(scroll
 
 // #EBECF2
 static MAGNIFIER: &[u8] = include_bytes!("../assets/magnifier.png");
-static CUBE_ACTIVE: &[u8] = include_bytes!("../assets/tabler--cube-active.png");
-static TERMINAL_PROMPT_ACTIVE: &[u8] = include_bytes!("../assets/mynaui--terminal-active.png");
-static STAR_ACTIVE: &[u8] = include_bytes!("../assets/star-fill.png");
+// static CUBE_ACTIVE: &[u8] = include_bytes!("../assets/tabler--cube-active.png");
+// static TERMINAL_PROMPT_ACTIVE: &[u8] = include_bytes!("../assets/mynaui--terminal-active.png");
 
-// #808080
-static STAR_INACTIVE: &[u8] = include_bytes!("../assets/star-line.png");
-static CUBE_INACTIVE: &[u8] = include_bytes!("../assets/tabler--cube.png");
-static TERMINAL_PROMPT_INACTIVE: &[u8] = include_bytes!("../assets/mynaui--terminal.png");
-static FOLDER_INACTIVE: &[u8] = include_bytes!("../assets/proicons--folder.png");
-static CLIPBOARD_INACTIVE: &[u8] = include_bytes!("../assets/tabler--clipboard.png");
-
-#[derive(Debug, Default)]
-enum Mode {
-    #[default]
-    Launcher,
-    Terminal,
-}
+// // #808080
+// static CUBE_INACTIVE: &[u8] = include_bytes!("../assets/tabler--cube.png");
+// static TERMINAL_PROMPT_INACTIVE: &[u8] = include_bytes!("../assets/mynaui--terminal.png");
+// static FOLDER_INACTIVE: &[u8] = include_bytes!("../assets/proicons--folder.png");
+// static CLIPBOARD_INACTIVE: &[u8] = include_bytes!("../assets/tabler--clipboard.png");
 
 #[derive(Debug)]
 pub struct Lucien {
-    mode: Mode,
     prompt: String,
     keyboard_modifiers: keyboard::Modifiers,
     cached_apps: Vec<App>,
@@ -75,7 +65,7 @@ impl Lucien {
         let auto_focus_prompt_task = text_input::focus(TEXT_INPUT_ID.clone());
 
         let initial_values = Self {
-            mode: Mode::Launcher,
+            // mode: Mode::Launcher,
             prompt: String::new(),
             keyboard_modifiers: keyboard::Modifiers::empty(),
             cached_apps,
@@ -120,20 +110,7 @@ impl Lucien {
 
                 Task::none()
             }
-            Message::MarkFavoriteShortCut => {
-                let Some(app) = self.ranked_apps.get(self.selected_item) else {
-                    return Task::none();
-                };
-
-                let result = self.preferences.toggle_favorite(&app.id);
-
-                match result {
-                    Ok(_) => self.update_ranked_apps(),
-                    Err(_) => {}
-                }
-
-                Task::none()
-            }
+            Message::MarkFavoriteShortCut => Task::done(Message::MarkFavorite(self.selected_item)),
             Message::MarkFavorite(index) => {
                 let Some(app) = self.ranked_apps.get(index) else {
                     return Task::none();
@@ -180,15 +157,15 @@ impl Lucien {
 
                 Task::none()
             }
-            Message::Exit
-            | Message::SystemEvent(iced::Event::Mouse(iced::mouse::Event::ButtonPressed(_))) => {
-                iced::exit()
-            }
             Message::SystemEvent(iced::Event::Keyboard(keyboard::Event::ModifiersChanged(
                 modifiers,
             ))) => {
                 self.keyboard_modifiers = modifiers;
                 Task::none()
+            }
+            Message::Exit
+            | Message::SystemEvent(iced::Event::Mouse(iced::mouse::Event::ButtonPressed(_))) => {
+                iced::exit()
             }
             Message::SystemEvent(_) => Task::none(),
             Message::AnchorChange(_anchor) => todo!(),
@@ -333,37 +310,37 @@ impl Lucien {
             .padding(10)
             .width(Length::Fill);
 
-        let prompt = row![
-            iced::widget::image(iced::widget::image::Handle::from_bytes(MAGNIFIER))
-                .width(28)
-                .height(28),
-            iced::widget::text_input("Search...", &self.prompt)
-                .id(TEXT_INPUT_ID.clone())
-                .on_input(Message::PromptChange)
-                .on_submit(Message::LaunchApp(self.selected_item))
-                .padding(8)
-                .size(18)
-                .font(iced::Font {
-                    weight: iced::font::Weight::Bold,
+        let magnifier = iced::widget::image(iced::widget::image::Handle::from_bytes(MAGNIFIER))
+            .width(28)
+            .height(28);
+        let promp_input = iced::widget::text_input("Search...", &self.prompt)
+            .id(TEXT_INPUT_ID.clone())
+            .on_input(Message::PromptChange)
+            .on_submit(Message::LaunchApp(self.selected_item))
+            .padding(8)
+            .size(18)
+            .font(iced::Font {
+                weight: iced::font::Weight::Bold,
+                ..Default::default()
+            })
+            .style(move |_, _| iced::widget::text_input::Style {
+                background: iced::Background::Color(iced::Color::TRANSPARENT),
+                border: Border {
+                    width: 0.0,
                     ..Default::default()
-                })
-                .style(move |_, _| {
-                    iced::widget::text_input::Style {
-                        background: iced::Background::Color(iced::Color::TRANSPARENT),
-                        border: Border {
-                            width: 0.0,
-                            ..Default::default()
-                        },
-                        icon: text_main,
-                        placeholder: text_dim,
-                        value: text_main,
-                        selection: active_selection,
-                    }
-                }),
-            self.status_indicator()
-        ]
-        .spacing(2)
-        .align_y(Alignment::Center);
+                },
+                icon: text_main,
+                placeholder: text_dim,
+                value: text_main,
+                selection: active_selection,
+            });
+
+        let prompt_view = row![]
+            .push(magnifier)
+            .push(promp_input)
+            // .push(self.status_indicator())
+            .align_y(iced::Alignment::Center)
+            .spacing(2);
 
         let results = iced::widget::scrollable(content)
             .on_scroll(Message::ScrollableViewport)
@@ -403,7 +380,9 @@ impl Lucien {
             });
 
         container(iced::widget::column![
-            container(prompt).padding(15).align_y(Alignment::Center),
+            container(prompt_view)
+                .padding(15)
+                .align_y(Alignment::Center),
             iced::widget::horizontal_rule(1).style(move |_| iced::widget::rule::Style {
                 color: border_color,
                 width: 1,
@@ -459,31 +438,31 @@ impl Lucien {
         self.ranked_apps = ranked.into_iter().map(|(_score, app)| app).collect();
     }
 
-    fn status_indicator<'a>(&'a self) -> Container<'a, Message> {
-        use iced::widget::image;
+    // fn status_indicator<'a>(&'a self) -> Container<'a, Message> {
+    //     use iced::widget::image;
 
-        let launcher_icon = match self.mode {
-            Mode::Launcher => CUBE_ACTIVE,
-            _ => CUBE_INACTIVE,
-        };
+    //     let launcher_icon = match self.mode {
+    //         Mode::Launcher => CUBE_ACTIVE,
+    //         _ => CUBE_INACTIVE,
+    //     };
 
-        let terminal_icon = match self.mode {
-            Mode::Terminal => TERMINAL_PROMPT_ACTIVE,
-            _ => TERMINAL_PROMPT_INACTIVE,
-        };
+    //     let terminal_icon = match self.mode {
+    //         Mode::Terminal => TERMINAL_PROMPT_ACTIVE,
+    //         _ => TERMINAL_PROMPT_INACTIVE,
+    //     };
 
-        container(
-            row![
-                image(image::Handle::from_bytes(launcher_icon))
-                    .width(18)
-                    .height(18),
-                image(image::Handle::from_bytes(terminal_icon))
-                    .width(18)
-                    .height(18),
-            ]
-            .spacing(10),
-        )
-    }
+    //     container(
+    //         row![
+    //             image(image::Handle::from_bytes(launcher_icon))
+    //                 .width(18)
+    //                 .height(18),
+    //             image(image::Handle::from_bytes(terminal_icon))
+    //                 .width(18)
+    //                 .height(18),
+    //         ]
+    //         .spacing(10),
+    //     )
+    // }
 
     fn snap_if_needed(&self) -> Task<Message> {
         let Some(viewport) = &self.last_viewport else {
