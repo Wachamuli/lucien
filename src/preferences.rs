@@ -1,5 +1,5 @@
 use std::{
-    collections::{HashMap, HashSet},
+    collections::HashSet,
     io::{self, Write},
     path::PathBuf,
 };
@@ -37,9 +37,9 @@ impl Preferences {
             .append(true)
             .open(&self.path)?;
 
-        let exists = self.favorite_apps.contains(&app_id);
+        let is_favorite_app = self.favorite_apps.contains(&app_id);
 
-        if exists {
+        if is_favorite_app {
             let content = std::fs::read_to_string(&self.path)?;
             let new_content: String = content
                 .lines()

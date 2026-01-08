@@ -1,4 +1,4 @@
-use std::{collections::HashSet, sync::LazyLock};
+use std::sync::LazyLock;
 
 use fuzzy_matcher::{FuzzyMatcher, skim::SkimMatcherV2};
 use iced::{
@@ -48,7 +48,7 @@ pub struct Lucien {
     cached_apps: Vec<App>,
     ranked_apps: Vec<App>,
     preferences: Preferences,
-    scroll_position: usize,
+    selected_item: usize,
     last_viewport: Option<Viewport>,
 }
 
@@ -61,6 +61,7 @@ pub enum Message {
     ScrollableViewport(Viewport),
     SystemEvent(iced::Event),
     Exit,
+    MarkFavoriteShortCut,
 }
 
 impl Lucien {
@@ -80,7 +81,7 @@ impl Lucien {
             cached_apps,
             ranked_apps,
             preferences,
-            scroll_position: 0,
+            selected_item: 0,
             last_viewport: None,
         };
 
@@ -104,32 +105,10 @@ impl Lucien {
                     return Task::none();
                 }
 
-                let matcher = SkimMatcherV2::default();
+                self.update_ranked_apps();
 
-                let mut ranked_apps: Vec<(i64, App)> = self
-                    .cached_apps
-                    .iter()
-                    .filter_map(|app| {
-                        matcher
-                            .fuzzy_match(&app.name, &prompt)
-                            .map(|score| (score, app.clone()))
-                    })
-                    .collect();
-
-                ranked_apps.sort_by(|(score_a, app_a), (score_b, app_b)| {
-                    let a_is_fav = self.preferences.favorite_apps.contains(&app_a.id);
-                    let b_is_fav = self.preferences.favorite_apps.contains(&app_b.id);
-
-                    match (a_is_fav, b_is_fav) {
-                        (true, false) => std::cmp::Ordering::Less,
-                        (false, true) => std::cmp::Ordering::Greater,
-                        _ => score_b.cmp(score_a),
-                    }
-                });
-
-                self.ranked_apps = ranked_apps.into_iter().map(|(_score, app)| app).collect();
                 self.prompt = prompt;
-                self.scroll_position = 0;
+                self.selected_item = 0;
 
                 if let Some(viewport) = self.last_viewport {
                     if viewport.absolute_offset().y > 0.0 {
@@ -142,6 +121,20 @@ impl Lucien {
 
                 Task::none()
             }
+            Message::MarkFavoriteShortCut => {
+                let Some(app) = self.ranked_apps.get(self.selected_item) else {
+                    return Task::none();
+                };
+
+                let result = self.preferences.toggle_favorite(&app.id);
+
+                match result {
+                    Ok(_) => self.update_ranked_apps(),
+                    Err(_) => {}
+                }
+
+                Task::none()
+            }
             Message::MarkFavorite(index) => {
                 let Some(app) = self.ranked_apps.get(index) else {
                     return Task::none();
@@ -150,7 +143,7 @@ impl Lucien {
                 let result = self.preferences.toggle_favorite(&app.id);
 
                 match result {
-                    Ok(_) => Task::none(),
+                    Ok(_) => text_input::focus(TEXT_INPUT_ID.clone()),
                     Err(_) => Task::none(),
                 }
             }
@@ -165,21 +158,21 @@ impl Lucien {
             })) => {
                 use iced::keyboard::key::Named as kp;
 
-                let old_pos = self.scroll_position;
+                let old_pos = self.selected_item;
 
                 match (key_pressed, modifiers.shift()) {
                     (kp::ArrowDown | kp::Tab, false) => {
-                        self.scroll_position =
-                            wrapped_index(self.scroll_position, self.ranked_apps.len(), 1);
+                        self.selected_item =
+                            wrapped_index(self.selected_item, self.ranked_apps.len(), 1);
                     }
                     (kp::ArrowUp, false) | (kp::Tab, true) => {
-                        self.scroll_position =
-                            wrapped_index(self.scroll_position, self.ranked_apps.len(), -1);
+                        self.selected_item =
+                            wrapped_index(self.selected_item, self.ranked_apps.len(), -1);
                     }
                     _ => {}
                 }
 
-                if old_pos != self.scroll_position {
+                if old_pos != self.selected_item {
                     return self.snap_if_needed();
                 }
 
@@ -209,7 +202,7 @@ impl Lucien {
     pub fn subscription(&self) -> Subscription<Message> {
         Subscription::batch([
             event::listen().map(Message::SystemEvent),
-            event::listen_with(|event, status, _id| match (event, status) {
+            event::listen_with(move |event, status, _id| match (event, status) {
                 (
                     Event::Keyboard(keyboard::Event::KeyPressed {
                         key: keyboard::Key::Named(keyboard::key::Named::Escape),
@@ -232,6 +225,14 @@ impl Lucien {
                     keyboard::key::Code::Digit5 => Some(Message::LaunchApp(4)),
                     _ => None,
                 },
+                (
+                    Event::Keyboard(keyboard::Event::KeyPressed {
+                        physical_key: keyboard::key::Physical::Code(keyboard::key::Code::KeyF),
+                        modifiers,
+                        ..
+                    }),
+                    _,
+                ) if modifiers.control() => Some(Message::MarkFavoriteShortCut),
                 _ => None,
             }),
         ])
@@ -277,11 +278,11 @@ impl Lucien {
         );
 
         for (index, app) in self.ranked_apps.iter().enumerate() {
-            let is_selected = self.scroll_position == index;
+            let is_selected = self.selected_item == index;
             let is_favorite = self.preferences.favorite_apps.contains(&app.id);
 
             let element: Element<Message> = app
-                .itemlist(self.scroll_position, index, is_favorite)
+                .itemlist(self.selected_item, index, is_favorite)
                 .style(move |_, status| {
                     let bg = if is_selected {
                         active_selection
@@ -329,7 +330,6 @@ impl Lucien {
             .push(other_column)
             .push_maybe(self.ranked_apps.is_empty().then(|| results_not_found))
             .padding(10)
-            .spacing(4)
             .width(Length::Fill);
 
         let prompt = row![
@@ -339,7 +339,7 @@ impl Lucien {
             iced::widget::text_input("Search...", &self.prompt)
                 .id(TEXT_INPUT_ID.clone())
                 .on_input(Message::PromptChange)
-                .on_submit(Message::LaunchApp(self.scroll_position))
+                .on_submit(Message::LaunchApp(self.selected_item))
                 .padding(8)
                 .size(18)
                 .font(iced::Font {
@@ -428,6 +428,36 @@ impl Lucien {
         })
     }
 
+    fn update_ranked_apps(&mut self) {
+        let matcher = SkimMatcherV2::default();
+
+        let mut ranked: Vec<(i64, App)> = self
+            .cached_apps
+            .iter()
+            .filter_map(|app| {
+                let score = if self.prompt.is_empty() {
+                    0
+                } else {
+                    matcher.fuzzy_match(&app.name, &self.prompt)?
+                };
+                Some((score, app.clone()))
+            })
+            .collect();
+
+        ranked.sort_by(|(score_a, app_a), (score_b, app_b)| {
+            let a_is_fav = self.preferences.favorite_apps.contains(&app_a.id);
+            let b_is_fav = self.preferences.favorite_apps.contains(&app_b.id);
+
+            match (a_is_fav, b_is_fav) {
+                (true, false) => std::cmp::Ordering::Less,
+                (false, true) => std::cmp::Ordering::Greater,
+                _ => score_b.cmp(score_a),
+            }
+        });
+
+        self.ranked_apps = ranked.into_iter().map(|(_score, app)| app).collect();
+    }
+
     fn status_indicator<'a>(&'a self) -> Container<'a, Message> {
         use iced::widget::image;
 
@@ -472,7 +502,7 @@ impl Lucien {
             return Task::none();
         }
 
-        let i_top = self.scroll_position as f32 * item_height;
+        let i_top = self.selected_item as f32 * item_height;
         let i_bottom = i_top + item_height + 15.0;
 
         let mut target_y = None;
@@ -499,9 +529,14 @@ impl Lucien {
 }
 
 fn wrapped_index(index: usize, array_len: usize, step: isize) -> usize {
+    if array_len == 0 {
+        return 0;
+    }
+
     if step >= 0 {
         return (index + step as usize) % array_len;
     }
+
     let abs_offset = step.unsigned_abs();
     (index + array_len - (abs_offset % array_len)) % array_len
 }
