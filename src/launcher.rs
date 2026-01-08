@@ -105,10 +105,9 @@ impl Lucien {
                     return Task::none();
                 }
 
-                self.update_ranked_apps();
-
                 self.prompt = prompt;
                 self.selected_item = 0;
+                self.update_ranked_apps();
 
                 if let Some(viewport) = self.last_viewport {
                     if viewport.absolute_offset().y > 0.0 {
@@ -143,7 +142,10 @@ impl Lucien {
                 let result = self.preferences.toggle_favorite(&app.id);
 
                 match result {
-                    Ok(_) => text_input::focus(TEXT_INPUT_ID.clone()),
+                    Ok(_) => {
+                        self.update_ranked_apps();
+                        text_input::focus(TEXT_INPUT_ID.clone())
+                    }
                     Err(_) => Task::none(),
                 }
             }
@@ -265,17 +267,16 @@ impl Lucien {
             })
         }
 
-        let mut favorite_column = Column::new().push_maybe(
-            self.prompt
-                .is_empty()
-                .then(|| section("Favorites", text_dim)),
-        );
+        let mut starred_column;
+        let mut general_column;
 
-        let mut other_column = Column::new().push_maybe(
-            self.prompt
-                .is_empty()
-                .then(|| section("Other Apps", text_dim)),
-        );
+        if self.prompt.is_empty() && !self.preferences.favorite_apps.is_empty() {
+            starred_column = Column::new().push(section("Starred", text_dim));
+            general_column = Column::new().push(section("General", text_dim));
+        } else {
+            starred_column = Column::new();
+            general_column = Column::new();
+        }
 
         for (index, app) in self.ranked_apps.iter().enumerate() {
             let is_selected = self.selected_item == index;
@@ -305,9 +306,9 @@ impl Lucien {
                 .into();
 
             if is_favorite {
-                favorite_column = favorite_column.push(element);
+                starred_column = starred_column.push(element);
             } else {
-                other_column = other_column.push(element);
+                general_column = general_column.push(element);
             }
         }
 
@@ -323,11 +324,11 @@ impl Lucien {
                     ..Default::default()
                 }),
         )
-        .padding(11);
+        .padding(19.8);
 
         let content = Column::new()
-            .push(favorite_column)
-            .push(other_column)
+            .push(starred_column)
+            .push(general_column)
             .push_maybe(self.ranked_apps.is_empty().then(|| results_not_found))
             .padding(10)
             .width(Length::Fill);
