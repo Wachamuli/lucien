@@ -11,3 +11,6 @@ xdg = "3.0.0"
 fuzzy-matcher = "0.3.7"
 libc = "0.2.179"
 resvg = "0.45.1"
+tracing = "0.1.44"
+tracing-subscriber = {version = "0.3.22", features = ["env-filter"]}
+tracing-appender = "0.2.4"
