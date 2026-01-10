@@ -20,7 +20,7 @@ To run Lucien, your environment must meet the following criteria:
 
 - **Protocol Support**: Your compositor must support the *wlr-layer-shell* protocol (common in *Sway*, *Hyprland*, and *River*).
 
-- **Build Dependencies**: ompiling from source requires the [Rust toolchain]("https://rust-lang.org/tools/install/").
+- **Build Dependencies**: Compiling from source requires the [Rust toolchain]("https://rust-lang.org/tools/install/").
 
 ## Configuration
 
@@ -39,7 +39,7 @@ Lucien looks for settings in the following location: `$XDG_CONFIG_HOME/lucien/se
 1. Clone the repository
 
 ```bash
-git clone https://github.com/yourusername/lucien.git
+git clone https://github.com/Wachamuli/lucien.git
 cd lucien
 cargo build --release
 ```
