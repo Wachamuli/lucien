@@ -3,72 +3,54 @@ use std::{collections::HashSet, env, fs, io, path::PathBuf};
 use toml_edit::DocumentMut;
 
 #[derive(Debug, Serialize, Deserialize)]
+#[serde(default)]
 pub struct Border {
-    #[serde(default = "default_border_color")]
     pub color: String,
-    #[serde(default = "default_border_width")]
     pub width: u16,
-}
-
-fn default_border_color() -> String {
-    "#A6A6A61A".to_string()
-}
-fn default_border_width() -> u16 {
-    1
+    pub radius: u16,
 }
 
 impl Default for Border {
     fn default() -> Self {
         Self {
-            color: default_border_color(),
-            width: default_border_width(),
+            color: "#A6A6A61A".to_string(),
+            width: 1,
+            radius: 20,
         }
     }
 }
 
 #[derive(Debug, Serialize, Deserialize)]
+#[serde(default)]
 pub struct Theme {
-    #[serde(default = "default_background_color")]
     pub background: String,
-    #[serde(default = "default_foreground_color")]
-    pub foreground: String,
-
-    #[serde(default)]
+    pub focus_highlight: String,
+    pub hover_highlight: String,
     pub border: Border,
-}
-
-fn default_background_color() -> String {
-    "#1F1F1FF2".to_string()
-}
-
-fn default_foreground_color() -> String {
-    "#FFFFFF1F".to_string()
 }
 
 impl Default for Theme {
     fn default() -> Self {
         Self {
             background: "#1F1F1FF2".to_string(),
-            foreground: "#FFFFFF1F".to_string(),
+            focus_highlight: "#FFFFFF1F".to_string(),
+            hover_highlight: "#FFFFFF14".to_string(),
             border: Border::default(),
         }
     }
 }
 
 #[derive(Debug, Serialize, Deserialize)]
+#[serde(default)]
 pub struct Preferences {
+    #[serde(skip)]
     path: Option<PathBuf>,
-
-    #[serde(default)]
     pub favorite_apps: HashSet<String>,
-
-    #[serde(default)]
     pub theme: Theme,
 }
 
 impl Default for Preferences {
     fn default() -> Self {
-        tracing::warn!("Could not determine config path. Using in-memory defaults.");
         Self {
             path: None,
             favorite_apps: HashSet::new(),
@@ -85,18 +67,15 @@ impl Preferences {
         let settings_file_path = xdg_dirs.place_config_file(&settings_file_name);
 
         let Ok(path) = settings_file_path else {
+            tracing::warn!("Could not determine config path. Using in-memory defaults.");
             return Self::default();
         };
-
-        // TODO: REMOVE
-        let structure = toml::to_string_pretty(&Self::default());
-        println!("preferences.toml should look like:\n{}", structure.unwrap());
 
         let settings_file_string = std::fs::read_to_string(&path).unwrap_or_default();
         let Ok(mut preferences): Result<Preferences, toml::de::Error> =
             toml::from_str(&settings_file_string)
         else {
-            tracing::error!("Syntax error detected in {}", &settings_file_name);
+            tracing::error!(path = ?path,"Syntax error detected in");
             return Self::default();
         };
 
@@ -115,7 +94,8 @@ impl Preferences {
         };
 
         let settings_file_string = std::fs::read_to_string(&preferences_path).unwrap_or_default();
-        // At this point is safe to unwrap.
+        // At this point is safe to call `unwrap`. The path leads to a valid TOML
+        // checked by the `load` function.
         let mut preferences = settings_file_string.parse::<DocumentMut>().unwrap();
         preferences[key] = toml_edit::value(value);
         fs::write(preferences_path, preferences.to_string())?;

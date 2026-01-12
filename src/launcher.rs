@@ -222,13 +222,16 @@ impl Lucien {
     }
 
     pub fn view(&self) -> Container<'_, Message> {
+        // FIXME: It's not safe to call unwrap on any of this functions.
         let style = &self.preferences.theme;
         let background = iced::Color::parse(&style.background).unwrap();
-        let active_selection = iced::Color::parse(&style.foreground).unwrap();
+        let border_color = iced::Color::parse(&style.border.color).unwrap();
+        let focus_highlight = iced::Color::parse(&style.focus_highlight).unwrap();
+        let hover_highlight = iced::Color::parse(&style.hover_highlight).unwrap();
 
         // let background = iced::Color::from_rgba(0.12, 0.12, 0.12, 0.95);
-        let border_color = iced::Color::from_rgba(0.65, 0.65, 0.65, 0.10);
-        let inner_glow = iced::Color::from_rgba(1.0, 1.0, 1.0, 0.08);
+        // let border_color = iced::Color::from_rgba(0.65, 0.65, 0.65, 0.10);
+        // let inner_glow = iced::Color::from_rgba(1.0, 1.0, 1.0, 0.08);
         // let active_selection = iced::Color::from_rgba(1.0, 1.0, 1.0, 0.12);
         let text_main = iced::Color::from_rgba(0.95, 0.95, 0.95, 1.0);
         let text_dim = iced::Color::from_rgba(1.0, 1.0, 1.0, 0.5);
@@ -271,9 +274,9 @@ impl Lucien {
                 .itemlist(self.selected_item, index, is_favorite)
                 .style(move |_, status| {
                     let bg = if is_selected {
-                        active_selection
+                        focus_highlight
                     } else if status == button::Status::Hovered {
-                        inner_glow
+                        hover_highlight
                     } else {
                         iced::Color::TRANSPARENT
                     };
@@ -340,7 +343,7 @@ impl Lucien {
                 icon: text_main,
                 placeholder: text_dim,
                 value: text_main,
-                selection: active_selection,
+                selection: focus_highlight,
             });
 
         let prompt_view = row![]
@@ -392,7 +395,7 @@ impl Lucien {
                 .padding(15)
                 .align_y(Alignment::Center),
             iced::widget::horizontal_rule(1).style(move |_| iced::widget::rule::Style {
-                color: iced::Color::parse(&style.border.color).unwrap(),
+                color: border_color,
                 width: style.border.width,
                 fill_mode: iced::widget::rule::FillMode::Padded(10),
                 radius: Default::default(),
@@ -409,8 +412,8 @@ impl Lucien {
             background: Some(iced::Background::Color(background)),
             border: Border {
                 width: style.border.width as f32,
-                color: iced::Color::parse(&style.border.color).unwrap(),
-                radius: iced::border::radius(20),
+                color: border_color,
+                radius: iced::border::radius(style.border.radius),
             },
             ..Default::default()
         })
