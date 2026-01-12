@@ -113,8 +113,9 @@ impl App {
                 .arg("-c")
                 .arg(format!("{} &", clean_cmd))
                 .pre_exec(|| {
-                    libc::setsid();
-                    Ok(())
+                    nix::unistd::setsid()
+                        .map(|_| ())
+                        .map_err(|e| io::Error::new(io::ErrorKind::PermissionDenied, e.desc()))
                 });
         }
 
