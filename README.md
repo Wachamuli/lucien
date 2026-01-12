@@ -24,7 +24,7 @@ To run Lucien, your environment must meet the following criteria:
 
 ## Configuration
 
-Lucien looks for settings in the following location: `$XDG_CONFIG_HOME/lucien/settings.conf`
+Lucien looks for settings in the following location: `$XDG_CONFIG_HOME/lucien/prefences.toml`
 
 ## Keyboard Shortcuts
 
