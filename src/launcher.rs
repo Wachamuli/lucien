@@ -60,6 +60,7 @@ impl Lucien {
 
         let cached_apps = all_apps();
         let mut ranked_apps = cached_apps.clone();
+        // TODO: Note: sort_by_key is executed even if favorite_apps is empty.
         ranked_apps.sort_by_key(|app| !preferences.favorite_apps.contains(&app.id));
 
         let auto_focus_prompt_task = text_input::focus(TEXT_INPUT_ID.clone());
@@ -221,10 +222,14 @@ impl Lucien {
     }
 
     pub fn view(&self) -> Container<'_, Message> {
-        let background = iced::Color::from_rgba(0.12, 0.12, 0.12, 0.95);
+        let style = &self.preferences.theme;
+        let background = iced::Color::parse(&style.background).unwrap();
+        let active_selection = iced::Color::parse(&style.foreground).unwrap();
+
+        // let background = iced::Color::from_rgba(0.12, 0.12, 0.12, 0.95);
         let border_color = iced::Color::from_rgba(0.65, 0.65, 0.65, 0.10);
         let inner_glow = iced::Color::from_rgba(1.0, 1.0, 1.0, 0.08);
-        let active_selection = iced::Color::from_rgba(1.0, 1.0, 1.0, 0.12);
+        // let active_selection = iced::Color::from_rgba(1.0, 1.0, 1.0, 0.12);
         let text_main = iced::Color::from_rgba(0.95, 0.95, 0.95, 1.0);
         let text_dim = iced::Color::from_rgba(1.0, 1.0, 1.0, 0.5);
 
@@ -387,8 +392,8 @@ impl Lucien {
                 .padding(15)
                 .align_y(Alignment::Center),
             iced::widget::horizontal_rule(1).style(move |_| iced::widget::rule::Style {
-                color: border_color,
-                width: 1,
+                color: iced::Color::parse(&style.border.color).unwrap(),
+                width: style.border.width,
                 fill_mode: iced::widget::rule::FillMode::Padded(10),
                 radius: Default::default(),
             }),
@@ -403,8 +408,8 @@ impl Lucien {
         .style(move |_| container::Style {
             background: Some(iced::Background::Color(background)),
             border: Border {
-                width: 1.0,
-                color: border_color,
+                width: style.border.width as f32,
+                color: iced::Color::parse(&style.border.color).unwrap(),
                 radius: iced::border::radius(20),
             },
             ..Default::default()

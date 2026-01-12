@@ -77,7 +77,7 @@ fn setup_tracing_subscriber(cache_dir: PathBuf) {
         .add_directive("usvg=error".parse().unwrap())
         .add_directive("wgpu_hal=error".parse().unwrap())
         .add_directive("wgpu_core=error".parse().unwrap())
-        .add_directive("wgpu_core=error".parse().unwrap());
+        .add_directive("calloop=error".parse().unwrap());
 
     tracing_subscriber::registry()
         .with(env_filter)
