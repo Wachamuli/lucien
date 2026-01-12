@@ -1,10 +1,6 @@
-use std::{
-    collections::HashSet,
-    io::{self, Write},
-    path::PathBuf,
-};
+use std::{collections::HashSet, fs, io, path::PathBuf};
 
-#[derive(Debug)]
+#[derive(Debug, Default)]
 pub struct Preferences {
     path: PathBuf,
     pub favorite_apps: HashSet<String>,
@@ -15,11 +11,8 @@ impl Preferences {
         let package_name = env!("CARGO_PKG_NAME");
         let settings_file_name = "settings.conf";
         let xdg_dirs = xdg::BaseDirectories::with_prefix(&package_name);
-        let settings_file_path = xdg_dirs.find_config_file(&settings_file_name).unwrap();
+        let settings_file_path = xdg_dirs.place_config_file(&settings_file_name)?;
 
-        // TODO: CREATE FILE IF IT DOESN'T EXIST
-
-        // FILE PARSER
         let settings_file = std::fs::read_to_string(&settings_file_path)?;
         let favorite_apps: HashSet<String> = settings_file.lines().map(String::from).collect();
 
@@ -29,38 +22,29 @@ impl Preferences {
         })
     }
 
-    pub fn toggle_favorite(&mut self, app_id: impl Into<String>) -> io::Result<()> {
-        let app_id = app_id.into();
-        let preferences_file = std::fs::OpenOptions::new()
-            .write(true)
-            .create(false)
-            .append(true)
-            .open(&self.path)?;
+    fn save(&self) -> io::Result<()> {
+        let content = self
+            .favorite_apps
+            .iter()
+            .cloned()
+            .collect::<Vec<_>>()
+            .join("\n");
 
-        let is_favorite_app = self.favorite_apps.contains(&app_id);
-
-        if is_favorite_app {
-            let content = std::fs::read_to_string(&self.path)?;
-            let new_content: String = content
-                .lines()
-                .filter(|line| line.trim() != app_id)
-                .collect::<Vec<_>>()
-                .join("\n");
-
-            let final_output = if new_content.is_empty() {
-                new_content
-            } else {
-                format!("{}\n", new_content)
-            };
-
-            std::fs::write(&self.path, final_output)?;
-
-            self.favorite_apps.remove(&app_id);
+        let output = if content.is_empty() {
+            content
         } else {
-            writeln!(&preferences_file, "{}", app_id)?;
-            self.favorite_apps.insert(app_id);
+            format!("{}\n", content)
+        };
+
+        fs::write(&self.path, output)
+    }
+
+    pub fn toggle_favorite(&mut self, app_id: impl Into<String>) -> io::Result<()> {
+        let id = app_id.into();
+        if !self.favorite_apps.insert(id.clone()) {
+            self.favorite_apps.remove(&id);
         }
 
-        Ok(())
+        self.save()
     }
 }
