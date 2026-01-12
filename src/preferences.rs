@@ -1,28 +1,50 @@
-use std::{collections::HashSet, fs, io, path::PathBuf};
+use std::{collections::HashSet, env, fs, io, path::PathBuf};
 
-#[derive(Debug, Default)]
+#[derive(Debug)]
 pub struct Preferences {
-    path: PathBuf,
+    path: Option<PathBuf>,
     pub favorite_apps: HashSet<String>,
 }
 
-impl Preferences {
-    pub fn load() -> io::Result<Self> {
-        let package_name = env!("CARGO_PKG_NAME");
-        let settings_file_name = "settings.conf";
-        let xdg_dirs = xdg::BaseDirectories::with_prefix(&package_name);
-        let settings_file_path = xdg_dirs.place_config_file(&settings_file_name)?;
+impl Default for Preferences {
+    fn default() -> Self {
+        Self {
+            path: None,
+            favorite_apps: HashSet::new(),
+        }
+    }
+}
 
-        let settings_file = std::fs::read_to_string(&settings_file_path)?;
+impl Preferences {
+    pub fn load() -> Self {
+        let package_name = env!("CARGO_PKG_NAME");
+        let settings_file_name = "preferences.conf";
+        let xdg_dirs = xdg::BaseDirectories::with_prefix(&package_name);
+        let settings_file_path = xdg_dirs.place_config_file(&settings_file_name);
+
+        let Ok(path) = settings_file_path else {
+            tracing::warn!("Could not determine config path. Using in-memory defaults.");
+            return Self::default();
+        };
+
+        let settings_file = std::fs::read_to_string(&path).unwrap_or_default();
         let favorite_apps: HashSet<String> = settings_file.lines().map(String::from).collect();
 
-        Ok(Self {
-            path: settings_file_path,
+        Self {
+            path: Some(path),
             favorite_apps,
-        })
+        }
     }
 
     fn save(&self) -> io::Result<()> {
+        let Some(ref preferences_path) = self.path else {
+            tracing::warn!("In-memory defaults. Settings will not be saved");
+            return Err(io::Error::new(
+                io::ErrorKind::NotFound,
+                "No persistent path available",
+            ));
+        };
+
         let content = self
             .favorite_apps
             .iter()
@@ -36,7 +58,9 @@ impl Preferences {
             format!("{}\n", content)
         };
 
-        fs::write(&self.path, output)
+        fs::write(preferences_path, output)?;
+        tracing::debug!(path = ?preferences_path, "Preference saved into disk.");
+        Ok(())
     }
 
     pub fn toggle_favorite(&mut self, app_id: impl Into<String>) -> io::Result<()> {
