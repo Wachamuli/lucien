@@ -56,7 +56,7 @@ pub enum Message {
 
 impl Lucien {
     pub fn init() -> (Self, Task<Message>) {
-        let preferences = Preferences::load().unwrap(); // HANDLE this error
+        let preferences = Preferences::load();
 
         let cached_apps = all_apps();
         let mut ranked_apps = cached_apps.clone();
@@ -123,7 +123,10 @@ impl Lucien {
                         self.update_ranked_apps();
                         text_input::focus(TEXT_INPUT_ID.clone())
                     }
-                    Err(_) => Task::none(),
+                    Err(_) => {
+                        // eprintln!("{}", e);
+                        Task::none()
+                    }
                 }
             }
             Message::ScrollableViewport(viewport) => {

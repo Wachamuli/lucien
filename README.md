@@ -18,7 +18,7 @@ To run Lucien, your environment must meet the following criteria:
 
 - **Display Server**: Wayland.
 
-- **Protocol Support**: Your compositor must support the *wlr-layer-shell* protocol (common in *Sway*, *Hyprland*, and *River*).
+- **Protocol Support**: Your compositor must support the *wlr-layer-shell* protocol (common in *Sway*, *Hyprland*, *Niri*, and more).
 
 - **Build Dependencies**: Compiling from source requires the [Rust toolchain]("https://rust-lang.org/tools/install/").
 
@@ -31,6 +31,8 @@ Lucien looks for settings in the following location: `$XDG_CONFIG_HOME/lucien/se
 | Shortcut	       |Action                                        |
 -------------------|----------------------------------------------|
 |Enter	           |Launch the first entry in the list            |
+|Tab     	         |Select next entry                             |
+|Shift + Tab     	 |Select previous entry                         |
 |Alt + 1-5	       |Launch the specific entry (1 through 5)       |
 |Ctrl + f	         |Toggle favorite status for the selected entry |
 
