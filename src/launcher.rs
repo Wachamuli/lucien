@@ -222,23 +222,10 @@ impl Lucien {
     }
 
     pub fn view(&self) -> Container<'_, Message> {
-        // FIXME: It's not safe to call unwrap on any of this function.
         let theme = &self.preferences.theme;
-
-        // This conversions can't be done on view;
-
-        // let background = iced::Color::from(&theme.background);
-        // let focus_highlight = iced::Color::parse(&theme.focus_highlight).unwrap();
-        // let hover_highlight = iced::Color::parse(&theme.hover_highlight).unwrap();
-        // let border_style = iced::Border::from(&theme.border);
-
-        // let background = iced::Color::from_rgba(0.12, 0.12, 0.12, 0.95);
-        // let border_color = iced::Color::from_rgba(0.65, 0.65, 0.65, 0.10);
-        // let hover_highlight = iced::Color::from_rgba(1.0, 1.0, 1.0, 0.08);
-        // let focus_highlight = iced::Color::from_rgba(1.0, 1.0, 1.0, 0.12);
-
         let background = &theme.background;
-        // let border_color = iced::Color::from_rgba(0.65, 0.65, 0.65, 0.10);
+        // Maybe we can get rid of this conversion on the ui.
+        let border_style = iced::Border::from(&theme.border);
         let focus_highlight = &theme.focus_highlight;
         let hover_highlight = &theme.hover_highlight;
 
@@ -405,16 +392,14 @@ impl Lucien {
                 .padding(15)
                 .align_y(Alignment::Center),
             iced::widget::horizontal_rule(1).style(move |_| iced::widget::rule::Style {
-                // color: border_style.color,
-                color: text_dim,
-                width: theme.border.width,
+                color: border_style.color,
+                width: theme.border.width as u16,
                 fill_mode: iced::widget::rule::FillMode::Padded(10),
                 radius: Default::default(),
             }),
             container(results),
             iced::widget::horizontal_rule(1).style(move |_| iced::widget::rule::Style {
-                // color: border_style.color,
-                color: text_dim,
+                color: border_style.color,
                 width: 1,
                 fill_mode: iced::widget::rule::FillMode::Padded(10),
                 radius: Default::default(),
@@ -422,7 +407,7 @@ impl Lucien {
         ])
         .style(move |_| container::Style {
             background: Some(iced::Background::Color(**background)),
-            border: iced::Border::default(),
+            border: border_style,
             ..Default::default()
         })
     }

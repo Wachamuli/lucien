@@ -10,17 +10,32 @@ const DEFAULT_BORDER_COLOR: &str = "#A6A6A61A";
 #[derive(Debug, Serialize, Deserialize)]
 #[serde(default)]
 pub struct Border {
-    pub color: String,
-    pub width: u16,
-    pub radius: u16,
+    pub color: HexColor,
+    pub width: f32,
+    pub radius: [f32; 4],
 }
 
 impl Default for Border {
     fn default() -> Self {
         Self {
-            color: DEFAULT_BORDER_COLOR.to_string(),
-            width: 1,
-            radius: 20,
+            color: DEFAULT_BORDER_COLOR.into(),
+            width: 1.0,
+            radius: [20.0, 20.0, 20.0, 20.0],
+        }
+    }
+}
+
+impl From<&Border> for iced::Border {
+    fn from(value: &Border) -> iced::Border {
+        iced::Border {
+            color: *value.color,
+            width: value.width,
+            radius: iced::border::Radius {
+                top_left: value.radius[0],
+                top_right: value.radius[1],
+                bottom_right: value.radius[2],
+                bottom_left: value.radius[3],
+            },
         }
     }
 }
@@ -29,6 +44,7 @@ impl Default for Border {
 pub struct HexColor(pub iced::Color);
 
 impl From<&str> for HexColor {
+    // FIXME: Not very idiomatic because it might fail.
     fn from(value: &str) -> HexColor {
         HexColor(
             iced::Color::parse(value)
@@ -50,12 +66,15 @@ impl Serialize for HexColor {
     where
         S: serde::Serializer,
     {
-        let r = (self.0.r * 255.0) as u8;
-        let g = (self.0.g * 255.0) as u8;
-        let b = (self.0.b * 255.0) as u8;
-        let a = (self.0.a * 255.0) as u8;
-
-        serializer.serialize_str(&format!("#{:02X}{:02X}{:02X}{:02X}", r, g, b, a))
+        let hex_color = {
+            let color = self.0;
+            let r = (color.r * 255.0) as u8;
+            let g = (color.g * 255.0) as u8;
+            let b = (color.b * 255.0) as u8;
+            let a = (color.a * 255.0) as u8;
+            format!("#{:02X}{:02X}{:02X}{:02X}", r, g, b, a)
+        };
+        serializer.serialize_str(&hex_color)
     }
 }
 
