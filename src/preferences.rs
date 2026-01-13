@@ -2,6 +2,11 @@ use serde::{Deserialize, Serialize};
 use std::{collections::HashSet, env, fs, io, path::PathBuf};
 use toml_edit::DocumentMut;
 
+const DEFAULT_BACKGROUND_COLOR: &str = "#1F1F1FF2";
+const DEFAULT_FOCUS_HIGHLIGHT_COLOR: &str = "#FFFFFF1F";
+const DEFAULT_HOVER_HIGHLIGHT_COLOR: &str = "#FFFFFF14";
+const DEFAULT_BORDER_COLOR: &str = "#A6A6A61A";
+
 #[derive(Debug, Serialize, Deserialize)]
 #[serde(default)]
 pub struct Border {
@@ -13,7 +18,7 @@ pub struct Border {
 impl Default for Border {
     fn default() -> Self {
         Self {
-            color: "#A6A6A61A".to_string(),
+            color: DEFAULT_BORDER_COLOR.to_string(),
             width: 1,
             radius: 20,
         }
@@ -32,9 +37,9 @@ pub struct Theme {
 impl Default for Theme {
     fn default() -> Self {
         Self {
-            background: "#1F1F1FF2".to_string(),
-            focus_highlight: "#FFFFFF1F".to_string(),
-            hover_highlight: "#FFFFFF14".to_string(),
+            background: Hex(DEFAULT_BACKGROUND_COLOR.to_string()),
+            focus_highlight: DEFAULT_FOCUS_HIGHLIGHT_COLOR.to_string(),
+            hover_highlight: DEFAULT_HOVER_HIGHLIGHT_COLOR.to_string(),
             border: Border::default(),
         }
     }
