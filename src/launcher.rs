@@ -14,7 +14,7 @@ use iced_layershell::to_layer_message;
 
 use crate::{
     app::{App, all_apps},
-    preferences::Preferences,
+    preferences::{HexColor, Preferences},
 };
 
 static TEXT_INPUT_ID: LazyLock<text_input::Id> = std::sync::LazyLock::new(text_input::Id::unique);
@@ -222,17 +222,26 @@ impl Lucien {
     }
 
     pub fn view(&self) -> Container<'_, Message> {
-        // FIXME: It's not safe to call unwrap on any of this functions.
-        let style = &self.preferences.theme;
-        let background = iced::Color::parse(&style.background).unwrap();
-        let border_color = iced::Color::parse(&style.border.color).unwrap();
-        let focus_highlight = iced::Color::parse(&style.focus_highlight).unwrap();
-        let hover_highlight = iced::Color::parse(&style.hover_highlight).unwrap();
+        // FIXME: It's not safe to call unwrap on any of this function.
+        let theme = &self.preferences.theme;
+
+        // This conversions can't be done on view;
+
+        // let background = iced::Color::from(&theme.background);
+        // let focus_highlight = iced::Color::parse(&theme.focus_highlight).unwrap();
+        // let hover_highlight = iced::Color::parse(&theme.hover_highlight).unwrap();
+        // let border_style = iced::Border::from(&theme.border);
 
         // let background = iced::Color::from_rgba(0.12, 0.12, 0.12, 0.95);
         // let border_color = iced::Color::from_rgba(0.65, 0.65, 0.65, 0.10);
-        // let inner_glow = iced::Color::from_rgba(1.0, 1.0, 1.0, 0.08);
-        // let active_selection = iced::Color::from_rgba(1.0, 1.0, 1.0, 0.12);
+        // let hover_highlight = iced::Color::from_rgba(1.0, 1.0, 1.0, 0.08);
+        // let focus_highlight = iced::Color::from_rgba(1.0, 1.0, 1.0, 0.12);
+
+        let background = &theme.background;
+        // let border_color = iced::Color::from_rgba(0.65, 0.65, 0.65, 0.10);
+        let focus_highlight = &theme.focus_highlight;
+        let hover_highlight = &theme.hover_highlight;
+
         let text_main = iced::Color::from_rgba(0.95, 0.95, 0.95, 1.0);
         let text_dim = iced::Color::from_rgba(1.0, 1.0, 1.0, 0.5);
 
@@ -278,11 +287,11 @@ impl Lucien {
                     } else if status == button::Status::Hovered {
                         hover_highlight
                     } else {
-                        iced::Color::TRANSPARENT
+                        &HexColor(iced::Color::TRANSPARENT)
                     };
 
                     button::Style {
-                        background: Some(iced::Background::Color(bg)),
+                        background: Some(iced::Background::Color(**bg)),
                         text_color: if is_selected { text_main } else { text_dim },
                         border: Border {
                             radius: iced::border::radius(20),
@@ -343,7 +352,7 @@ impl Lucien {
                 icon: text_main,
                 placeholder: text_dim,
                 value: text_main,
-                selection: focus_highlight,
+                selection: **focus_highlight,
             });
 
         let prompt_view = row![]
@@ -379,7 +388,8 @@ impl Lucien {
                 horizontal_rail: Rail {
                     background: None,
                     scroller: scrollable::Scroller {
-                        color: border_color,
+                        color: text_dim,
+                        // color: border_style.color,
                         border: Border {
                             radius: iced::border::radius(5),
                             ..Default::default()
@@ -395,26 +405,24 @@ impl Lucien {
                 .padding(15)
                 .align_y(Alignment::Center),
             iced::widget::horizontal_rule(1).style(move |_| iced::widget::rule::Style {
-                color: border_color,
-                width: style.border.width,
+                // color: border_style.color,
+                color: text_dim,
+                width: theme.border.width,
                 fill_mode: iced::widget::rule::FillMode::Padded(10),
                 radius: Default::default(),
             }),
             container(results),
             iced::widget::horizontal_rule(1).style(move |_| iced::widget::rule::Style {
-                color: border_color,
+                // color: border_style.color,
+                color: text_dim,
                 width: 1,
                 fill_mode: iced::widget::rule::FillMode::Padded(10),
                 radius: Default::default(),
             }),
         ])
         .style(move |_| container::Style {
-            background: Some(iced::Background::Color(background)),
-            border: Border {
-                width: style.border.width as f32,
-                color: border_color,
-                radius: iced::border::radius(style.border.radius),
-            },
+            background: Some(iced::Background::Color(**background)),
+            border: iced::Border::default(),
             ..Default::default()
         })
     }
