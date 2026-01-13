@@ -1,5 +1,5 @@
 use serde::{Deserialize, Serialize};
-use std::{collections::HashSet, env, fs, io, path::PathBuf};
+use std::{collections::HashSet, env, fs, io, ops::Deref, path::PathBuf};
 use toml_edit::DocumentMut;
 
 const DEFAULT_BACKGROUND_COLOR: &str = "#1F1F1FF2";
@@ -25,21 +25,71 @@ impl Default for Border {
     }
 }
 
+#[derive(Debug)]
+pub struct HexColor(pub iced::Color);
+
+impl From<&str> for HexColor {
+    fn from(value: &str) -> HexColor {
+        HexColor(
+            iced::Color::parse(value)
+                .expect("Invalid color. Use #RGB, #RRGGBB, #RGBA, or #RRGGBBAA format instead."),
+        )
+    }
+}
+
+impl Deref for HexColor {
+    type Target = iced::Color;
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
+impl Serialize for HexColor {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        let r = (self.0.r * 255.0) as u8;
+        let g = (self.0.g * 255.0) as u8;
+        let b = (self.0.b * 255.0) as u8;
+        let a = (self.0.a * 255.0) as u8;
+
+        serializer.serialize_str(&format!("#{:02X}{:02X}{:02X}{:02X}", r, g, b, a))
+    }
+}
+
+impl<'de> Deserialize<'de> for HexColor {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        let color = String::deserialize(deserializer)?;
+        let converted_color = iced::Color::parse(&color).ok_or_else(|| {
+            serde::de::Error::custom(format!(
+                "Invalid color. Use #RGB, #RRGGBB, #RGBA, or #RRGGBBAA format instead."
+            ))
+        })?;
+
+        Ok(HexColor(converted_color))
+    }
+}
+
 #[derive(Debug, Serialize, Deserialize)]
 #[serde(default)]
 pub struct Theme {
-    pub background: String,
-    pub focus_highlight: String,
-    pub hover_highlight: String,
+    pub background: HexColor,
+    pub focus_highlight: HexColor,
+    pub hover_highlight: HexColor,
     pub border: Border,
 }
 
 impl Default for Theme {
     fn default() -> Self {
         Self {
-            background: Hex(DEFAULT_BACKGROUND_COLOR.to_string()),
-            focus_highlight: DEFAULT_FOCUS_HIGHLIGHT_COLOR.to_string(),
-            hover_highlight: DEFAULT_HOVER_HIGHLIGHT_COLOR.to_string(),
+            background: DEFAULT_BACKGROUND_COLOR.into(),
+            focus_highlight: DEFAULT_FOCUS_HIGHLIGHT_COLOR.into(),
+            hover_highlight: DEFAULT_HOVER_HIGHLIGHT_COLOR.into(),
             border: Border::default(),
         }
     }
@@ -77,11 +127,16 @@ impl Preferences {
         };
 
         let settings_file_string = std::fs::read_to_string(&path).unwrap_or_default();
-        let Ok(mut preferences): Result<Preferences, toml::de::Error> =
-            toml::from_str(&settings_file_string)
-        else {
-            tracing::error!(path = ?path,"Syntax error detected in");
-            return Self::default();
+        // TODO: Remove the line below
+        println!("{}", toml::to_string_pretty(&Self::default()).unwrap());
+
+        let mut preferences = match toml::from_str::<Preferences>(&settings_file_string) {
+            Ok(p) => p,
+            Err(e) => {
+                tracing::error!(path = ?path, diagnostic = %e,"Syntax error detected in");
+                tracing::warn!("Using in-memory defaults.");
+                return Self::default();
+            }
         };
 
         preferences.path = Some(path);
