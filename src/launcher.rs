@@ -14,7 +14,7 @@ use iced_layershell::to_layer_message;
 
 use crate::{
     app::{App, all_apps},
-    preferences::{HexColor, Preferences},
+    preferences::{HexColor, Keystroke, Preferences},
 };
 
 static TEXT_INPUT_ID: LazyLock<text_input::Id> = std::sync::LazyLock::new(text_input::Id::unique);
@@ -52,7 +52,7 @@ pub enum Message {
     SystemEvent(iced::Event),
     Exit,
     MarkFavoriteShortCut,
-    KeyPressed(String, keyboard::Modifiers),
+    KeyPressed(keyboard::Key, keyboard::Modifiers),
 }
 
 impl Lucien {
@@ -163,13 +163,19 @@ impl Lucien {
                 Task::none()
             }
             Message::KeyPressed(current_key_pressed, current_modifiers) => {
-                let kbs = &self.preferences.keybindings;
+                use crate::preferences::Action;
+                let keybindings = &self.preferences.keybindings;
 
-                if kbs.exit.matches(&current_key_pressed, current_modifiers) {
-                    return Task::done(Message::Exit);
+                for (action, keystroke) in keybindings {
+                    if keystroke.matches(&current_key_pressed, current_modifiers) {
+                        match action {
+                            Action::Mark => {
+                                return Task::done(Message::MarkFavoriteShortCut);
+                            }
+                            Action::Exit => return Task::done(Message::Exit),
+                        }
+                    };
                 }
-
-                // fn exact_same_combination()
 
                 Task::none()
             }
@@ -198,21 +204,16 @@ impl Lucien {
         Subscription::batch([
             event::listen().map(Message::SystemEvent),
             event::listen_with(move |event, status, _id| match (event, status) {
-                (
-                    Event::Keyboard(keyboard::Event::KeyPressed {
-                        key: keyboard::Key::Named(keyboard::key::Named::Escape),
-                        ..
-                    }),
-                    _,
-                ) => Some(Message::Exit),
-                (
-                    Event::Keyboard(keyboard::Event::KeyPressed {
-                        key: keyboard::Key::Character(key),
-                        modifiers,
-                        ..
-                    }),
-                    _,
-                ) => Some(Message::KeyPressed(key.to_string(), modifiers)),
+                // (
+                //     Event::Keyboard(keyboard::Event::KeyPressed {
+                //         key: keyboard::Key::Named(keyboard::key::Named::Escape),
+                //         ..
+                //     }),
+                //     _,
+                // ) => Some(Message::Exit),
+                (Event::Keyboard(keyboard::Event::KeyPressed { key, modifiers, .. }), _) => {
+                    Some(Message::KeyPressed(key, modifiers))
+                }
                 // (
                 //     Event::Keyboard(keyboard::Event::KeyPressed {
                 //         physical_key: keyboard::key::Physical::Code(physical_key_pressed),

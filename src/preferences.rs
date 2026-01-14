@@ -128,14 +128,6 @@ pub enum Modifier {
     Super,
 }
 
-#[derive(Debug, Serialize, Deserialize, Hash, Eq, PartialEq)]
-#[serde(rename_all = "snake_case")]
-pub enum Action {
-    Up,
-    Down,
-    Mark,
-}
-
 #[derive(Debug, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum Key {
@@ -152,8 +144,19 @@ pub struct Keystroke {
     pub modifiers: HashSet<Modifier>,
 }
 
+#[derive(Debug, Serialize, Deserialize, Hash, Eq, PartialEq)]
+#[serde(rename_all = "snake_case")]
+pub enum Action {
+    Mark,
+    Exit,
+}
+
 impl Keystroke {
-    pub fn matches(&self, iced_key: &str, iced_modifiers: iced::keyboard::Modifiers) -> bool {
+    pub fn matches(
+        &self,
+        iced_key: &iced::keyboard::Key,
+        iced_modifiers: iced::keyboard::Modifiers,
+    ) -> bool {
         let alt = iced_modifiers.alt() == self.modifiers.contains(&Modifier::Alt);
         let shift = iced_modifiers.shift() == self.modifiers.contains(&Modifier::Shift);
         let control = iced_modifiers.control() == self.modifiers.contains(&Modifier::Control);
@@ -163,29 +166,24 @@ impl Keystroke {
             return false;
         }
 
-        match &self.key {
-            Key::Char(c) => iced_key == c.to_string(),
-            Key::Tab => todo!(),
-            Key::Escape => todo!(),
+        match iced_key {
+            iced::keyboard::Key::Named(iced::keyboard::key::Named::Tab) => {
+                matches!(&self.key, Key::Tab)
+            }
+            iced::keyboard::Key::Named(iced::keyboard::key::Named::Escape) => {
+                matches!(&self.key, Key::Escape)
+            }
+            iced::keyboard::Key::Character(c) => {
+                if let Key::Char(d) = &self.key {
+                    return c.to_string() == d.to_string();
+                }
+                return false;
+            }
+            _ => false,
         }
     }
 }
-
-#[derive(Debug, Serialize, Deserialize)]
-pub struct Command {
-    pub exit: Keystroke,
-}
-
-impl Default for Command {
-    fn default() -> Self {
-        Self {
-            exit: Keystroke {
-                key: Key::Char('f'),
-                modifiers: [].into(),
-            },
-        }
-    }
-}
+type Keybindings = HashMap<Action, Keystroke>;
 
 #[derive(Debug, Serialize, Deserialize)]
 #[serde(default)]
@@ -194,7 +192,28 @@ pub struct Preferences {
     path: Option<PathBuf>,
     pub favorite_apps: HashSet<String>,
     pub theme: Theme,
-    pub keybindings: Command,
+    pub keybindings: Keybindings,
+}
+
+fn default_keybindings() -> Keybindings {
+    let mut kb = HashMap::new();
+
+    kb.insert(
+        Action::Exit,
+        Keystroke {
+            key: Key::Escape,
+            modifiers: [].into(),
+        },
+    );
+    kb.insert(
+        Action::Mark,
+        Keystroke {
+            key: Key::Char('f'),
+            modifiers: [Modifier::Control].into(),
+        },
+    );
+
+    kb
 }
 
 impl Default for Preferences {
@@ -203,7 +222,7 @@ impl Default for Preferences {
             path: None,
             favorite_apps: HashSet::new(),
             theme: Theme::default(),
-            keybindings: Default::default(),
+            keybindings: default_keybindings(),
         }
     }
 }
@@ -233,7 +252,11 @@ impl Preferences {
             }
         };
 
+        let mut extended_keybindings = default_keybindings();
+        extended_keybindings.extend(preferences.keybindings);
+
         preferences.path = Some(path);
+        preferences.keybindings = extended_keybindings;
         tracing::debug!("Running under user-defined preferences.");
         preferences
     }
