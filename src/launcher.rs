@@ -14,7 +14,7 @@ use iced_layershell::to_layer_message;
 
 use crate::{
     app::{App, all_apps},
-    preferences::{HexColor, Keystroke, Preferences},
+    preferences::{HexColor, Preferences},
 };
 
 static TEXT_INPUT_ID: LazyLock<text_input::Id> = std::sync::LazyLock::new(text_input::Id::unique);
@@ -46,13 +46,16 @@ pub struct Lucien {
 #[derive(Debug, Clone)]
 pub enum Message {
     PromptChange(String),
-    LaunchApp(usize),
     MarkFavorite(usize),
     ScrollableViewport(Viewport),
     SystemEvent(iced::Event),
+
+    Keybinding(keyboard::Key, keyboard::Modifiers),
+    LaunchApp(usize),
     Exit,
+    PreviousEntry,
+    NextEntry,
     MarkFavoriteShortCut,
-    KeyPressed(keyboard::Key, keyboard::Modifiers),
 }
 
 impl Lucien {
@@ -112,7 +115,6 @@ impl Lucien {
 
                 Task::none()
             }
-            Message::MarkFavoriteShortCut => Task::done(Message::MarkFavorite(self.selected_item)),
             Message::MarkFavorite(index) => {
                 let Some(app) = self.ranked_apps.get(index) else {
                     return Task::none();
@@ -135,26 +137,14 @@ impl Lucien {
                 self.last_viewport = Some(viewport);
                 Task::none()
             }
-            Message::SystemEvent(iced::Event::Keyboard(keyboard::Event::KeyPressed {
-                key: Key::Named(key_pressed),
-                modifiers,
+            Message::PreviousEntry
+            | Message::SystemEvent(Event::Keyboard(keyboard::Event::KeyPressed {
+                key: Key::Named(keyboard::key::Named::ArrowUp),
                 ..
             })) => {
-                use iced::keyboard::key::Named as kp;
-
                 let old_pos = self.selected_item;
 
-                match (key_pressed, modifiers.shift()) {
-                    (kp::ArrowDown | kp::Tab, false) => {
-                        self.selected_item =
-                            wrapped_index(self.selected_item, self.ranked_apps.len(), 1);
-                    }
-                    (kp::ArrowUp, false) | (kp::Tab, true) => {
-                        self.selected_item =
-                            wrapped_index(self.selected_item, self.ranked_apps.len(), -1);
-                    }
-                    _ => {}
-                }
+                self.selected_item = wrapped_index(self.selected_item, self.ranked_apps.len(), -1);
 
                 if old_pos != self.selected_item {
                     return self.snap_if_needed();
@@ -162,7 +152,21 @@ impl Lucien {
 
                 Task::none()
             }
-            Message::KeyPressed(current_key_pressed, current_modifiers) => {
+            Message::NextEntry
+            | Message::SystemEvent(Event::Keyboard(keyboard::Event::KeyPressed {
+                key: Key::Named(keyboard::key::Named::ArrowDown),
+                ..
+            })) => {
+                let old_pos = self.selected_item;
+                self.selected_item = wrapped_index(self.selected_item, self.ranked_apps.len(), 1);
+
+                if old_pos != self.selected_item {
+                    return self.snap_if_needed();
+                }
+
+                Task::none()
+            }
+            Message::Keybinding(current_key_pressed, current_modifiers) => {
                 use crate::preferences::Action;
                 let keybindings = &self.preferences.keybindings;
 
@@ -170,9 +174,11 @@ impl Lucien {
                     if keystroke.matches(&current_key_pressed, current_modifiers) {
                         match action {
                             Action::Mark => {
-                                return Task::done(Message::MarkFavoriteShortCut);
+                                return Task::done(Message::MarkFavorite(self.selected_item));
                             }
                             Action::Exit => return Task::done(Message::Exit),
+                            Action::GoNextEntry => return Task::done(Message::NextEntry),
+                            Action::GoPreviousEntry => return Task::done(Message::PreviousEntry),
                         }
                     };
                 }
@@ -197,6 +203,7 @@ impl Lucien {
             Message::MarginChange(_) => todo!(),
             Message::SizeChange(_) => todo!(),
             Message::VirtualKeyboardPressed { .. } => todo!(),
+            Message::MarkFavoriteShortCut => Task::done(Message::MarkFavorite(self.selected_item)),
         }
     }
 
@@ -204,39 +211,24 @@ impl Lucien {
         Subscription::batch([
             event::listen().map(Message::SystemEvent),
             event::listen_with(move |event, status, _id| match (event, status) {
-                // (
-                //     Event::Keyboard(keyboard::Event::KeyPressed {
-                //         key: keyboard::Key::Named(keyboard::key::Named::Escape),
-                //         ..
-                //     }),
-                //     _,
-                // ) => Some(Message::Exit),
+                (
+                    Event::Keyboard(keyboard::Event::KeyPressed {
+                        physical_key: keyboard::key::Physical::Code(physical_key_pressed),
+                        modifiers,
+                        ..
+                    }),
+                    _,
+                ) if modifiers.alt() => match physical_key_pressed {
+                    keyboard::key::Code::Digit1 => Some(Message::LaunchApp(0)),
+                    keyboard::key::Code::Digit2 => Some(Message::LaunchApp(1)),
+                    keyboard::key::Code::Digit3 => Some(Message::LaunchApp(2)),
+                    keyboard::key::Code::Digit4 => Some(Message::LaunchApp(3)),
+                    keyboard::key::Code::Digit5 => Some(Message::LaunchApp(4)),
+                    _ => None,
+                },
                 (Event::Keyboard(keyboard::Event::KeyPressed { key, modifiers, .. }), _) => {
-                    Some(Message::KeyPressed(key, modifiers))
+                    Some(Message::Keybinding(key, modifiers))
                 }
-                // (
-                //     Event::Keyboard(keyboard::Event::KeyPressed {
-                //         physical_key: keyboard::key::Physical::Code(physical_key_pressed),
-                //         modifiers,
-                //         ..
-                //     }),
-                //     _,
-                // ) if modifiers.alt() => match physical_key_pressed {
-                //     keyboard::key::Code::Digit1 => Some(Message::LaunchApp(0)),
-                //     keyboard::key::Code::Digit2 => Some(Message::LaunchApp(1)),
-                //     keyboard::key::Code::Digit3 => Some(Message::LaunchApp(2)),
-                //     keyboard::key::Code::Digit4 => Some(Message::LaunchApp(3)),
-                //     keyboard::key::Code::Digit5 => Some(Message::LaunchApp(4)),
-                //     _ => None,
-                // },
-                // (
-                //     Event::Keyboard(keyboard::Event::KeyPressed {
-                //         physical_key: keyboard::key::Physical::Code(keyboard::key::Code::KeyF),
-                //         modifiers,
-                //         ..
-                //     }),
-                //     _,
-                // ) if modifiers.control() => Some(Message::MarkFavoriteShortCut),
                 _ => None,
             }),
         ])
