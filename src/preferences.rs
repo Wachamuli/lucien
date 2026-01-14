@@ -138,7 +138,7 @@ pub enum Key {
 }
 
 #[derive(Debug, Serialize, Deserialize)]
-pub struct Keystroke {
+pub struct Keystroks {
     pub key: Key,
     #[serde(default)]
     pub modifiers: HashSet<Modifier>,
@@ -149,9 +149,11 @@ pub struct Keystroke {
 pub enum Action {
     Mark,
     Exit,
+    GoNextEntry,
+    GoPreviousEntry,
 }
 
-impl Keystroke {
+impl Keystroks {
     pub fn matches(
         &self,
         iced_key: &iced::keyboard::Key,
@@ -183,7 +185,7 @@ impl Keystroke {
         }
     }
 }
-type Keybindings = HashMap<Action, Keystroke>;
+type Keybindings = HashMap<Action, Keystroks>;
 
 #[derive(Debug, Serialize, Deserialize)]
 #[serde(default)]
@@ -200,16 +202,30 @@ fn default_keybindings() -> Keybindings {
 
     kb.insert(
         Action::Exit,
-        Keystroke {
+        Keystroks {
             key: Key::Escape,
             modifiers: [].into(),
         },
     );
     kb.insert(
         Action::Mark,
-        Keystroke {
+        Keystroks {
             key: Key::Char('f'),
             modifiers: [Modifier::Control].into(),
+        },
+    );
+    kb.insert(
+        Action::GoNextEntry,
+        Keystroks {
+            key: Key::Tab,
+            modifiers: [].into(),
+        },
+    );
+    kb.insert(
+        Action::GoPreviousEntry,
+        Keystroks {
+            key: Key::Tab,
+            modifiers: [Modifier::Shift].into(),
         },
     );
 
