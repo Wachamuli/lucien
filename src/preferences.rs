@@ -144,7 +144,7 @@ pub struct Keystroks {
     pub modifiers: HashSet<Modifier>,
 }
 
-#[derive(Debug, Serialize, Deserialize, Hash, Eq, PartialEq)]
+#[derive(Debug, Serialize, Deserialize, Hash, Eq, PartialEq, Copy, Clone)]
 #[serde(rename_all = "snake_case")]
 pub enum Action {
     Mark,

@@ -14,7 +14,7 @@ use iced_layershell::to_layer_message;
 
 use crate::{
     app::{App, all_apps},
-    preferences::{HexColor, Preferences},
+    preferences::{Action, HexColor, Preferences},
 };
 
 static TEXT_INPUT_ID: LazyLock<text_input::Id> = std::sync::LazyLock::new(text_input::Id::unique);
@@ -38,7 +38,7 @@ pub struct Lucien {
     cached_apps: Vec<App>,
     ranked_apps: Vec<App>,
     preferences: Preferences,
-    selected_item: usize,
+    selected_entry: usize,
     last_viewport: Option<Viewport>,
 }
 
@@ -46,16 +46,13 @@ pub struct Lucien {
 #[derive(Debug, Clone)]
 pub enum Message {
     PromptChange(String),
+    LaunchApp(usize),
     MarkFavorite(usize),
-    ScrollableViewport(Viewport),
-    SystemEvent(iced::Event),
 
     Keybinding(keyboard::Key, keyboard::Modifiers),
-    LaunchApp(usize),
-    Exit,
-    PreviousEntry,
-    NextEntry,
-    MarkFavoriteShortCut,
+
+    ScrollableViewport(Viewport),
+    SystemEvent(iced::Event),
 }
 
 impl Lucien {
@@ -76,15 +73,65 @@ impl Lucien {
             cached_apps,
             ranked_apps,
             preferences,
-            selected_item: 0,
+            selected_entry: 0,
             last_viewport: None,
         };
 
         (initial_values, auto_focus_prompt_task)
     }
 
+    fn mark_favorite(&mut self, index: usize) -> Task<Message> {
+        let Some(app) = self.ranked_apps.get(index) else {
+            return Task::none();
+        };
+
+        let result = self.preferences.toggle_favorite(&app.id);
+
+        match result {
+            Ok(_) => {
+                self.update_ranked_apps();
+                text_input::focus(TEXT_INPUT_ID.clone())
+            }
+            Err(_) => {
+                // eprintln!("{}", e);
+                Task::none()
+            }
+        }
+    }
+
+    fn go_to_entry(&mut self, step: isize) -> Task<Message> {
+        let old_pos = self.selected_entry;
+
+        self.selected_entry = wrapped_index(self.selected_entry, self.ranked_apps.len(), step);
+
+        if old_pos != self.selected_entry {
+            return self.snap_if_needed();
+        }
+
+        Task::none()
+    }
+
+    fn handle_action(&mut self, action: Action) -> Task<Message> {
+        match action {
+            Action::Mark => self.mark_favorite(self.selected_entry),
+            Action::Exit => iced::exit(),
+            Action::GoNextEntry => self.go_to_entry(1),
+            Action::GoPreviousEntry => self.go_to_entry(-1),
+        }
+    }
+
     pub fn update(&mut self, message: Message) -> Task<Message> {
         match message {
+            Message::Keybinding(current_key_pressed, current_modifiers) => {
+                self.keyboard_modifiers = current_modifiers;
+                for (action, keystroke) in &self.preferences.keybindings {
+                    if keystroke.matches(&current_key_pressed, current_modifiers) {
+                        return self.handle_action(*action);
+                    }
+                }
+
+                Task::none()
+            }
             Message::LaunchApp(index) => {
                 let Some(app) = self.ranked_apps.get(index) else {
                     return Task::none();
@@ -101,7 +148,7 @@ impl Lucien {
                 }
 
                 self.prompt = prompt;
-                self.selected_item = 0;
+                self.selected_entry = 0;
                 self.update_ranked_apps();
 
                 if let Some(viewport) = self.last_viewport {
@@ -115,84 +162,26 @@ impl Lucien {
 
                 Task::none()
             }
-            Message::MarkFavorite(index) => {
-                let Some(app) = self.ranked_apps.get(index) else {
-                    return Task::none();
-                };
-
-                let result = self.preferences.toggle_favorite(&app.id);
-
-                match result {
-                    Ok(_) => {
-                        self.update_ranked_apps();
-                        text_input::focus(TEXT_INPUT_ID.clone())
-                    }
-                    Err(_) => {
-                        // eprintln!("{}", e);
-                        Task::none()
-                    }
-                }
-            }
+            Message::MarkFavorite(index) => self.mark_favorite(index),
             Message::ScrollableViewport(viewport) => {
                 self.last_viewport = Some(viewport);
                 Task::none()
             }
-            Message::PreviousEntry
-            | Message::SystemEvent(Event::Keyboard(keyboard::Event::KeyPressed {
+            Message::SystemEvent(Event::Keyboard(keyboard::Event::KeyPressed {
                 key: Key::Named(keyboard::key::Named::ArrowUp),
                 ..
-            })) => {
-                let old_pos = self.selected_item;
-
-                self.selected_item = wrapped_index(self.selected_item, self.ranked_apps.len(), -1);
-
-                if old_pos != self.selected_item {
-                    return self.snap_if_needed();
-                }
-
-                Task::none()
-            }
-            Message::NextEntry
-            | Message::SystemEvent(Event::Keyboard(keyboard::Event::KeyPressed {
+            })) => self.go_to_entry(-1),
+            Message::SystemEvent(Event::Keyboard(keyboard::Event::KeyPressed {
                 key: Key::Named(keyboard::key::Named::ArrowDown),
                 ..
-            })) => {
-                let old_pos = self.selected_item;
-                self.selected_item = wrapped_index(self.selected_item, self.ranked_apps.len(), 1);
-
-                if old_pos != self.selected_item {
-                    return self.snap_if_needed();
-                }
-
-                Task::none()
-            }
-            Message::Keybinding(current_key_pressed, current_modifiers) => {
-                use crate::preferences::Action;
-                let keybindings = &self.preferences.keybindings;
-
-                for (action, keystroke) in keybindings {
-                    if keystroke.matches(&current_key_pressed, current_modifiers) {
-                        match action {
-                            Action::Mark => {
-                                return Task::done(Message::MarkFavorite(self.selected_item));
-                            }
-                            Action::Exit => return Task::done(Message::Exit),
-                            Action::GoNextEntry => return Task::done(Message::NextEntry),
-                            Action::GoPreviousEntry => return Task::done(Message::PreviousEntry),
-                        }
-                    };
-                }
-
-                Task::none()
-            }
+            })) => self.go_to_entry(1),
             Message::SystemEvent(iced::Event::Keyboard(keyboard::Event::ModifiersChanged(
                 modifiers,
             ))) => {
                 self.keyboard_modifiers = modifiers;
                 Task::none()
             }
-            Message::Exit
-            | Message::SystemEvent(iced::Event::Mouse(iced::mouse::Event::ButtonPressed(_))) => {
+            Message::SystemEvent(iced::Event::Mouse(iced::mouse::Event::ButtonPressed(_))) => {
                 iced::exit()
             }
             Message::SystemEvent(_) => Task::none(),
@@ -203,7 +192,6 @@ impl Lucien {
             Message::MarginChange(_) => todo!(),
             Message::SizeChange(_) => todo!(),
             Message::VirtualKeyboardPressed { .. } => todo!(),
-            Message::MarkFavoriteShortCut => Task::done(Message::MarkFavorite(self.selected_item)),
         }
     }
 
@@ -276,11 +264,11 @@ impl Lucien {
         }
 
         for (index, app) in self.ranked_apps.iter().enumerate() {
-            let is_selected = self.selected_item == index;
+            let is_selected = self.selected_entry == index;
             let is_favorite = self.preferences.favorite_apps.contains(&app.id);
 
             let element: Element<Message> = app
-                .itemlist(self.selected_item, index, is_favorite)
+                .itemlist(self.selected_entry, index, is_favorite)
                 .style(move |_, status| {
                     let bg = if is_selected {
                         focus_highlight
@@ -336,7 +324,7 @@ impl Lucien {
         let promp_input = iced::widget::text_input("Search...", &self.prompt)
             .id(TEXT_INPUT_ID.clone())
             .on_input(Message::PromptChange)
-            .on_submit(Message::LaunchApp(self.selected_item))
+            .on_submit(Message::LaunchApp(self.selected_entry))
             .padding(8)
             .size(18)
             .font(iced::Font {
@@ -486,7 +474,11 @@ impl Lucien {
             return Task::none();
         };
 
-        let item_height = 62.0;
+        let item_height = if self.prompt.is_empty() && !self.preferences.favorite_apps.is_empty() {
+            67.0
+        } else {
+            58.5
+        };
 
         let v_top = viewport.absolute_offset().y;
         let v_height = viewport.bounds().height;
@@ -499,7 +491,7 @@ impl Lucien {
             return Task::none();
         }
 
-        let i_top = self.selected_item as f32 * item_height;
+        let i_top = self.selected_entry as f32 * item_height;
         let i_bottom = i_top + item_height + 15.0;
 
         let mut target_y = None;
