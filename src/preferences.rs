@@ -1,5 +1,10 @@
 use serde::{Deserialize, Serialize};
-use std::{collections::HashSet, env, fs, io, ops::Deref, path::PathBuf};
+use std::{
+    collections::{HashMap, HashSet},
+    env, fs, io,
+    ops::Deref,
+    path::PathBuf,
+};
 use toml_edit::DocumentMut;
 
 const DEFAULT_BACKGROUND_COLOR: &str = "#1F1F1FF2";
@@ -114,6 +119,74 @@ impl Default for Theme {
     }
 }
 
+#[derive(Debug, Serialize, Deserialize, Hash, Eq, PartialEq)]
+#[serde(rename_all = "lowercase")]
+pub enum Modifier {
+    Alt,
+    Shift,
+    Control,
+    Super,
+}
+
+#[derive(Debug, Serialize, Deserialize, Hash, Eq, PartialEq)]
+#[serde(rename_all = "snake_case")]
+pub enum Action {
+    Up,
+    Down,
+    Mark,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum Key {
+    Tab,
+    Escape,
+    #[serde(untagged)]
+    Char(char),
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct Keystroke {
+    pub key: Key,
+    #[serde(default)]
+    pub modifiers: HashSet<Modifier>,
+}
+
+impl Keystroke {
+    pub fn matches(&self, iced_key: &str, iced_modifiers: iced::keyboard::Modifiers) -> bool {
+        let alt = iced_modifiers.alt() == self.modifiers.contains(&Modifier::Alt);
+        let shift = iced_modifiers.shift() == self.modifiers.contains(&Modifier::Shift);
+        let control = iced_modifiers.control() == self.modifiers.contains(&Modifier::Control);
+        let logo = iced_modifiers.logo() == self.modifiers.contains(&Modifier::Super);
+
+        if !(alt && shift && control && logo) {
+            return false;
+        }
+
+        match &self.key {
+            Key::Char(c) => iced_key == c.to_string(),
+            Key::Tab => todo!(),
+            Key::Escape => todo!(),
+        }
+    }
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct Command {
+    pub exit: Keystroke,
+}
+
+impl Default for Command {
+    fn default() -> Self {
+        Self {
+            exit: Keystroke {
+                key: Key::Char('f'),
+                modifiers: [].into(),
+            },
+        }
+    }
+}
+
 #[derive(Debug, Serialize, Deserialize)]
 #[serde(default)]
 pub struct Preferences {
@@ -121,6 +194,7 @@ pub struct Preferences {
     path: Option<PathBuf>,
     pub favorite_apps: HashSet<String>,
     pub theme: Theme,
+    pub keybindings: Command,
 }
 
 impl Default for Preferences {
@@ -129,6 +203,7 @@ impl Default for Preferences {
             path: None,
             favorite_apps: HashSet::new(),
             theme: Theme::default(),
+            keybindings: Default::default(),
         }
     }
 }
