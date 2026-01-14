@@ -14,7 +14,7 @@ use iced_layershell::to_layer_message;
 
 use crate::{
     app::{App, all_apps},
-    preferences::Preferences,
+    preferences::{Action, HexColor, Preferences},
 };
 
 static TEXT_INPUT_ID: LazyLock<text_input::Id> = std::sync::LazyLock::new(text_input::Id::unique);
@@ -38,7 +38,7 @@ pub struct Lucien {
     cached_apps: Vec<App>,
     ranked_apps: Vec<App>,
     preferences: Preferences,
-    selected_item: usize,
+    selected_entry: usize,
     last_viewport: Option<Viewport>,
 }
 
@@ -48,18 +48,20 @@ pub enum Message {
     PromptChange(String),
     LaunchApp(usize),
     MarkFavorite(usize),
+
+    Keybinding(keyboard::Key, keyboard::Modifiers),
+
     ScrollableViewport(Viewport),
     SystemEvent(iced::Event),
-    Exit,
-    MarkFavoriteShortCut,
 }
 
 impl Lucien {
     pub fn init() -> (Self, Task<Message>) {
-        let preferences = Preferences::load().unwrap(); // HANDLE this error
+        let preferences = Preferences::load();
 
         let cached_apps = all_apps();
         let mut ranked_apps = cached_apps.clone();
+        // TODO: Note: sort_by_key is executed even if favorite_apps is empty.
         ranked_apps.sort_by_key(|app| !preferences.favorite_apps.contains(&app.id));
 
         let auto_focus_prompt_task = text_input::focus(TEXT_INPUT_ID.clone());
@@ -71,15 +73,65 @@ impl Lucien {
             cached_apps,
             ranked_apps,
             preferences,
-            selected_item: 0,
+            selected_entry: 0,
             last_viewport: None,
         };
 
         (initial_values, auto_focus_prompt_task)
     }
 
+    fn mark_favorite(&mut self, index: usize) -> Task<Message> {
+        let Some(app) = self.ranked_apps.get(index) else {
+            return Task::none();
+        };
+
+        let result = self.preferences.toggle_favorite(&app.id);
+
+        match result {
+            Ok(_) => {
+                self.update_ranked_apps();
+                text_input::focus(TEXT_INPUT_ID.clone())
+            }
+            Err(_) => {
+                // eprintln!("{}", e);
+                Task::none()
+            }
+        }
+    }
+
+    fn go_to_entry(&mut self, step: isize) -> Task<Message> {
+        let old_pos = self.selected_entry;
+
+        self.selected_entry = wrapped_index(self.selected_entry, self.ranked_apps.len(), step);
+
+        if old_pos != self.selected_entry {
+            return self.snap_if_needed();
+        }
+
+        Task::none()
+    }
+
+    fn handle_action(&mut self, action: Action) -> Task<Message> {
+        match action {
+            Action::Mark => self.mark_favorite(self.selected_entry),
+            Action::Exit => iced::exit(),
+            Action::GoNextEntry => self.go_to_entry(1),
+            Action::GoPreviousEntry => self.go_to_entry(-1),
+        }
+    }
+
     pub fn update(&mut self, message: Message) -> Task<Message> {
         match message {
+            Message::Keybinding(current_key_pressed, current_modifiers) => {
+                self.keyboard_modifiers = current_modifiers;
+                for (action, keystroke) in &self.preferences.keybindings {
+                    if keystroke.matches(&current_key_pressed, current_modifiers) {
+                        return self.handle_action(*action);
+                    }
+                }
+
+                Task::none()
+            }
             Message::LaunchApp(index) => {
                 let Some(app) = self.ranked_apps.get(index) else {
                     return Task::none();
@@ -96,7 +148,7 @@ impl Lucien {
                 }
 
                 self.prompt = prompt;
-                self.selected_item = 0;
+                self.selected_entry = 0;
                 self.update_ranked_apps();
 
                 if let Some(viewport) = self.last_viewport {
@@ -110,61 +162,26 @@ impl Lucien {
 
                 Task::none()
             }
-            Message::MarkFavoriteShortCut => Task::done(Message::MarkFavorite(self.selected_item)),
-            Message::MarkFavorite(index) => {
-                let Some(app) = self.ranked_apps.get(index) else {
-                    return Task::none();
-                };
-
-                let result = self.preferences.toggle_favorite(&app.id);
-
-                match result {
-                    Ok(_) => {
-                        self.update_ranked_apps();
-                        text_input::focus(TEXT_INPUT_ID.clone())
-                    }
-                    Err(_) => Task::none(),
-                }
-            }
+            Message::MarkFavorite(index) => self.mark_favorite(index),
             Message::ScrollableViewport(viewport) => {
                 self.last_viewport = Some(viewport);
                 Task::none()
             }
-            Message::SystemEvent(iced::Event::Keyboard(keyboard::Event::KeyPressed {
-                key: Key::Named(key_pressed),
-                modifiers,
+            Message::SystemEvent(Event::Keyboard(keyboard::Event::KeyPressed {
+                key: Key::Named(keyboard::key::Named::ArrowUp),
                 ..
-            })) => {
-                use iced::keyboard::key::Named as kp;
-
-                let old_pos = self.selected_item;
-
-                match (key_pressed, modifiers.shift()) {
-                    (kp::ArrowDown | kp::Tab, false) => {
-                        self.selected_item =
-                            wrapped_index(self.selected_item, self.ranked_apps.len(), 1);
-                    }
-                    (kp::ArrowUp, false) | (kp::Tab, true) => {
-                        self.selected_item =
-                            wrapped_index(self.selected_item, self.ranked_apps.len(), -1);
-                    }
-                    _ => {}
-                }
-
-                if old_pos != self.selected_item {
-                    return self.snap_if_needed();
-                }
-
-                Task::none()
-            }
+            })) => self.go_to_entry(-1),
+            Message::SystemEvent(Event::Keyboard(keyboard::Event::KeyPressed {
+                key: Key::Named(keyboard::key::Named::ArrowDown),
+                ..
+            })) => self.go_to_entry(1),
             Message::SystemEvent(iced::Event::Keyboard(keyboard::Event::ModifiersChanged(
                 modifiers,
             ))) => {
                 self.keyboard_modifiers = modifiers;
                 Task::none()
             }
-            Message::Exit
-            | Message::SystemEvent(iced::Event::Mouse(iced::mouse::Event::ButtonPressed(_))) => {
+            Message::SystemEvent(iced::Event::Mouse(iced::mouse::Event::ButtonPressed(_))) => {
                 iced::exit()
             }
             Message::SystemEvent(_) => Task::none(),
@@ -184,13 +201,6 @@ impl Lucien {
             event::listen_with(move |event, status, _id| match (event, status) {
                 (
                     Event::Keyboard(keyboard::Event::KeyPressed {
-                        key: keyboard::Key::Named(keyboard::key::Named::Escape),
-                        ..
-                    }),
-                    _,
-                ) => Some(Message::Exit),
-                (
-                    Event::Keyboard(keyboard::Event::KeyPressed {
                         physical_key: keyboard::key::Physical::Code(physical_key_pressed),
                         modifiers,
                         ..
@@ -204,24 +214,22 @@ impl Lucien {
                     keyboard::key::Code::Digit5 => Some(Message::LaunchApp(4)),
                     _ => None,
                 },
-                (
-                    Event::Keyboard(keyboard::Event::KeyPressed {
-                        physical_key: keyboard::key::Physical::Code(keyboard::key::Code::KeyF),
-                        modifiers,
-                        ..
-                    }),
-                    _,
-                ) if modifiers.control() => Some(Message::MarkFavoriteShortCut),
+                (Event::Keyboard(keyboard::Event::KeyPressed { key, modifiers, .. }), _) => {
+                    Some(Message::Keybinding(key, modifiers))
+                }
                 _ => None,
             }),
         ])
     }
 
     pub fn view(&self) -> Container<'_, Message> {
-        let background = iced::Color::from_rgba(0.12, 0.12, 0.12, 0.95);
-        let border_color = iced::Color::from_rgba(0.65, 0.65, 0.65, 0.10);
-        let inner_glow = iced::Color::from_rgba(1.0, 1.0, 1.0, 0.08);
-        let active_selection = iced::Color::from_rgba(1.0, 1.0, 1.0, 0.12);
+        let theme = &self.preferences.theme;
+        let background = &theme.background;
+        // Maybe we can get rid of this conversion on the ui.
+        let border_style = iced::Border::from(&theme.border);
+        let focus_highlight = &theme.focus_highlight;
+        let hover_highlight = &theme.hover_highlight;
+
         let text_main = iced::Color::from_rgba(0.95, 0.95, 0.95, 1.0);
         let text_dim = iced::Color::from_rgba(1.0, 1.0, 1.0, 0.5);
 
@@ -256,22 +264,22 @@ impl Lucien {
         }
 
         for (index, app) in self.ranked_apps.iter().enumerate() {
-            let is_selected = self.selected_item == index;
+            let is_selected = self.selected_entry == index;
             let is_favorite = self.preferences.favorite_apps.contains(&app.id);
 
             let element: Element<Message> = app
-                .itemlist(self.selected_item, index, is_favorite)
+                .itemlist(self.selected_entry, index, is_favorite)
                 .style(move |_, status| {
                     let bg = if is_selected {
-                        active_selection
+                        focus_highlight
                     } else if status == button::Status::Hovered {
-                        inner_glow
+                        hover_highlight
                     } else {
-                        iced::Color::TRANSPARENT
+                        &HexColor(iced::Color::TRANSPARENT)
                     };
 
                     button::Style {
-                        background: Some(iced::Background::Color(bg)),
+                        background: Some(iced::Background::Color(**bg)),
                         text_color: if is_selected { text_main } else { text_dim },
                         border: Border {
                             radius: iced::border::radius(20),
@@ -316,7 +324,7 @@ impl Lucien {
         let promp_input = iced::widget::text_input("Search...", &self.prompt)
             .id(TEXT_INPUT_ID.clone())
             .on_input(Message::PromptChange)
-            .on_submit(Message::LaunchApp(self.selected_item))
+            .on_submit(Message::LaunchApp(self.selected_entry))
             .padding(8)
             .size(18)
             .font(iced::Font {
@@ -332,7 +340,7 @@ impl Lucien {
                 icon: text_main,
                 placeholder: text_dim,
                 value: text_main,
-                selection: active_selection,
+                selection: **focus_highlight,
             });
 
         let prompt_view = row![]
@@ -368,7 +376,8 @@ impl Lucien {
                 horizontal_rail: Rail {
                     background: None,
                     scroller: scrollable::Scroller {
-                        color: border_color,
+                        color: text_dim,
+                        // color: border_style.color,
                         border: Border {
                             radius: iced::border::radius(5),
                             ..Default::default()
@@ -384,26 +393,22 @@ impl Lucien {
                 .padding(15)
                 .align_y(Alignment::Center),
             iced::widget::horizontal_rule(1).style(move |_| iced::widget::rule::Style {
-                color: border_color,
-                width: 1,
+                color: border_style.color,
+                width: theme.border.width as u16,
                 fill_mode: iced::widget::rule::FillMode::Padded(10),
                 radius: Default::default(),
             }),
             container(results),
             iced::widget::horizontal_rule(1).style(move |_| iced::widget::rule::Style {
-                color: border_color,
+                color: border_style.color,
                 width: 1,
                 fill_mode: iced::widget::rule::FillMode::Padded(10),
                 radius: Default::default(),
             }),
         ])
         .style(move |_| container::Style {
-            background: Some(iced::Background::Color(background)),
-            border: Border {
-                width: 1.0,
-                color: border_color,
-                radius: iced::border::radius(20),
-            },
+            background: Some(iced::Background::Color(**background)),
+            border: border_style,
             ..Default::default()
         })
     }
@@ -469,7 +474,11 @@ impl Lucien {
             return Task::none();
         };
 
-        let item_height = 62.0;
+        let item_height = if self.prompt.is_empty() && !self.preferences.favorite_apps.is_empty() {
+            67.0
+        } else {
+            58.5
+        };
 
         let v_top = viewport.absolute_offset().y;
         let v_height = viewport.bounds().height;
@@ -482,7 +491,7 @@ impl Lucien {
             return Task::none();
         }
 
-        let i_top = self.selected_item as f32 * item_height;
+        let i_top = self.selected_entry as f32 * item_height;
         let i_bottom = i_top + item_height + 15.0;
 
         let mut target_y = None;
