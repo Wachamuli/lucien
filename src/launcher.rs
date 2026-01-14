@@ -52,6 +52,7 @@ pub enum Message {
     SystemEvent(iced::Event),
     Exit,
     MarkFavoriteShortCut,
+    KeyPressed(String, keyboard::Modifiers),
 }
 
 impl Lucien {
@@ -161,6 +162,17 @@ impl Lucien {
 
                 Task::none()
             }
+            Message::KeyPressed(current_key_pressed, current_modifiers) => {
+                let kbs = &self.preferences.keybindings;
+
+                if kbs.exit.matches(&current_key_pressed, current_modifiers) {
+                    return Task::done(Message::Exit);
+                }
+
+                // fn exact_same_combination()
+
+                Task::none()
+            }
             Message::SystemEvent(iced::Event::Keyboard(keyboard::Event::ModifiersChanged(
                 modifiers,
             ))) => {
@@ -195,27 +207,35 @@ impl Lucien {
                 ) => Some(Message::Exit),
                 (
                     Event::Keyboard(keyboard::Event::KeyPressed {
-                        physical_key: keyboard::key::Physical::Code(physical_key_pressed),
+                        key: keyboard::Key::Character(key),
                         modifiers,
                         ..
                     }),
                     _,
-                ) if modifiers.alt() => match physical_key_pressed {
-                    keyboard::key::Code::Digit1 => Some(Message::LaunchApp(0)),
-                    keyboard::key::Code::Digit2 => Some(Message::LaunchApp(1)),
-                    keyboard::key::Code::Digit3 => Some(Message::LaunchApp(2)),
-                    keyboard::key::Code::Digit4 => Some(Message::LaunchApp(3)),
-                    keyboard::key::Code::Digit5 => Some(Message::LaunchApp(4)),
-                    _ => None,
-                },
-                (
-                    Event::Keyboard(keyboard::Event::KeyPressed {
-                        physical_key: keyboard::key::Physical::Code(keyboard::key::Code::KeyF),
-                        modifiers,
-                        ..
-                    }),
-                    _,
-                ) if modifiers.control() => Some(Message::MarkFavoriteShortCut),
+                ) => Some(Message::KeyPressed(key.to_string(), modifiers)),
+                // (
+                //     Event::Keyboard(keyboard::Event::KeyPressed {
+                //         physical_key: keyboard::key::Physical::Code(physical_key_pressed),
+                //         modifiers,
+                //         ..
+                //     }),
+                //     _,
+                // ) if modifiers.alt() => match physical_key_pressed {
+                //     keyboard::key::Code::Digit1 => Some(Message::LaunchApp(0)),
+                //     keyboard::key::Code::Digit2 => Some(Message::LaunchApp(1)),
+                //     keyboard::key::Code::Digit3 => Some(Message::LaunchApp(2)),
+                //     keyboard::key::Code::Digit4 => Some(Message::LaunchApp(3)),
+                //     keyboard::key::Code::Digit5 => Some(Message::LaunchApp(4)),
+                //     _ => None,
+                // },
+                // (
+                //     Event::Keyboard(keyboard::Event::KeyPressed {
+                //         physical_key: keyboard::key::Physical::Code(keyboard::key::Code::KeyF),
+                //         modifiers,
+                //         ..
+                //     }),
+                //     _,
+                // ) if modifiers.control() => Some(Message::MarkFavoriteShortCut),
                 _ => None,
             }),
         ])
