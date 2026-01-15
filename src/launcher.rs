@@ -52,6 +52,7 @@ pub struct Lucien {
 #[to_layer_message]
 #[derive(Debug, Clone)]
 pub enum Message {
+    AppsLoaded(Vec<App>),
     PromptChange(String),
     DebouncedFilter,
     LaunchApp(usize),
@@ -67,24 +68,17 @@ pub enum Message {
 impl Lucien {
     pub fn init(preferences: Preferences) -> (Self, Task<Message>) {
         let magnifier_icon = iced::widget::image::Handle::from_bytes(MAGNIFIER);
-        let cached_apps = all_apps();
-        let mut ranked_apps: Vec<usize> = (0..cached_apps.len()).collect();
         let auto_focus_prompt_task = text_input::focus(TEXT_INPUT_ID.clone());
-
-        if !preferences.favorite_apps.is_empty() {
-            ranked_apps.sort_by_key(|index| {
-                let app = &cached_apps[*index];
-                !preferences.favorite_apps.contains(&app.id)
-            });
-        }
+        let scan_apps_task = Task::perform(async { all_apps() }, Message::AppsLoaded);
+        let initial_tasks = Task::batch([auto_focus_prompt_task, scan_apps_task]);
 
         let initial_values = Self {
             // mode: Mode::Launcher,
             prompt: String::new(),
             matcher: SkimMatcherV2::default(),
             keyboard_modifiers: keyboard::Modifiers::empty(),
-            cached_apps,
-            ranked_apps,
+            cached_apps: Vec::new(),
+            ranked_apps: Vec::new(),
             preferences,
             selected_entry: 0,
             last_viewport: None,
@@ -92,7 +86,7 @@ impl Lucien {
             search_handle: None,
         };
 
-        (initial_values, auto_focus_prompt_task)
+        (initial_values, initial_tasks)
     }
 
     fn update_ranked_apps(&mut self) {
@@ -218,6 +212,19 @@ impl Lucien {
 
     pub fn update(&mut self, message: Message) -> Task<Message> {
         match message {
+            Message::AppsLoaded(apps) => {
+                self.cached_apps = apps;
+                self.ranked_apps = (0..self.cached_apps.len()).collect();
+
+                if !self.preferences.favorite_apps.is_empty() {
+                    self.ranked_apps.sort_by_key(|index| {
+                        let app = &self.cached_apps[*index];
+                        !self.preferences.favorite_apps.contains(&app.id)
+                    });
+                }
+
+                Task::none()
+            }
             Message::SaveIntoDisk(result) => {
                 match result {
                     Ok(path) => tracing::debug!("Preference saved into disk: {:?}", path),
