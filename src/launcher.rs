@@ -143,8 +143,11 @@ impl Lucien {
     }
 
     fn go_to_entry(&mut self, step: isize) -> Task<Message> {
-        let old_pos = self.selected_entry;
+        if self.ranked_apps.len() <= 0 {
+            return Task::none();
+        }
 
+        let old_pos = self.selected_entry;
         self.selected_entry = wrapped_index(self.selected_entry, self.ranked_apps.len(), step);
 
         if old_pos != self.selected_entry {
@@ -160,6 +163,49 @@ impl Lucien {
             Action::Exit => iced::exit(),
             Action::GoNextEntry => self.go_to_entry(1),
             Action::GoPreviousEntry => self.go_to_entry(-1),
+        }
+    }
+
+    fn snap_if_needed(&self) -> Task<Message> {
+        let Some(viewport) = &self.last_viewport else {
+            return Task::none();
+        };
+
+        let content_height = viewport.content_bounds().height;
+        let view_height = viewport.bounds().height;
+
+        let item_height = content_height / self.ranked_apps.len() as f32;
+
+        let selection_top = self.selected_entry as f32 * item_height;
+        let scalar = if self.prompt.is_empty() && !self.preferences.favorite_apps.is_empty() {
+            1.0
+        } else {
+            0.2
+        };
+        let extra_bottom_padding = item_height * scalar;
+        let selection_bottom = selection_top + item_height + extra_bottom_padding;
+
+        let scroll_top = viewport.absolute_offset().y;
+        let scroll_bottom = scroll_top + view_height;
+
+        if selection_top < scroll_top {
+            scrollable::snap_to(
+                SCROLLABLE_ID.clone(),
+                RelativeOffset {
+                    x: 0.0,
+                    y: selection_top / (content_height - view_height),
+                },
+            )
+        } else if selection_bottom > scroll_bottom {
+            scrollable::snap_to(
+                SCROLLABLE_ID.clone(),
+                RelativeOffset {
+                    x: 0.0,
+                    y: (selection_bottom - view_height) / (content_height - view_height),
+                },
+            )
+        } else {
+            Task::none()
         }
     }
 
@@ -492,53 +538,6 @@ impl Lucien {
     //         .spacing(10),
     //     )
     // }
-
-    fn snap_if_needed(&self) -> Task<Message> {
-        let Some(viewport) = &self.last_viewport else {
-            return Task::none();
-        };
-
-        let item_height = if self.prompt.is_empty() && !self.preferences.favorite_apps.is_empty() {
-            67.0
-        } else {
-            58.5
-        };
-
-        let v_top = viewport.absolute_offset().y;
-        let v_height = viewport.bounds().height;
-        let v_bottom = v_top + v_height;
-
-        let content_height = viewport.content_bounds().height;
-        let max_scroll = content_height - v_height;
-
-        if max_scroll <= 0.0 {
-            return Task::none();
-        }
-
-        let i_top = self.selected_entry as f32 * item_height;
-        let i_bottom = i_top + item_height + 15.0;
-
-        let mut target_y = None;
-
-        if i_top < v_top {
-            target_y = Some(i_top);
-        } else if i_bottom > v_bottom {
-            target_y = Some(i_bottom - v_height);
-        }
-
-        if let Some(y_px) = target_y {
-            let relative_y = (y_px / max_scroll).clamp(0.0, 1.0);
-            return scrollable::snap_to(
-                SCROLLABLE_ID.clone(),
-                RelativeOffset {
-                    x: 0.0,
-                    y: relative_y,
-                },
-            );
-        }
-
-        Task::none()
-    }
 }
 
 fn wrapped_index(index: usize, array_len: usize, step: isize) -> usize {
