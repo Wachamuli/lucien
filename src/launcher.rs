@@ -34,15 +34,17 @@ static MAGNIFIER: &[u8] = include_bytes!("../assets/magnifier.png");
 // static FOLDER_INACTIVE: &[u8] = include_bytes!("../assets/proicons--folder.png");
 // static CLIPBOARD_INACTIVE: &[u8] = include_bytes!("../assets/tabler--clipboard.png");
 
-#[derive(Debug)]
+// #[derive(Debug)]
 pub struct Lucien {
     prompt: String,
+    matcher: SkimMatcherV2,
     keyboard_modifiers: keyboard::Modifiers,
     cached_apps: Vec<App>,
-    ranked_apps: Vec<App>,
+    ranked_apps: Vec<usize>,
     preferences: Preferences,
     selected_entry: usize,
     last_viewport: Option<Viewport>,
+    magnifier_icon: iced::widget::image::Handle,
 }
 
 #[to_layer_message]
@@ -61,25 +63,59 @@ pub enum Message {
 
 impl Lucien {
     pub fn init(preferences: Preferences) -> (Self, Task<Message>) {
+        let magnifier_icon = iced::widget::image::Handle::from_bytes(MAGNIFIER);
         let cached_apps = all_apps();
-        let mut ranked_apps = cached_apps.clone();
+        let mut ranked_apps: Vec<usize> = (0..cached_apps.len()).collect();
         // TODO: Note: sort_by_key is executed even if favorite_apps is empty.
-        ranked_apps.sort_by_key(|app| !preferences.favorite_apps.contains(&app.id));
+        ranked_apps
+            .sort_by_key(|index| !preferences.favorite_apps.contains(&cached_apps[*index].id));
 
         let auto_focus_prompt_task = text_input::focus(TEXT_INPUT_ID.clone());
 
         let initial_values = Self {
             // mode: Mode::Launcher,
             prompt: String::new(),
+            matcher: SkimMatcherV2::default(),
             keyboard_modifiers: keyboard::Modifiers::empty(),
             cached_apps,
             ranked_apps,
             preferences,
             selected_entry: 0,
             last_viewport: None,
+            magnifier_icon: magnifier_icon,
         };
 
         (initial_values, auto_focus_prompt_task)
+    }
+
+    fn update_ranked_apps(&mut self) {
+        let mut ranked: Vec<(i64, usize)> = self
+            .cached_apps
+            .iter()
+            .enumerate()
+            .filter_map(|(index, app)| {
+                let score = self.matcher.fuzzy_match(&app.name, &self.prompt)?;
+                Some((score, index))
+            })
+            .collect();
+
+        ranked.sort_by(|(score_a, index_a), (score_b, index_b)| {
+            let app_a = &self.cached_apps[*index_a];
+            let app_b = &self.cached_apps[*index_b];
+            let a_is_fav = self.preferences.favorite_apps.contains(&app_a.id);
+            let b_is_fav = self.preferences.favorite_apps.contains(&app_b.id);
+
+            match (a_is_fav, b_is_fav) {
+                (true, false) => std::cmp::Ordering::Less,
+                (false, true) => std::cmp::Ordering::Greater,
+                _ => score_b.cmp(score_a),
+            }
+        });
+
+        self.ranked_apps = ranked
+            .into_iter()
+            .map(|(_score, app_index)| app_index)
+            .collect();
     }
 
     fn mark_favorite(&mut self, index: usize) -> Task<Message> {
@@ -87,14 +123,18 @@ impl Lucien {
             return Task::none();
         };
 
-        let Some(ref p) = self.preferences.path else {
+        let Some(ref path) = self.preferences.path else {
             tracing::warn!("In-memory defaults. Settings will not be saved");
             return Task::none();
         };
 
-        let id = app.id.clone();
-        let path = p.clone();
+        let id = self.cached_apps[*app].id.clone();
+        let path = path.clone();
+        // Toggle_favorite is a very opaque function. It actually
+        // modifies the in-memory favorite_apps variable.
+        // Maybe I should expose this assignnment operation at this level.
         let favorite_apps = self.preferences.toggle_favorite(id);
+        self.update_ranked_apps();
 
         Task::perform(
             preferences::save_into_disk(path, "favorite_apps", favorite_apps),
@@ -144,9 +184,11 @@ impl Lucien {
                 Task::none()
             }
             Message::LaunchApp(index) => {
-                let Some(app) = self.ranked_apps.get(index) else {
+                let Some(app_index) = self.ranked_apps.get(index) else {
                     return Task::none();
                 };
+
+                let app = &self.cached_apps[*app_index];
 
                 match app.launch() {
                     Ok(_) => iced::exit(),
@@ -274,12 +316,13 @@ impl Lucien {
             general_column = Column::new();
         }
 
-        for (index, app) in self.ranked_apps.iter().enumerate() {
-            let is_selected = self.selected_entry == index;
+        for (rank_pos, app_index) in self.ranked_apps.iter().enumerate() {
+            let app = &self.cached_apps[*app_index];
+            let is_selected = self.selected_entry == rank_pos;
             let is_favorite = self.preferences.favorite_apps.contains(&app.id);
 
             let element: Element<Message> = app
-                .itemlist(self.selected_entry, index, is_favorite)
+                .itemlist(self.selected_entry, rank_pos, is_favorite)
                 .style(move |_, status| {
                     let bg = if is_selected {
                         focus_highlight
@@ -329,7 +372,7 @@ impl Lucien {
             .padding(10)
             .width(Length::Fill);
 
-        let magnifier = iced::widget::image(iced::widget::image::Handle::from_bytes(MAGNIFIER))
+        let magnifier = iced::widget::image(&self.magnifier_icon)
             .width(28)
             .height(28);
         let promp_input = iced::widget::text_input("Search...", &self.prompt)
@@ -422,36 +465,6 @@ impl Lucien {
             border: border_style,
             ..Default::default()
         })
-    }
-
-    fn update_ranked_apps(&mut self) {
-        let matcher = SkimMatcherV2::default();
-
-        let mut ranked: Vec<(i64, App)> = self
-            .cached_apps
-            .iter()
-            .filter_map(|app| {
-                let score = if self.prompt.is_empty() {
-                    0
-                } else {
-                    matcher.fuzzy_match(&app.name, &self.prompt)?
-                };
-                Some((score, app.clone()))
-            })
-            .collect();
-
-        ranked.sort_by(|(score_a, app_a), (score_b, app_b)| {
-            let a_is_fav = self.preferences.favorite_apps.contains(&app_a.id);
-            let b_is_fav = self.preferences.favorite_apps.contains(&app_b.id);
-
-            match (a_is_fav, b_is_fav) {
-                (true, false) => std::cmp::Ordering::Less,
-                (false, true) => std::cmp::Ordering::Greater,
-                _ => score_b.cmp(score_a),
-            }
-        });
-
-        self.ranked_apps = ranked.into_iter().map(|(_score, app)| app).collect();
     }
 
     // fn status_indicator<'a>(&'a self) -> Container<'a, Message> {
