@@ -18,10 +18,9 @@ use nix::sys::socket::{self, AddressFamily, SockFlag, SockType, UnixAddr};
 use tracing::Level;
 use tracing_subscriber::{EnvFilter, fmt, prelude::*};
 
-#[tokio::main]
-async fn main() -> iced_layershell::Result {
+fn main() -> iced_layershell::Result {
     std::panic::set_hook(Box::new(|panic_info| {
-        eprintln!("LAUNCHER CRASHED: {}", panic_info);
+        tracing::error!("LAUNCHER CRASHED: {}", panic_info);
     }));
 
     let package_name = env!("CARGO_PKG_NAME");
@@ -46,7 +45,10 @@ async fn main() -> iced_layershell::Result {
     let _log_guard = setup_tracing_subscriber(cache_dir, "logs");
     tracing::info!("Running {package_name} v.{package_version}...");
 
-    let pref = match Preferences::load().await {
+    let rt = tokio::runtime::Runtime::new()
+        .expect("Unable to create async runtime to open Preferences file");
+
+    let pref = match rt.block_on(Preferences::load()) {
         Ok(p) => {
             tracing::debug!("Running under user-defined preferences.");
             p
@@ -60,8 +62,6 @@ async fn main() -> iced_layershell::Result {
             Preferences::default()
         }
     };
-
-    let initialize = || Lucien::init(pref);
 
     let layershell_settings = LayerShellSettings {
         size: Some((700, 500)),
@@ -83,7 +83,7 @@ async fn main() -> iced_layershell::Result {
         background_color: iced::Color::TRANSPARENT,
         text_color: Default::default(),
     })
-    .run_with(initialize)
+    .run_with(|| Lucien::init(pref))
 }
 
 fn setup_tracing_subscriber(
