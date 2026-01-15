@@ -3,7 +3,7 @@ use std::{
     path::PathBuf,
 };
 
-use crate::launcher::Lucien;
+use crate::{launcher::Lucien, preferences::Preferences};
 
 mod app;
 mod launcher;
@@ -18,7 +18,8 @@ use nix::sys::socket::{self, AddressFamily, SockFlag, SockType, UnixAddr};
 use tracing::Level;
 use tracing_subscriber::{EnvFilter, fmt, prelude::*};
 
-pub fn main() -> iced_layershell::Result {
+#[tokio::main]
+async fn main() -> iced_layershell::Result {
     std::panic::set_hook(Box::new(|panic_info| {
         eprintln!("LAUNCHER CRASHED: {}", panic_info);
     }));
@@ -45,6 +46,9 @@ pub fn main() -> iced_layershell::Result {
     setup_tracing_subscriber(cache_dir);
     tracing::info!("Running {package_name} v.{package_version}...");
 
+    let pref = Preferences::load().await;
+    let initialize = || Lucien::init(pref);
+
     let layershell_settings = LayerShellSettings {
         size: Some((700, 500)),
         anchor: Anchor::Bottom | Anchor::Left | Anchor::Right | Anchor::Top,
@@ -65,7 +69,7 @@ pub fn main() -> iced_layershell::Result {
         background_color: iced::Color::TRANSPARENT,
         text_color: Default::default(),
     })
-    .run_with(Lucien::init)
+    .run_with(initialize)
 }
 
 fn setup_tracing_subscriber(cache_dir: PathBuf) {

@@ -1,10 +1,12 @@
 use serde::{Deserialize, Serialize};
 use std::{
     collections::{HashMap, HashSet},
-    env, fs, io,
+    env,
     ops::Deref,
     path::PathBuf,
+    sync::Arc,
 };
+use tokio::io;
 use toml_edit::DocumentMut;
 
 const DEFAULT_BACKGROUND_COLOR: &str = "#1F1F1FF2";
@@ -191,7 +193,7 @@ type Keybindings = HashMap<Action, Keystroks>;
 #[serde(default)]
 pub struct Preferences {
     #[serde(skip)]
-    path: Option<PathBuf>,
+    pub path: Option<PathBuf>,
     pub favorite_apps: HashSet<String>,
     pub theme: Theme,
     pub keybindings: Keybindings,
@@ -244,7 +246,7 @@ impl Default for Preferences {
 }
 
 impl Preferences {
-    pub fn load() -> Self {
+    pub async fn load() -> Self {
         let package_name = env!("CARGO_PKG_NAME");
         let settings_file_name = "preferences.toml";
         let xdg_dirs = xdg::BaseDirectories::with_prefix(&package_name);
@@ -255,14 +257,11 @@ impl Preferences {
             return Self::default();
         };
 
-        let settings_file_string = std::fs::read_to_string(&path).unwrap_or_default();
-        // TODO: Remove the line below
-        println!("{}", toml::to_string_pretty(&Self::default()).unwrap());
-
+        let settings_file_string = tokio::fs::read_to_string(&path).await.unwrap_or_default();
         let mut preferences = match toml::from_str::<Preferences>(&settings_file_string) {
             Ok(p) => p,
             Err(e) => {
-                tracing::error!(path = ?path, diagnostic = %e,"Syntax error detected in");
+                tracing::error!(?path, diagnostic = %e,"Syntax error detected in");
                 tracing::warn!("Using in-memory defaults.");
                 return Self::default();
             }
@@ -277,34 +276,26 @@ impl Preferences {
         preferences
     }
 
-    fn save(&self, key: &str, value: impl Into<toml_edit::Value>) -> io::Result<()> {
-        let Some(ref preferences_path) = self.path else {
-            tracing::warn!("In-memory defaults. Settings will not be saved");
-            return Err(io::Error::new(
-                io::ErrorKind::NotFound,
-                "No persistent path available",
-            ));
-        };
-
-        let settings_file_string = std::fs::read_to_string(&preferences_path).unwrap_or_default();
-        // At this point is safe to call `unwrap`. The path leads to a valid TOML
-        // checked by the `load` function.
-        let mut preferences = settings_file_string.parse::<DocumentMut>().unwrap();
-        preferences[key] = toml_edit::value(value);
-        fs::write(preferences_path, preferences.to_string())?;
-        tracing::debug!(path = ?preferences_path, "Preference saved into disk.");
-        Ok(())
-    }
-
-    pub fn toggle_favorite(&mut self, app_id: impl Into<String>) -> io::Result<()> {
+    pub fn toggle_favorite(&mut self, app_id: impl Into<String>) -> toml_edit::Array {
         let id = app_id.into();
         if !self.favorite_apps.insert(id.clone()) {
             self.favorite_apps.remove(&id);
         }
 
-        self.save(
-            "favorite_apps",
-            toml_edit::Array::from_iter(&self.favorite_apps),
-        )
+        toml_edit::Array::from_iter(&self.favorite_apps)
     }
+}
+
+pub async fn save_into_disk(
+    path: PathBuf,
+    key: &str,
+    value: impl Into<toml_edit::Value>,
+) -> Result<PathBuf, Arc<io::Error>> {
+    let settings_file_string = tokio::fs::read_to_string(&path).await.unwrap_or_default();
+    let mut preferences = settings_file_string
+        .parse::<DocumentMut>()
+        .map_err(|e| io::Error::new(io::ErrorKind::InvalidInput, e.message()))?;
+    preferences[key] = toml_edit::value(value);
+    tokio::fs::write(&path, preferences.to_string()).await?;
+    Ok(path)
 }

@@ -1,4 +1,7 @@
-use std::sync::LazyLock;
+use std::{
+    path::PathBuf,
+    sync::{Arc, LazyLock},
+};
 
 use fuzzy_matcher::{FuzzyMatcher, skim::SkimMatcherV2};
 use iced::{
@@ -14,7 +17,7 @@ use iced_layershell::to_layer_message;
 
 use crate::{
     app::{App, all_apps},
-    preferences::{Action, HexColor, Preferences},
+    preferences::{self, Action, HexColor, Preferences},
 };
 
 static TEXT_INPUT_ID: LazyLock<text_input::Id> = std::sync::LazyLock::new(text_input::Id::unique);
@@ -53,12 +56,11 @@ pub enum Message {
 
     ScrollableViewport(Viewport),
     SystemEvent(iced::Event),
+    SaveIntoDisk(Result<PathBuf, Arc<tokio::io::Error>>),
 }
 
 impl Lucien {
-    pub fn init() -> (Self, Task<Message>) {
-        let preferences = Preferences::load();
-
+    pub fn init(preferences: Preferences) -> (Self, Task<Message>) {
         let cached_apps = all_apps();
         let mut ranked_apps = cached_apps.clone();
         // TODO: Note: sort_by_key is executed even if favorite_apps is empty.
@@ -85,18 +87,19 @@ impl Lucien {
             return Task::none();
         };
 
-        let result = self.preferences.toggle_favorite(&app.id);
+        let Some(ref p) = self.preferences.path else {
+            tracing::warn!("In-memory defaults. Settings will not be saved");
+            return Task::none();
+        };
 
-        match result {
-            Ok(_) => {
-                self.update_ranked_apps();
-                text_input::focus(TEXT_INPUT_ID.clone())
-            }
-            Err(_) => {
-                // eprintln!("{}", e);
-                Task::none()
-            }
-        }
+        let id = app.id.clone();
+        let path = p.clone();
+        let favorite_apps = self.preferences.toggle_favorite(id);
+
+        Task::perform(
+            preferences::save_into_disk(path, "favorite_apps", favorite_apps),
+            Message::SaveIntoDisk,
+        )
     }
 
     fn go_to_entry(&mut self, step: isize) -> Task<Message> {
@@ -122,6 +125,14 @@ impl Lucien {
 
     pub fn update(&mut self, message: Message) -> Task<Message> {
         match message {
+            Message::SaveIntoDisk(result) => {
+                match result {
+                    Ok(path) => tracing::debug!("Preference saved into disk: {:?}", path),
+                    Err(e) => tracing::error!("Failed to save preferences to disk: {}", e),
+                }
+
+                Task::none()
+            }
             Message::Keybinding(current_key_pressed, current_modifiers) => {
                 self.keyboard_modifiers = current_modifiers;
                 for (action, keystroke) in &self.preferences.keybindings {
