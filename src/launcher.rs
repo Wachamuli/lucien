@@ -22,6 +22,7 @@ use crate::{
 
 static TEXT_INPUT_ID: LazyLock<text_input::Id> = std::sync::LazyLock::new(text_input::Id::unique);
 static SCROLLABLE_ID: LazyLock<scrollable::Id> = std::sync::LazyLock::new(scrollable::Id::unique);
+// static DEBOUNCER_ID: LazyLock<task::Id> = std::sync::LazyLock::new(scrollable::Id::unique);
 
 // #EBECF2
 static MAGNIFIER: &[u8] = include_bytes!("../assets/magnifier.png");
@@ -45,12 +46,14 @@ pub struct Lucien {
     selected_entry: usize,
     last_viewport: Option<Viewport>,
     magnifier_icon: iced::widget::image::Handle,
+    search_handle: Option<iced::task::Handle>,
 }
 
 #[to_layer_message]
 #[derive(Debug, Clone)]
 pub enum Message {
     PromptChange(String),
+    DebouncedFilter,
     LaunchApp(usize),
     MarkFavorite(usize),
 
@@ -83,6 +86,7 @@ impl Lucien {
             selected_entry: 0,
             last_viewport: None,
             magnifier_icon: magnifier_icon,
+            search_handle: None,
         };
 
         (initial_values, auto_focus_prompt_task)
@@ -247,6 +251,25 @@ impl Lucien {
                 }
 
                 self.prompt = prompt;
+
+                if let Some(handle) = self.search_handle.take() {
+                    handle.abort();
+                }
+
+                if self.prompt.is_empty() {
+                    return Task::done(Message::DebouncedFilter);
+                }
+
+                let (task, handle) = Task::future(async move {
+                    tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+                    Message::DebouncedFilter
+                })
+                .abortable();
+
+                self.search_handle = Some(handle);
+                return task;
+            }
+            Message::DebouncedFilter => {
                 self.selected_entry = 0;
                 self.update_ranked_apps();
 
