@@ -43,7 +43,7 @@ async fn main() -> iced_layershell::Result {
         "Could not determine the user's Home directory. Ensure the $HOME environment variable is set."
     );
 
-    setup_tracing_subscriber(cache_dir);
+    let _log_guard = setup_tracing_subscriber(cache_dir, "logs");
     tracing::info!("Running {package_name} v.{package_version}...");
 
     let pref = match Preferences::load().await {
@@ -86,8 +86,11 @@ async fn main() -> iced_layershell::Result {
     .run_with(initialize)
 }
 
-fn setup_tracing_subscriber(cache_dir: PathBuf) {
-    let file_appender = tracing_appender::rolling::daily(cache_dir, "logs");
+fn setup_tracing_subscriber(
+    cache_dir: PathBuf,
+    filename: &str,
+) -> tracing_appender::non_blocking::WorkerGuard {
+    let file_appender = tracing_appender::rolling::daily(cache_dir, filename);
     let (non_blocking_file, _logger_guard) = tracing_appender::non_blocking(file_appender);
     let env_filter = EnvFilter::from_default_env()
         .add_directive(Level::INFO.into())
@@ -102,6 +105,8 @@ fn setup_tracing_subscriber(cache_dir: PathBuf) {
         .with(fmt::layer().with_writer(std::io::stdout))
         .with(fmt::layer().with_ansi(false).with_writer(non_blocking_file))
         .init();
+
+    return _logger_guard;
 }
 
 fn get_single_instance(name: &str) -> nix::Result<OwnedFd> {
