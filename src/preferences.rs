@@ -287,6 +287,13 @@ pub async fn save_into_disk(
         .parse::<DocumentMut>()
         .map_err(|e| io::Error::new(io::ErrorKind::InvalidInput, e.message()))?;
     preferences[key] = toml_edit::value(value);
-    tokio::fs::write(&path, preferences.to_string()).await?;
+
+    let tmp_path = {
+        let mut t = path.clone();
+        t.set_extension("tmp");
+        t
+    };
+    tokio::fs::write(&tmp_path, preferences.to_string()).await?;
+    tokio::fs::rename(&tmp_path, &path).await?;
     Ok(path)
 }
