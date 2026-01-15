@@ -69,11 +69,14 @@ impl Lucien {
         let magnifier_icon = iced::widget::image::Handle::from_bytes(MAGNIFIER);
         let cached_apps = all_apps();
         let mut ranked_apps: Vec<usize> = (0..cached_apps.len()).collect();
-        // TODO: Note: sort_by_key is executed even if favorite_apps is empty.
-        ranked_apps
-            .sort_by_key(|index| !preferences.favorite_apps.contains(&cached_apps[*index].id));
-
         let auto_focus_prompt_task = text_input::focus(TEXT_INPUT_ID.clone());
+
+        if !preferences.favorite_apps.is_empty() {
+            ranked_apps.sort_by_key(|index| {
+                let app = &cached_apps[*index];
+                !preferences.favorite_apps.contains(&app.id)
+            });
+        }
 
         let initial_values = Self {
             // mode: Mode::Launcher,
@@ -242,7 +245,10 @@ impl Lucien {
 
                 match app.launch() {
                     Ok(_) => iced::exit(),
-                    Err(_) => Task::none(),
+                    Err(e) => {
+                        tracing::error!("Failed to launch {}, due to: {}", app.id, e);
+                        Task::none()
+                    }
                 }
             }
             Message::PromptChange(prompt) => {
@@ -290,13 +296,13 @@ impl Lucien {
                 Task::none()
             }
             Message::SystemEvent(Event::Keyboard(keyboard::Event::KeyPressed {
-                key: Key::Named(keyboard::key::Named::ArrowUp),
+                key: Key::Named(key),
                 ..
-            })) => self.go_to_entry(-1),
-            Message::SystemEvent(Event::Keyboard(keyboard::Event::KeyPressed {
-                key: Key::Named(keyboard::key::Named::ArrowDown),
-                ..
-            })) => self.go_to_entry(1),
+            })) => match key {
+                keyboard::key::Named::ArrowUp => self.go_to_entry(-1),
+                keyboard::key::Named::ArrowDown => self.go_to_entry(1),
+                _ => Task::none(),
+            },
             Message::SystemEvent(iced::Event::Keyboard(keyboard::Event::ModifiersChanged(
                 modifiers,
             ))) => {
