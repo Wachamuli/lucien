@@ -46,7 +46,21 @@ async fn main() -> iced_layershell::Result {
     setup_tracing_subscriber(cache_dir);
     tracing::info!("Running {package_name} v.{package_version}...");
 
-    let pref = Preferences::load().await;
+    let pref = match Preferences::load().await {
+        Ok(p) => {
+            tracing::debug!("Running under user-defined preferences.");
+            p
+        }
+        Err(e) => {
+            if matches!(e.kind(), std::io::ErrorKind::InvalidInput) {
+                tracing::error!(diagnostic = %e,"Syntax error detected");
+            }
+
+            tracing::warn!("Using in-memory defaults.");
+            Preferences::default()
+        }
+    };
+
     let initialize = || Lucien::init(pref);
 
     let layershell_settings = LayerShellSettings {
