@@ -8,6 +8,7 @@ use iced::{
 use resvg::{tiny_skia, usvg};
 use std::{io, os::unix::process::CommandExt, path::PathBuf, process};
 
+use crate::launcher::ITEM_HEIGHT;
 use crate::launcher::Message;
 
 static STAR_ACTIVE: &[u8] = include_bytes!("../assets/star-fill.png");
@@ -214,7 +215,7 @@ impl App {
         )
         .on_press(Message::LaunchApp(index))
         .padding(10)
-        .height(58)
+        .height(ITEM_HEIGHT)
         .width(Length::Fill)
     }
 }

@@ -21,6 +21,10 @@ use crate::{
     preferences::{self, Action, HexColor, Preferences},
 };
 
+pub const ITEM_HEIGHT: f32 = 58.0;
+const SECTION_HEIGHT: f32 = 36.0;
+const CONTENT_CONTAINER_PADDING: f32 = 10.0;
+
 static TEXT_INPUT_ID: LazyLock<text_input::Id> = std::sync::LazyLock::new(text_input::Id::unique);
 static SCROLLABLE_ID: LazyLock<scrollable::Id> = std::sync::LazyLock::new(scrollable::Id::unique);
 // static DEBOUNCER_ID: LazyLock<task::Id> = std::sync::LazyLock::new(scrollable::Id::unique);
@@ -197,34 +201,65 @@ impl Lucien {
         }
     }
 
-    fn snap_if_needed(&self) -> Task<Message> {
+    pub fn snap_if_needed(&self) -> Task<Message> {
         let Some(viewport) = &self.last_viewport else {
             return Task::none();
         };
+        let total_items = self.ranked_apps.len();
+        if total_items == 0 {
+            return Task::none();
+        }
 
-        let content_height = viewport.content_bounds().height;
         let view_height = viewport.bounds().height;
+        let content_height = viewport.content_bounds().height;
+        let max_scroll = content_height - view_height;
+        if max_scroll <= 0.0 {
+            return Task::none();
+        }
 
-        let item_height = content_height / self.ranked_apps.len() as f32;
+        let is_filtered = !self.prompt.is_empty();
+        let fav_list = &self.preferences.favorite_apps;
+        let has_favorites = !fav_list.is_empty();
 
-        let selection_top = self.selected_entry as f32 * item_height;
-        let scalar = if self.prompt.is_empty() && !self.preferences.favorite_apps.is_empty() {
-            1.0
+        const EXTRA_VIEWPORT_PADDING: f32 = 10.0;
+
+        // 1. Calculate Absolute Y Position
+        let mut selection_top = CONTENT_CONTAINER_PADDING;
+        let app_idx = self.ranked_apps[self.selected_entry];
+        let is_favorite = fav_list.contains(&self.cached_apps[app_idx].id);
+
+        if !is_filtered && has_favorites {
+            let fav_count = fav_list.len();
+            if is_favorite {
+                selection_top += SECTION_HEIGHT + (self.selected_entry as f32 * ITEM_HEIGHT);
+            } else {
+                selection_top += (SECTION_HEIGHT * 2.0)
+                    + (fav_count as f32 * ITEM_HEIGHT)
+                    + ((self.selected_entry - fav_count) as f32 * ITEM_HEIGHT);
+            }
         } else {
-            0.2
-        };
-        let extra_bottom_padding = item_height * scalar;
-        let selection_bottom = selection_top + item_height + extra_bottom_padding;
+            selection_top += self.selected_entry as f32 * ITEM_HEIGHT;
+        }
 
+        // 2. Adjust Target for Header Visibility
+        let mut target_top = selection_top - EXTRA_VIEWPORT_PADDING;
+        if !is_filtered && has_favorites {
+            if self.selected_entry == 0 || self.selected_entry == fav_list.len() {
+                target_top -= SECTION_HEIGHT;
+            }
+        }
+
+        let selection_bottom = selection_top + ITEM_HEIGHT + EXTRA_VIEWPORT_PADDING;
         let scroll_top = viewport.absolute_offset().y;
         let scroll_bottom = scroll_top + view_height;
 
-        if selection_top < scroll_top {
+        // 3. Trigger Scroll
+        if target_top < scroll_top {
             scrollable::snap_to(
                 SCROLLABLE_ID.clone(),
                 RelativeOffset {
                     x: 0.0,
-                    y: selection_top / (content_height - view_height),
+                    y: target_top / max_scroll,
                 },
             )
         } else if selection_bottom > scroll_bottom {
@@ -232,7 +267,7 @@ impl Lucien {
                 SCROLLABLE_ID.clone(),
                 RelativeOffset {
                     x: 0.0,
-                    y: (selection_bottom - view_height) / (content_height - view_height),
+                    y: (selection_bottom - view_height) / max_scroll,
                 },
             )
         } else {
@@ -417,6 +452,7 @@ impl Lucien {
                         ..Default::default()
                     }),
             )
+            .height(SECTION_HEIGHT)
             .padding(iced::Padding {
                 top: 10.,
                 right: 0.,
@@ -489,7 +525,7 @@ impl Lucien {
             .push(starred_column)
             .push(general_column)
             .push_maybe(self.ranked_apps.is_empty().then(|| results_not_found))
-            .padding(10)
+            .padding(CONTENT_CONTAINER_PADDING)
             .width(Length::Fill);
 
         let magnifier = iced::widget::image(&self.magnifier_icon)

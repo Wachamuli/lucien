@@ -1,0 +1,12 @@
+favorite_apps = ["dev.zed.Zed.desktop", "org.mozilla.firefox.desktop"]
+
+[theme]
+background = "#0F141CD9"
+focus_highlight = "#FF8C004D"
+hover_highlight = "#FFB45433"
+border = {color = "#FF8C004D", width = 2, radius = [5, 5, 5, 5]}
+
+[keybindings]
+go_next_entry = { key = 'j', modifiers = ['control'] }
+go_previous_entry = { key = 'k', modifiers = ['control'] }
+mark = { key = 'm', modifiers = ['control'] }
