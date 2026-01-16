@@ -1,4 +1,5 @@
 use std::{
+    ops::Range,
     path::PathBuf,
     sync::{Arc, LazyLock},
 };
@@ -16,7 +17,7 @@ use iced::{
 use iced_layershell::to_layer_message;
 
 use crate::{
-    app::{App, all_apps},
+    app::{App, IconState, all_apps, process_icon},
     preferences::{self, Action, HexColor, Preferences},
 };
 
@@ -53,6 +54,7 @@ pub struct Lucien {
 #[derive(Debug, Clone)]
 pub enum Message {
     AppsLoaded(Vec<App>),
+    IconProcessed(String, IconState),
     PromptChange(String),
     DebouncedFilter,
     LaunchApp(usize),
@@ -144,18 +146,46 @@ impl Lucien {
     }
 
     fn go_to_entry(&mut self, step: isize) -> Task<Message> {
-        if self.ranked_apps.len() <= 0 {
+        let total = self.ranked_apps.len();
+        if total <= 0 {
             return Task::none();
         }
 
         let old_pos = self.selected_entry;
-        self.selected_entry = wrapped_index(self.selected_entry, self.ranked_apps.len(), step);
+        self.selected_entry = wrapped_index(self.selected_entry, total, step);
+        let mut snap_task = Task::none();
 
         if old_pos != self.selected_entry {
-            return self.snap_if_needed();
+            snap_task = self.snap_if_needed();
         }
 
-        Task::none()
+        let preload_icon_task = self.preload_icon_range(-10..10);
+
+        Task::batch([snap_task, preload_icon_task])
+    }
+
+    fn preload_icon_range(&mut self, range: Range<isize>) -> Task<Message> {
+        let mut tasks = Vec::new();
+
+        for i in range {
+            let target_idx = (self.selected_entry as isize + i)
+                .rem_euclid(self.ranked_apps.len() as isize) as usize;
+
+            if let Some(&app_idx) = self.ranked_apps.get(target_idx) {
+                let app = &mut self.cached_apps[app_idx];
+
+                if matches!(app.icon_state, IconState::Empty) {
+                    app.icon_state = IconState::Loading;
+
+                    tasks.push(Task::perform(
+                        process_icon(app.id.clone(), app.icon_name.clone()),
+                        |(id, state)| Message::IconProcessed(id, state),
+                    ));
+                }
+            }
+        }
+
+        Task::batch(tasks)
     }
 
     fn handle_action(&mut self, action: Action) -> Task<Message> {
@@ -221,6 +251,13 @@ impl Lucien {
                         let app = &self.cached_apps[*index];
                         !self.preferences.favorite_apps.contains(&app.id)
                     });
+                }
+
+                return self.preload_icon_range(-10..10);
+            }
+            Message::IconProcessed(app_id, state) => {
+                if let Some(app) = self.cached_apps.iter_mut().find(|a| a.id == app_id) {
+                    app.icon_state = state;
                 }
 
                 Task::none()
@@ -295,7 +332,8 @@ impl Lucien {
                     }
                 }
 
-                Task::none()
+                let top_indices = self.ranked_apps.iter().take(10);
+                return self.preload_icon_range(0..top_indices.len() as isize);
             }
             Message::MarkFavorite(index) => self.mark_favorite(index),
             Message::ScrollableViewport(viewport) => {
