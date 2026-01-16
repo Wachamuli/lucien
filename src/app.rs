@@ -1,5 +1,5 @@
 use gio::prelude::AppInfoExt;
-use gio::{Icon, prelude::IconExt};
+use gio::prelude::IconExt;
 use iced::Alignment;
 use iced::{
     Element, Length,
@@ -8,10 +8,18 @@ use iced::{
 use resvg::{tiny_skia, usvg};
 use std::{io, os::unix::process::CommandExt, path::PathBuf, process};
 
+use crate::launcher::ITEM_HEIGHT;
 use crate::launcher::Message;
 
 static STAR_ACTIVE: &[u8] = include_bytes!("../assets/star-fill.png");
 static STAR_INACTIVE: &[u8] = include_bytes!("../assets/star-line.png");
+
+#[derive(Debug, Clone)]
+pub enum IconState {
+    Ready(iced::widget::image::Handle),
+    Loading,
+    Empty,
+}
 
 #[derive(Debug, Clone)]
 pub struct App {
@@ -19,7 +27,8 @@ pub struct App {
     pub id: String,
     pub name: String,
     pub description: Option<String>,
-    pub icon: Option<iced::widget::image::Handle>,
+    pub icon_state: IconState,
+    pub icon_name: Option<String>, // Change for PathBuf?
 }
 
 static ENTER: &[u8] = include_bytes!("../assets/enter.png");
@@ -33,7 +42,8 @@ pub fn all_apps() -> Vec<App> {
             commandline: app.commandline(),
             name: app.name().to_string(),
             description: app.description().map(String::from),
-            icon: load_raster_icon(app.icon()),
+            icon_state: IconState::Empty,
+            icon_name: app.icon().and_then(|s| s.to_string()).map(String::from),
         })
         .collect()
 }
@@ -82,15 +92,25 @@ fn rasterize_svg(path: PathBuf, size: u32) -> Option<image::Handle> {
     Some(image::Handle::from_rgba(size, size, pixmap.data().to_vec()))
 }
 
-fn load_raster_icon(icon: Option<Icon>) -> Option<image::Handle> {
-    let path_str = icon?.to_string()?;
-    let path = get_icon_path_from_xdgicon(&path_str)?;
+fn load_raster_icon(icon: &str) -> Option<image::Handle> {
+    let path = get_icon_path_from_xdgicon(&icon)?;
     let extension = path.extension()?.to_str()?;
 
     match extension {
         "svg" => rasterize_svg(path, 64),
         "png" | "jpg" | "jpeg" => Some(image::Handle::from_path(path)),
         _ => None,
+    }
+}
+
+pub async fn process_icon(app_id: String, icon_name: Option<String>) -> (String, IconState) {
+    let Some(name) = icon_name else {
+        return (app_id, IconState::Empty);
+    };
+
+    match load_raster_icon(&name) {
+        Some(handle) => (app_id, IconState::Ready(handle)),
+        None => (app_id, IconState::Empty),
     }
 }
 
@@ -128,9 +148,11 @@ impl App {
         index: usize,
         is_favorite: bool,
     ) -> Button<'a, Message> {
-        let icon_view: Element<Message> = match &self.icon {
-            Some(handle) => image(handle.clone()).width(32).height(32).into(),
-            None => iced::widget::horizontal_space().width(0).into(),
+        let icon_view: Element<Message> = match &self.icon_state {
+            IconState::Ready(handle) => image(handle).width(32).height(32).into(),
+            // Maybe add a placeholder?
+            IconState::Loading => iced::widget::horizontal_space().width(0).into(),
+            IconState::Empty => iced::widget::horizontal_space().width(0).into(),
         };
 
         use iced::widget::image;
@@ -193,7 +215,7 @@ impl App {
         )
         .on_press(Message::LaunchApp(index))
         .padding(10)
-        .height(58)
+        .height(ITEM_HEIGHT)
         .width(Length::Fill)
     }
 }
