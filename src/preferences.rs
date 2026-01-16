@@ -246,34 +246,25 @@ impl Default for Preferences {
 }
 
 impl Preferences {
-    pub async fn load() -> Self {
+    pub async fn load() -> io::Result<Self> {
         let package_name = env!("CARGO_PKG_NAME");
         let settings_file_name = "preferences.toml";
         let xdg_dirs = xdg::BaseDirectories::with_prefix(&package_name);
-        let settings_file_path = xdg_dirs.place_config_file(&settings_file_name);
+        let settings_file_path = xdg_dirs.place_config_file(&settings_file_name)?;
 
-        let Ok(path) = settings_file_path else {
-            tracing::warn!("Could not determine config path. Using in-memory defaults.");
-            return Self::default();
-        };
+        let settings_file_string = tokio::fs::read_to_string(&settings_file_path)
+            .await
+            .unwrap_or_default();
 
-        let settings_file_string = tokio::fs::read_to_string(&path).await.unwrap_or_default();
-        let mut preferences = match toml::from_str::<Preferences>(&settings_file_string) {
-            Ok(p) => p,
-            Err(e) => {
-                tracing::error!(?path, diagnostic = %e,"Syntax error detected in");
-                tracing::warn!("Using in-memory defaults.");
-                return Self::default();
-            }
-        };
+        let mut preferences = toml::from_str::<Preferences>(&settings_file_string)
+            .map_err(|e| io::Error::new(io::ErrorKind::InvalidInput, e.message()))?;
 
         let mut extended_keybindings = default_keybindings();
         extended_keybindings.extend(preferences.keybindings);
 
-        preferences.path = Some(path);
+        preferences.path = Some(settings_file_path);
         preferences.keybindings = extended_keybindings;
-        tracing::debug!("Running under user-defined preferences.");
-        preferences
+        Ok(preferences)
     }
 
     pub fn toggle_favorite(&mut self, app_id: impl Into<String>) -> toml_edit::Array {
@@ -296,6 +287,13 @@ pub async fn save_into_disk(
         .parse::<DocumentMut>()
         .map_err(|e| io::Error::new(io::ErrorKind::InvalidInput, e.message()))?;
     preferences[key] = toml_edit::value(value);
-    tokio::fs::write(&path, preferences.to_string()).await?;
+
+    let tmp_path = {
+        let mut t = path.clone();
+        t.set_extension("tmp");
+        t
+    };
+    tokio::fs::write(&tmp_path, preferences.to_string()).await?;
+    tokio::fs::rename(&tmp_path, &path).await?;
     Ok(path)
 }

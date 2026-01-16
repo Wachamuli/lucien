@@ -18,10 +18,9 @@ use nix::sys::socket::{self, AddressFamily, SockFlag, SockType, UnixAddr};
 use tracing::Level;
 use tracing_subscriber::{EnvFilter, fmt, prelude::*};
 
-#[tokio::main]
-async fn main() -> iced_layershell::Result {
+fn main() -> iced_layershell::Result {
     std::panic::set_hook(Box::new(|panic_info| {
-        eprintln!("LAUNCHER CRASHED: {}", panic_info);
+        tracing::error!("LAUNCHER CRASHED: {}", panic_info);
     }));
 
     let package_name = env!("CARGO_PKG_NAME");
@@ -43,11 +42,26 @@ async fn main() -> iced_layershell::Result {
         "Could not determine the user's Home directory. Ensure the $HOME environment variable is set."
     );
 
-    setup_tracing_subscriber(cache_dir);
+    let _log_guard = setup_tracing_subscriber(cache_dir, "logs");
     tracing::info!("Running {package_name} v.{package_version}...");
 
-    let pref = Preferences::load().await;
-    let initialize = || Lucien::init(pref);
+    let rt = tokio::runtime::Runtime::new()
+        .expect("Unable to create async runtime to open Preferences file");
+
+    let pref = match rt.block_on(Preferences::load()) {
+        Ok(p) => {
+            tracing::debug!("Running under user-defined preferences.");
+            p
+        }
+        Err(e) => {
+            if matches!(e.kind(), std::io::ErrorKind::InvalidInput) {
+                tracing::error!(diagnostic = %e,"Syntax error detected");
+            }
+
+            tracing::warn!("Using in-memory defaults.");
+            Preferences::default()
+        }
+    };
 
     let layershell_settings = LayerShellSettings {
         size: Some((700, 500)),
@@ -69,11 +83,14 @@ async fn main() -> iced_layershell::Result {
         background_color: iced::Color::TRANSPARENT,
         text_color: Default::default(),
     })
-    .run_with(initialize)
+    .run_with(|| Lucien::init(pref))
 }
 
-fn setup_tracing_subscriber(cache_dir: PathBuf) {
-    let file_appender = tracing_appender::rolling::daily(cache_dir, "logs");
+fn setup_tracing_subscriber(
+    cache_dir: PathBuf,
+    filename: &str,
+) -> tracing_appender::non_blocking::WorkerGuard {
+    let file_appender = tracing_appender::rolling::daily(cache_dir, filename);
     let (non_blocking_file, _logger_guard) = tracing_appender::non_blocking(file_appender);
     let env_filter = EnvFilter::from_default_env()
         .add_directive(Level::INFO.into())
@@ -88,6 +105,8 @@ fn setup_tracing_subscriber(cache_dir: PathBuf) {
         .with(fmt::layer().with_writer(std::io::stdout))
         .with(fmt::layer().with_ansi(false).with_writer(non_blocking_file))
         .init();
+
+    return _logger_guard;
 }
 
 fn get_single_instance(name: &str) -> nix::Result<OwnedFd> {
