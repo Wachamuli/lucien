@@ -8,8 +8,8 @@ use iced::{
 use resvg::{tiny_skia, usvg};
 use std::{io, os::unix::process::CommandExt, path::PathBuf, process};
 
-use crate::launcher::ITEM_HEIGHT;
 use crate::launcher::Message;
+use crate::preferences::Theme;
 
 static STAR_ACTIVE: &[u8] = include_bytes!("../assets/star-fill.png");
 static STAR_INACTIVE: &[u8] = include_bytes!("../assets/star-line.png");
@@ -144,12 +144,17 @@ impl App {
 
     pub fn itemlist<'a>(
         &'a self,
+        theme: &Theme,
         current_index: usize,
         index: usize,
         is_favorite: bool,
     ) -> Button<'a, Message> {
+        let style = &theme.launchpad.entry;
         let icon_view: Element<Message> = match &self.icon_state {
-            IconState::Ready(handle) => image(handle).width(32).height(32).into(),
+            IconState::Ready(handle) => image(handle)
+                .width(style.icon_size)
+                .height(style.icon_size)
+                .into(),
             // Maybe add a placeholder?
             IconState::Loading => iced::widget::horizontal_space().width(0).into(),
             IconState::Empty => iced::widget::horizontal_space().width(0).into(),
@@ -188,18 +193,19 @@ impl App {
             .push(shortcut_label)
             .align_y(Alignment::Center);
 
-        let description = self
-            .description
-            .as_ref()
-            .map(|desc| text(desc).size(12).color([1.0, 1.0, 1.0, 0.5]));
+        let description = self.description.as_ref().map(|desc| {
+            text(desc)
+                .size(style.secondary_font_size)
+                .color(*style.secondary_text)
+        });
 
         button(
             row![
                 icon_view,
                 iced::widget::column![
                     text(&self.name)
-                        .size(14)
-                        .color([0.95, 0.95, 0.95, 1.0])
+                        .size(style.font_size)
+                        .color(*style.main_text)
                         .width(Length::Fill)
                         .font(iced::Font {
                             weight: iced::font::Weight::Bold,
@@ -214,8 +220,8 @@ impl App {
             .align_y(iced::Alignment::Center),
         )
         .on_press(Message::LaunchApp(index))
-        .padding(10)
-        .height(ITEM_HEIGHT)
+        .padding(iced::Padding::from(&style.padding))
+        .height(style.height)
         .width(Length::Fill)
     }
 }

@@ -18,12 +18,10 @@ use iced_layershell::to_layer_message;
 
 use crate::{
     app::{App, IconState, all_apps, process_icon},
-    preferences::{self, Action, HexColor, Preferences},
+    preferences::{self, Action, Preferences},
 };
 
-pub const ITEM_HEIGHT: f32 = 58.0;
 const SECTION_HEIGHT: f32 = 36.0;
-const CONTENT_CONTAINER_PADDING: f32 = 10.0;
 
 static TEXT_INPUT_ID: LazyLock<text_input::Id> = std::sync::LazyLock::new(text_input::Id::unique);
 static SCROLLABLE_ID: LazyLock<scrollable::Id> = std::sync::LazyLock::new(scrollable::Id::unique);
@@ -163,7 +161,8 @@ impl Lucien {
             snap_task = self.snap_if_needed();
         }
 
-        let preload_icon_task = self.preload_icon_range(-10..10);
+        let leading_icon_count = self.preferences.leading_icon_count as isize;
+        let preload_icon_task = self.preload_icon_range(-leading_icon_count..leading_icon_count);
 
         Task::batch([snap_task, preload_icon_task])
     }
@@ -222,23 +221,24 @@ impl Lucien {
         let has_favorites = !fav_list.is_empty();
 
         const EXTRA_VIEWPORT_PADDING: f32 = 10.0;
-
+        let launchpad_style = &self.preferences.theme.launchpad;
         // 1. Calculate Absolute Y Position
-        let mut selection_top = CONTENT_CONTAINER_PADDING;
+        let mut selection_top: f32 = launchpad_style.padding;
         let app_idx = self.ranked_apps[self.selected_entry];
         let is_favorite = fav_list.contains(&self.cached_apps[app_idx].id);
 
+        let item_height = launchpad_style.entry.height;
         if !is_filtered && has_favorites {
             let fav_count = fav_list.len();
             if is_favorite {
-                selection_top += SECTION_HEIGHT + (self.selected_entry as f32 * ITEM_HEIGHT);
+                selection_top += SECTION_HEIGHT + (self.selected_entry as f32 * item_height);
             } else {
                 selection_top += (SECTION_HEIGHT * 2.0)
-                    + (fav_count as f32 * ITEM_HEIGHT)
-                    + ((self.selected_entry - fav_count) as f32 * ITEM_HEIGHT);
+                    + (fav_count as f32 * item_height)
+                    + ((self.selected_entry - fav_count) as f32 * item_height);
             }
         } else {
-            selection_top += self.selected_entry as f32 * ITEM_HEIGHT;
+            selection_top += self.selected_entry as f32 * item_height;
         }
 
         // 2. Adjust Target for Header Visibility
@@ -249,7 +249,7 @@ impl Lucien {
             }
         }
 
-        let selection_bottom = selection_top + ITEM_HEIGHT + EXTRA_VIEWPORT_PADDING;
+        let selection_bottom = selection_top + item_height + EXTRA_VIEWPORT_PADDING;
         let scroll_top = viewport.absolute_offset().y;
         let scroll_bottom = scroll_top + view_height;
 
@@ -288,7 +288,8 @@ impl Lucien {
                     });
                 }
 
-                return self.preload_icon_range(-10..10);
+                let leading_icon_count = self.preferences.leading_icon_count as isize;
+                return self.preload_icon_range(-leading_icon_count..leading_icon_count);
             }
             Message::IconProcessed(app_id, state) => {
                 if let Some(app) = self.cached_apps.iter_mut().find(|a| a.id == app_id) {
@@ -435,8 +436,6 @@ impl Lucien {
         let background = &theme.background;
         // Maybe we can get rid of this conversion on the ui.
         let border_style = iced::Border::from(&theme.border);
-        let focus_highlight = &theme.focus_highlight;
-        let hover_highlight = &theme.hover_highlight;
 
         let text_main = iced::Color::from_rgba(0.95, 0.95, 0.95, 1.0);
         let text_dim = iced::Color::from_rgba(1.0, 1.0, 1.0, 0.5);
@@ -478,23 +477,21 @@ impl Lucien {
             let is_favorite = self.preferences.favorite_apps.contains(&app.id);
 
             let element: Element<Message> = app
-                .itemlist(self.selected_entry, rank_pos, is_favorite)
+                .itemlist(theme, self.selected_entry, rank_pos, is_favorite)
                 .style(move |_, status| {
+                    let entry_style = &theme.launchpad.entry;
                     let bg = if is_selected {
-                        focus_highlight
+                        &entry_style.focus_highlight
                     } else if status == button::Status::Hovered {
-                        hover_highlight
+                        &entry_style.hover_highlight
                     } else {
-                        &HexColor(iced::Color::TRANSPARENT)
+                        &entry_style.background
                     };
 
                     button::Style {
                         background: Some(iced::Background::Color(**bg)),
                         text_color: if is_selected { text_main } else { text_dim },
-                        border: Border {
-                            radius: iced::border::radius(20),
-                            ..Default::default()
-                        },
+                        border: iced::Border::from(&entry_style.border),
                         ..Default::default()
                     }
                 })
@@ -520,46 +517,39 @@ impl Lucien {
                 }),
         )
         .padding(19.8);
-
         let content = Column::new()
             .push(starred_column)
             .push(general_column)
             .push_maybe(self.ranked_apps.is_empty().then(|| results_not_found))
-            .padding(CONTENT_CONTAINER_PADDING)
+            .padding(theme.launchpad.padding)
             .width(Length::Fill);
-
         let magnifier = iced::widget::image(&self.magnifier_icon)
-            .width(28)
-            .height(28);
+            .width(theme.prompt.icon_size)
+            .height(theme.prompt.icon_size);
         let promp_input = iced::widget::text_input("Search...", &self.prompt)
             .id(TEXT_INPUT_ID.clone())
             .on_input(Message::PromptChange)
             .on_submit(Message::LaunchApp(self.selected_entry))
             .padding(8)
-            .size(18)
+            .size(theme.prompt.font_size)
             .font(iced::Font {
                 weight: iced::font::Weight::Bold,
                 ..Default::default()
             })
             .style(move |_, _| iced::widget::text_input::Style {
-                background: iced::Background::Color(iced::Color::TRANSPARENT),
-                border: Border {
-                    width: 0.0,
-                    ..Default::default()
-                },
-                icon: text_main,
-                placeholder: text_dim,
-                value: text_main,
-                selection: **focus_highlight,
+                background: iced::Background::Color(*theme.prompt.background),
+                border: iced::Border::from(&theme.prompt.border),
+                icon: *theme.prompt.placeholder_color,
+                placeholder: *theme.prompt.placeholder_color,
+                value: *theme.prompt.text_color,
+                selection: *theme.launchpad.entry.focus_highlight,
             });
-
         let prompt_view = row![]
             .push(magnifier)
             .push(promp_input)
             // .push(self.status_indicator())
             .align_y(iced::Alignment::Center)
             .spacing(2);
-
         let results = iced::widget::scrollable(content)
             .on_scroll(Message::ScrollableViewport)
             .id(SCROLLABLE_ID.clone())
@@ -600,21 +590,15 @@ impl Lucien {
 
         container(iced::widget::column![
             container(prompt_view)
-                .padding(15)
+                .padding(iced::Padding::from(&theme.prompt.margin))
                 .align_y(Alignment::Center),
             iced::widget::horizontal_rule(1).style(move |_| iced::widget::rule::Style {
-                color: border_style.color,
-                width: theme.border.width as u16,
-                fill_mode: iced::widget::rule::FillMode::Padded(10),
-                radius: Default::default(),
+                color: *theme.separator.color,
+                width: theme.separator.width,
+                fill_mode: iced::widget::rule::FillMode::Padded(theme.separator.padding),
+                radius: theme.separator.radius.into(),
             }),
             container(results),
-            iced::widget::horizontal_rule(1).style(move |_| iced::widget::rule::Style {
-                color: border_style.color,
-                width: 1,
-                fill_mode: iced::widget::rule::FillMode::Padded(10),
-                radius: Default::default(),
-            }),
         ])
         .style(move |_| container::Style {
             background: Some(iced::Background::Color(**background)),

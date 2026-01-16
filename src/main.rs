@@ -29,9 +29,10 @@ fn main() -> iced_layershell::Result {
     let _single_instance_guard = match get_single_instance(package_name) {
         Ok(lock) => lock,
         Err(e) => {
-            eprintln!(
+            tracing::error!(
                 "Another instance of {} is already running. {}",
-                &package_name, e
+                &package_name,
+                e
             );
             return Ok(());
         }
