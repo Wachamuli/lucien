@@ -13,6 +13,10 @@ const DEFAULT_BACKGROUND_COLOR: &str = "#1F1F1FF2";
 const DEFAULT_FOCUS_HIGHLIGHT_COLOR: &str = "#FFFFFF1F";
 const DEFAULT_HOVER_HIGHLIGHT_COLOR: &str = "#FFFFFF14";
 const DEFAULT_BORDER_COLOR: &str = "#A6A6A61A";
+const DEFAULT_MAIN_TEXT: &str = "#F2F2F2FF";
+const DEFAULT_SECONDARY_TEXT: &str = "#FFFFFF80";
+const DEFAULT_DIM_TEXT: &str = "#FFFFFF80";
+const TRANSPARENT: &str = "#00000000";
 
 #[derive(Debug, Serialize, Deserialize)]
 #[serde(default)]
@@ -103,20 +107,158 @@ impl<'de> Deserialize<'de> for HexColor {
 
 #[derive(Debug, Serialize, Deserialize)]
 #[serde(default)]
-pub struct Theme {
+pub struct Prompt {
+    pub font_size: u16,
+    pub background: HexColor,
+    pub icon_size: u16,
+    pub padding: Padding,
+    pub margin: Padding,
+    pub border: Border,
+    pub placeholder_color: HexColor,
+    pub text_color: HexColor,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct Padding(f32, f32, f32, f32);
+
+impl From<[f32; 4]> for Padding {
+    fn from(value: [f32; 4]) -> Self {
+        Padding(value[0], value[1], value[2], value[3])
+    }
+}
+
+impl From<Padding> for iced::Padding {
+    fn from(value: Padding) -> Self {
+        iced::Padding {
+            top: value.0,
+            right: value.1,
+            bottom: value.2,
+            left: value.3,
+        }
+    }
+}
+
+impl From<&Padding> for iced::Padding {
+    fn from(value: &Padding) -> Self {
+        iced::Padding {
+            top: value.0,
+            right: value.1,
+            bottom: value.2,
+            left: value.3,
+        }
+    }
+}
+
+impl Default for Prompt {
+    fn default() -> Self {
+        Self {
+            background: DEFAULT_BACKGROUND_COLOR.into(),
+            font_size: 18,
+            icon_size: 28,
+            padding: Padding::from([8., 8., 8., 8.]),
+            border: Border {
+                color: TRANSPARENT.into(),
+                ..Default::default()
+            },
+            placeholder_color: DEFAULT_DIM_TEXT.into(),
+            text_color: DEFAULT_MAIN_TEXT.into(),
+            margin: Padding::from([15., 15., 15., 15.]),
+        }
+    }
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+#[serde(default)]
+pub struct Separator {
+    pub color: HexColor,
+    pub width: u16,
+    pub padding: u16,
+    pub radius: f32,
+}
+
+impl Default for Separator {
+    fn default() -> Self {
+        Self {
+            color: DEFAULT_BORDER_COLOR.into(),
+            width: 1,
+            padding: 10,
+            radius: 0.0,
+        }
+    }
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+#[serde(default)]
+pub struct Entry {
     pub background: HexColor,
     pub focus_highlight: HexColor,
     pub hover_highlight: HexColor,
+    pub font_size: u16,
+    pub secondary_font_size: u16,
+    pub main_text: HexColor,
+    pub secondary_text: HexColor,
+    pub padding: Padding,
+    pub height: f32,
     pub border: Border,
+    pub icon_size: u16,
+}
+
+impl Default for Entry {
+    fn default() -> Self {
+        Self {
+            icon_size: 32,
+            height: 58.0,
+            background: DEFAULT_BACKGROUND_COLOR.into(),
+            focus_highlight: DEFAULT_FOCUS_HIGHLIGHT_COLOR.into(),
+            hover_highlight: DEFAULT_HOVER_HIGHLIGHT_COLOR.into(),
+            font_size: 14,
+            secondary_font_size: 12,
+            main_text: DEFAULT_MAIN_TEXT.into(),
+            secondary_text: DEFAULT_SECONDARY_TEXT.into(),
+            padding: Padding::from([10., 10., 10., 10.]),
+            border: Border {
+                color: TRANSPARENT.into(),
+                width: 0.0,
+                radius: [20., 20., 20., 20.],
+            },
+        }
+    }
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+#[serde(default)]
+pub struct Launchpad {
+    pub padding: f32,
+    pub entry: Entry,
+}
+
+impl Default for Launchpad {
+    fn default() -> Self {
+        Self {
+            padding: 10.,
+            entry: Entry::default(),
+        }
+    }
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+#[serde(default)]
+pub struct Theme {
+    pub background: HexColor,
+    pub border: Border,
+    pub prompt: Prompt,
+    pub launchpad: Launchpad,
+    pub separator: Separator,
 }
 
 impl Default for Theme {
     fn default() -> Self {
         Self {
             background: DEFAULT_BACKGROUND_COLOR.into(),
-            focus_highlight: DEFAULT_FOCUS_HIGHLIGHT_COLOR.into(),
-            hover_highlight: DEFAULT_HOVER_HIGHLIGHT_COLOR.into(),
             border: Border::default(),
+            prompt: Prompt::default(),
+            separator: Separator::default(),
+            launchpad: Launchpad::default(),
         }
     }
 }
@@ -194,6 +336,7 @@ type Keybindings = HashMap<Action, Keystroks>;
 pub struct Preferences {
     #[serde(skip)]
     pub path: Option<PathBuf>,
+    pub leading_icon_count: usize,
     pub favorite_apps: HashSet<String>,
     pub theme: Theme,
     pub keybindings: Keybindings,
@@ -238,6 +381,7 @@ impl Default for Preferences {
     fn default() -> Self {
         Self {
             path: None,
+            leading_icon_count: 10,
             favorite_apps: HashSet::new(),
             theme: Theme::default(),
             keybindings: default_keybindings(),

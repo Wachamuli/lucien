@@ -1,12 +1,24 @@
 favorite_apps = ["dev.zed.Zed.desktop", "org.mozilla.firefox.desktop"]
 
-[theme]
-background = "#0F141CD9"
-focus_highlight = "#FF8C004D"
-hover_highlight = "#FFB45433"
-border = {color = "#FF8C004D", width = 2, radius = [5, 5, 5, 5]}
-
 [keybindings]
 go_next_entry = { key = 'j', modifiers = ['control'] }
 go_previous_entry = { key = 'k', modifiers = ['control'] }
 mark = { key = 'm', modifiers = ['control'] }
+
+[theme]
+background = "#0F141CD9"
+border = {color = "#FF8C004D", width = 2, radius = [5, 5, 5, 5]}
+
+[theme.prompt]
+icon_size  = 18
+font_size = 8
+placeholder_color = "#ccffFF"
+border = {color = "#FF8C004D", width = 2, radius = [5, 5, 5, 5]}
+
+[theme.separator]
+color = "#FF8C004D"
+width = 2
+
+[theme.launchpad.entry]
+focus_highlight = "#FF8C004D"
+hover_highlight = "#FFB45433"

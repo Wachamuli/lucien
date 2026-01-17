@@ -1,5 +1,4 @@
 use std::{
-    ops::Range,
     path::PathBuf,
     sync::{Arc, LazyLock},
 };
@@ -18,12 +17,10 @@ use iced_layershell::to_layer_message;
 
 use crate::{
     app::{App, IconState, all_apps, process_icon},
-    preferences::{self, Action, HexColor, Preferences},
+    preferences::{self, Action, Preferences},
 };
 
-pub const ITEM_HEIGHT: f32 = 58.0;
 const SECTION_HEIGHT: f32 = 36.0;
-const CONTENT_CONTAINER_PADDING: f32 = 10.0;
 
 static TEXT_INPUT_ID: LazyLock<text_input::Id> = std::sync::LazyLock::new(text_input::Id::unique);
 static SCROLLABLE_ID: LazyLock<scrollable::Id> = std::sync::LazyLock::new(scrollable::Id::unique);
@@ -58,7 +55,7 @@ pub struct Lucien {
 #[derive(Debug, Clone)]
 pub enum Message {
     AppsLoaded(Vec<App>),
-    IconProcessed(String, IconState),
+    IconProcessed(usize, IconState),
     PromptChange(String),
     DebouncedFilter,
     LaunchApp(usize),
@@ -157,39 +154,13 @@ impl Lucien {
 
         let old_pos = self.selected_entry;
         self.selected_entry = wrapped_index(self.selected_entry, total, step);
-        let mut snap_task = Task::none();
 
         if old_pos != self.selected_entry {
-            snap_task = self.snap_if_needed();
+            let layout = AppLayout::new(&self.preferences, &self.prompt);
+            return self.snap_if_needed(&layout);
         }
 
-        let preload_icon_task = self.preload_icon_range(-10..10);
-
-        Task::batch([snap_task, preload_icon_task])
-    }
-
-    fn preload_icon_range(&mut self, range: Range<isize>) -> Task<Message> {
-        let mut tasks = Vec::new();
-
-        for i in range {
-            let target_idx = (self.selected_entry as isize + i)
-                .rem_euclid(self.ranked_apps.len() as isize) as usize;
-
-            if let Some(&app_idx) = self.ranked_apps.get(target_idx) {
-                let app = &mut self.cached_apps[app_idx];
-
-                if matches!(app.icon_state, IconState::Empty) {
-                    app.icon_state = IconState::Loading;
-
-                    tasks.push(Task::perform(
-                        process_icon(app.id.clone(), app.icon_name.clone()),
-                        |(id, state)| Message::IconProcessed(id, state),
-                    ));
-                }
-            }
-        }
-
-        Task::batch(tasks)
+        Task::none()
     }
 
     fn handle_action(&mut self, action: Action) -> Task<Message> {
@@ -201,78 +172,111 @@ impl Lucien {
         }
     }
 
-    pub fn snap_if_needed(&self) -> Task<Message> {
+    pub fn snap_if_needed(&self, layout: &AppLayout) -> Task<Message> {
         let Some(viewport) = &self.last_viewport else {
             return Task::none();
         };
-        let total_items = self.ranked_apps.len();
-        if total_items == 0 {
-            return Task::none();
-        }
 
+        // 1. Get coordinates from injected layout
+        let app_idx = self.ranked_apps[self.selected_entry];
+        let is_fav = self
+            .preferences
+            .favorite_apps
+            .contains(&self.cached_apps[app_idx].id);
+        let selection_top = layout.y_for_index(self.selected_entry, is_fav);
+        let selection_bottom = selection_top + layout.item_height;
+
+        // 2. Viewport state
+        let scroll_top = viewport.absolute_offset().y;
         let view_height = viewport.bounds().height;
-        let content_height = viewport.content_bounds().height;
-        let max_scroll = content_height - view_height;
+        let scroll_bottom = scroll_top + view_height;
+        let max_scroll = viewport.content_bounds().height - view_height;
+
         if max_scroll <= 0.0 {
             return Task::none();
         }
 
-        let is_filtered = !self.prompt.is_empty();
-        let fav_list = &self.preferences.favorite_apps;
-        let has_favorites = !fav_list.is_empty();
+        const PADDING: f32 = 12.0; // Comfort buffer
+        let mut target_y = None;
 
-        const EXTRA_VIEWPORT_PADDING: f32 = 10.0;
-
-        // 1. Calculate Absolute Y Position
-        let mut selection_top = CONTENT_CONTAINER_PADDING;
-        let app_idx = self.ranked_apps[self.selected_entry];
-        let is_favorite = fav_list.contains(&self.cached_apps[app_idx].id);
-
-        if !is_filtered && has_favorites {
-            let fav_count = fav_list.len();
-            if is_favorite {
-                selection_top += SECTION_HEIGHT + (self.selected_entry as f32 * ITEM_HEIGHT);
-            } else {
-                selection_top += (SECTION_HEIGHT * 2.0)
-                    + (fav_count as f32 * ITEM_HEIGHT)
-                    + ((self.selected_entry - fav_count) as f32 * ITEM_HEIGHT);
+        if selection_top < scroll_top + PADDING {
+            // Scroll Up
+            let mut top = selection_top - PADDING;
+            // Adjust for headers if at the start of a section
+            if !layout.is_filtered
+                && (self.selected_entry == 0 || self.selected_entry == layout.fav_count)
+            {
+                top -= SECTION_HEIGHT;
             }
-        } else {
-            selection_top += self.selected_entry as f32 * ITEM_HEIGHT;
+            target_y = Some(top);
+        } else if selection_bottom > scroll_bottom - PADDING {
+            // Scroll Down
+            target_y = Some(selection_bottom + PADDING - view_height);
         }
 
-        // 2. Adjust Target for Header Visibility
-        let mut target_top = selection_top - EXTRA_VIEWPORT_PADDING;
-        if !is_filtered && has_favorites {
-            if self.selected_entry == 0 || self.selected_entry == fav_list.len() {
-                target_top -= SECTION_HEIGHT;
+        target_y
+            .map(|y| {
+                scrollable::snap_to(
+                    SCROLLABLE_ID.clone(),
+                    RelativeOffset {
+                        x: 0.0,
+                        y: (y.clamp(0.0, max_scroll)) / max_scroll,
+                    },
+                )
+            })
+            .unwrap_or(Task::none())
+    }
+
+    fn preload_specific_range(&mut self, indices: Vec<usize>) -> Task<Message> {
+        let mut tasks = Vec::new();
+
+        for rank_pos in indices {
+            if let Some(&app_idx) = self.ranked_apps.get(rank_pos) {
+                let app = &mut self.cached_apps[app_idx];
+
+                if matches!(app.icon_state, IconState::Empty) {
+                    app.icon_state = IconState::Loading;
+
+                    tasks.push(Task::perform(
+                        process_icon(app_idx, app.icon_name.clone()),
+                        |(app_idx, state)| Message::IconProcessed(app_idx, state),
+                    ));
+                }
             }
         }
 
-        let selection_bottom = selection_top + ITEM_HEIGHT + EXTRA_VIEWPORT_PADDING;
+        Task::batch(tasks)
+    }
+
+    fn preload_visible_icons(&mut self, layout: &AppLayout) -> Task<Message> {
+        let Some(viewport) = &self.last_viewport else {
+            return Task::none();
+        };
         let scroll_top = viewport.absolute_offset().y;
-        let scroll_bottom = scroll_top + view_height;
+        let scroll_bottom = scroll_top + viewport.bounds().height;
 
-        // 3. Trigger Scroll
-        if target_top < scroll_top {
-            scrollable::snap_to(
-                SCROLLABLE_ID.clone(),
-                RelativeOffset {
-                    x: 0.0,
-                    y: target_top / max_scroll,
-                },
-            )
-        } else if selection_bottom > scroll_bottom {
-            scrollable::snap_to(
-                SCROLLABLE_ID.clone(),
-                RelativeOffset {
-                    x: 0.0,
-                    y: (selection_bottom - view_height) / max_scroll,
-                },
-            )
-        } else {
-            Task::none()
+        let mut indices = Vec::new();
+
+        // Calculate visible Starred items
+        if scroll_top < layout.starred_end_y {
+            let s = ((scroll_top - layout.starred_start_y).max(0.0) / layout.item_height).floor()
+                as usize;
+            let e = ((scroll_bottom - layout.starred_start_y).max(0.0) / layout.item_height).ceil()
+                as usize;
+            indices.extend(s..e.min(layout.fav_count));
         }
+
+        // Calculate visible General items
+        if scroll_bottom > layout.general_start_y {
+            let s = ((scroll_top - layout.general_start_y).max(0.0) / layout.item_height).floor()
+                as usize;
+            let e = ((scroll_bottom - layout.general_start_y).max(0.0) / layout.item_height).ceil()
+                as usize;
+            let total = self.ranked_apps.len();
+            indices.extend((s + layout.fav_count)..(e + layout.fav_count).min(total));
+        }
+
+        self.preload_specific_range(indices)
     }
 
     pub fn update(&mut self, message: Message) -> Task<Message> {
@@ -288,11 +292,15 @@ impl Lucien {
                     });
                 }
 
-                return self.preload_icon_range(-10..10);
+                Task::none()
             }
-            Message::IconProcessed(app_id, state) => {
-                if let Some(app) = self.cached_apps.iter_mut().find(|a| a.id == app_id) {
-                    app.icon_state = state;
+            Message::IconProcessed(app_index, state) => {
+                if let Some(app) = self.cached_apps.get_mut(app_index) {
+                    app.icon_state = if matches!(state, IconState::Empty) {
+                        IconState::NotFound
+                    } else {
+                        state
+                    };
                 }
 
                 Task::none()
@@ -358,22 +366,19 @@ impl Lucien {
                 self.selected_entry = 0;
                 self.update_ranked_apps();
 
-                if let Some(viewport) = self.last_viewport {
-                    if viewport.absolute_offset().y > 0.0 {
-                        return scrollable::snap_to(
-                            SCROLLABLE_ID.clone(),
-                            RelativeOffset { x: 0.0, y: 0.0 },
-                        );
-                    }
-                }
+                let scroll_task =
+                    scrollable::snap_to(SCROLLABLE_ID.clone(), RelativeOffset { x: 0.0, y: 0.0 });
 
-                let top_indices = self.ranked_apps.iter().take(10);
-                return self.preload_icon_range(0..top_indices.len() as isize);
+                let layout = AppLayout::new(&self.preferences, &self.prompt);
+                let preload_task = self.preload_visible_icons(&layout);
+
+                Task::batch([scroll_task, preload_task])
             }
             Message::MarkFavorite(index) => self.mark_favorite(index),
             Message::ScrollableViewport(viewport) => {
                 self.last_viewport = Some(viewport);
-                Task::none()
+                let layout = AppLayout::new(&self.preferences, &self.prompt);
+                self.preload_visible_icons(&layout)
             }
             Message::SystemEvent(Event::Keyboard(keyboard::Event::KeyPressed {
                 key: Key::Named(key),
@@ -435,8 +440,6 @@ impl Lucien {
         let background = &theme.background;
         // Maybe we can get rid of this conversion on the ui.
         let border_style = iced::Border::from(&theme.border);
-        let focus_highlight = &theme.focus_highlight;
-        let hover_highlight = &theme.hover_highlight;
 
         let text_main = iced::Color::from_rgba(0.95, 0.95, 0.95, 1.0);
         let text_dim = iced::Color::from_rgba(1.0, 1.0, 1.0, 0.5);
@@ -478,23 +481,21 @@ impl Lucien {
             let is_favorite = self.preferences.favorite_apps.contains(&app.id);
 
             let element: Element<Message> = app
-                .itemlist(self.selected_entry, rank_pos, is_favorite)
+                .itemlist(theme, self.selected_entry, rank_pos, is_favorite)
                 .style(move |_, status| {
+                    let entry_style = &theme.launchpad.entry;
                     let bg = if is_selected {
-                        focus_highlight
+                        &entry_style.focus_highlight
                     } else if status == button::Status::Hovered {
-                        hover_highlight
+                        &entry_style.hover_highlight
                     } else {
-                        &HexColor(iced::Color::TRANSPARENT)
+                        &entry_style.background
                     };
 
                     button::Style {
                         background: Some(iced::Background::Color(**bg)),
                         text_color: if is_selected { text_main } else { text_dim },
-                        border: Border {
-                            radius: iced::border::radius(20),
-                            ..Default::default()
-                        },
+                        border: iced::Border::from(&entry_style.border),
                         ..Default::default()
                     }
                 })
@@ -520,46 +521,39 @@ impl Lucien {
                 }),
         )
         .padding(19.8);
-
         let content = Column::new()
             .push(starred_column)
             .push(general_column)
             .push_maybe(self.ranked_apps.is_empty().then(|| results_not_found))
-            .padding(CONTENT_CONTAINER_PADDING)
+            .padding(theme.launchpad.padding)
             .width(Length::Fill);
-
         let magnifier = iced::widget::image(&self.magnifier_icon)
-            .width(28)
-            .height(28);
+            .width(theme.prompt.icon_size)
+            .height(theme.prompt.icon_size);
         let promp_input = iced::widget::text_input("Search...", &self.prompt)
             .id(TEXT_INPUT_ID.clone())
             .on_input(Message::PromptChange)
             .on_submit(Message::LaunchApp(self.selected_entry))
             .padding(8)
-            .size(18)
+            .size(theme.prompt.font_size)
             .font(iced::Font {
                 weight: iced::font::Weight::Bold,
                 ..Default::default()
             })
             .style(move |_, _| iced::widget::text_input::Style {
-                background: iced::Background::Color(iced::Color::TRANSPARENT),
-                border: Border {
-                    width: 0.0,
-                    ..Default::default()
-                },
-                icon: text_main,
-                placeholder: text_dim,
-                value: text_main,
-                selection: **focus_highlight,
+                background: iced::Background::Color(*theme.prompt.background),
+                border: iced::Border::from(&theme.prompt.border),
+                icon: *theme.prompt.placeholder_color,
+                placeholder: *theme.prompt.placeholder_color,
+                value: *theme.prompt.text_color,
+                selection: *theme.launchpad.entry.focus_highlight,
             });
-
         let prompt_view = row![]
             .push(magnifier)
             .push(promp_input)
             // .push(self.status_indicator())
             .align_y(iced::Alignment::Center)
             .spacing(2);
-
         let results = iced::widget::scrollable(content)
             .on_scroll(Message::ScrollableViewport)
             .id(SCROLLABLE_ID.clone())
@@ -600,21 +594,15 @@ impl Lucien {
 
         container(iced::widget::column![
             container(prompt_view)
-                .padding(15)
+                .padding(iced::Padding::from(&theme.prompt.margin))
                 .align_y(Alignment::Center),
             iced::widget::horizontal_rule(1).style(move |_| iced::widget::rule::Style {
-                color: border_style.color,
-                width: theme.border.width as u16,
-                fill_mode: iced::widget::rule::FillMode::Padded(10),
-                radius: Default::default(),
+                color: *theme.separator.color,
+                width: theme.separator.width,
+                fill_mode: iced::widget::rule::FillMode::Padded(theme.separator.padding),
+                radius: theme.separator.radius.into(),
             }),
             container(results),
-            iced::widget::horizontal_rule(1).style(move |_| iced::widget::rule::Style {
-                color: border_style.color,
-                width: 1,
-                fill_mode: iced::widget::rule::FillMode::Padded(10),
-                radius: Default::default(),
-            }),
         ])
         .style(move |_| container::Style {
             background: Some(iced::Background::Color(**background)),
@@ -661,4 +649,61 @@ fn wrapped_index(index: usize, array_len: usize, step: isize) -> usize {
 
     let abs_offset = step.unsigned_abs();
     (index + array_len - (abs_offset % array_len)) % array_len
+}
+
+pub struct AppLayout {
+    pub item_height: f32,
+    pub padding: f32,
+    pub fav_count: usize,
+    pub is_filtered: bool,
+    pub has_favorites: bool,
+    pub starred_start_y: f32,
+    pub starred_end_y: f32,
+    pub general_start_y: f32,
+}
+
+impl AppLayout {
+    pub fn new(preferences: &Preferences, prompt: &str) -> Self {
+        let style = &preferences.theme.launchpad;
+        let item_height = style.entry.height;
+        let fav_count = preferences.favorite_apps.len();
+        let is_filtered = !prompt.is_empty();
+        let has_favorites = fav_count > 0;
+
+        // If filtered, headers disappear (height = 0)
+        let header_h = if !is_filtered && has_favorites {
+            SECTION_HEIGHT
+        } else {
+            0.0
+        };
+
+        let starred_start_y = style.padding + header_h;
+        let starred_end_y = starred_start_y + (fav_count as f32 * item_height);
+        let general_start_y = starred_end_y + header_h;
+
+        Self {
+            item_height,
+            padding: style.padding,
+            fav_count,
+            is_filtered,
+            has_favorites,
+            starred_start_y,
+            starred_end_y,
+            general_start_y,
+        }
+    }
+
+    /// Maps a global list index to its top Y coordinate
+    pub fn y_for_index(&self, index: usize, is_favorite: bool) -> f32 {
+        if !self.is_filtered && self.has_favorites {
+            if is_favorite {
+                self.starred_start_y + (index as f32 * self.item_height)
+            } else {
+                let local_idx = index - self.fav_count;
+                self.general_start_y + (local_idx as f32 * self.item_height)
+            }
+        } else {
+            self.padding + (index as f32 * self.item_height)
+        }
+    }
 }

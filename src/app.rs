@@ -8,8 +8,8 @@ use iced::{
 use resvg::{tiny_skia, usvg};
 use std::{io, os::unix::process::CommandExt, path::PathBuf, process};
 
-use crate::launcher::ITEM_HEIGHT;
 use crate::launcher::Message;
+use crate::preferences::Theme;
 
 static STAR_ACTIVE: &[u8] = include_bytes!("../assets/star-fill.png");
 static STAR_INACTIVE: &[u8] = include_bytes!("../assets/star-line.png");
@@ -19,6 +19,7 @@ pub enum IconState {
     Ready(iced::widget::image::Handle),
     Loading,
     Empty,
+    NotFound,
 }
 
 #[derive(Debug, Clone)]
@@ -103,14 +104,14 @@ fn load_raster_icon(icon: &str) -> Option<image::Handle> {
     }
 }
 
-pub async fn process_icon(app_id: String, icon_name: Option<String>) -> (String, IconState) {
+pub async fn process_icon(app_index: usize, icon_name: Option<String>) -> (usize, IconState) {
     let Some(name) = icon_name else {
-        return (app_id, IconState::Empty);
+        return (app_index, IconState::Empty);
     };
 
     match load_raster_icon(&name) {
-        Some(handle) => (app_id, IconState::Ready(handle)),
-        None => (app_id, IconState::Empty),
+        Some(handle) => (app_index, IconState::Ready(handle)),
+        None => (app_index, IconState::Empty),
     }
 }
 
@@ -144,15 +145,24 @@ impl App {
 
     pub fn itemlist<'a>(
         &'a self,
+        theme: &Theme,
         current_index: usize,
         index: usize,
         is_favorite: bool,
     ) -> Button<'a, Message> {
+        let style = &theme.launchpad.entry;
         let icon_view: Element<Message> = match &self.icon_state {
-            IconState::Ready(handle) => image(handle).width(32).height(32).into(),
-            // Maybe add a placeholder?
-            IconState::Loading => iced::widget::horizontal_space().width(0).into(),
-            IconState::Empty => iced::widget::horizontal_space().width(0).into(),
+            IconState::Ready(handle) => image(handle)
+                .width(style.icon_size)
+                .height(style.icon_size)
+                .into(),
+            IconState::Loading => iced::widget::horizontal_space()
+                .width(style.icon_size)
+                .height(style.icon_size)
+                .into(),
+            IconState::Empty | IconState::NotFound => {
+                iced::widget::horizontal_space().width(0).into()
+            }
         };
 
         use iced::widget::image;
@@ -188,18 +198,19 @@ impl App {
             .push(shortcut_label)
             .align_y(Alignment::Center);
 
-        let description = self
-            .description
-            .as_ref()
-            .map(|desc| text(desc).size(12).color([1.0, 1.0, 1.0, 0.5]));
+        let description = self.description.as_ref().map(|desc| {
+            text(desc)
+                .size(style.secondary_font_size)
+                .color(*style.secondary_text)
+        });
 
         button(
             row![
                 icon_view,
                 iced::widget::column![
                     text(&self.name)
-                        .size(14)
-                        .color([0.95, 0.95, 0.95, 1.0])
+                        .size(style.font_size)
+                        .color(*style.main_text)
                         .width(Length::Fill)
                         .font(iced::Font {
                             weight: iced::font::Weight::Bold,
@@ -214,8 +225,8 @@ impl App {
             .align_y(iced::Alignment::Center),
         )
         .on_press(Message::LaunchApp(index))
-        .padding(10)
-        .height(ITEM_HEIGHT)
+        .padding(iced::Padding::from(&style.padding))
+        .height(style.height)
         .width(Length::Fill)
     }
 }
