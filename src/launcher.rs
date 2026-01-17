@@ -55,7 +55,7 @@ pub struct Lucien {
 #[derive(Debug, Clone)]
 pub enum Message {
     AppsLoaded(Vec<App>),
-    IconProcessed(String, IconState),
+    IconProcessed(usize, IconState),
     PromptChange(String),
     DebouncedFilter,
     LaunchApp(usize),
@@ -231,18 +231,15 @@ impl Lucien {
         let mut tasks = Vec::new();
 
         for rank_pos in indices {
-            // 1. Get the app index from the ranked list
             if let Some(&app_idx) = self.ranked_apps.get(rank_pos) {
-                // 2. Access the actual app data
                 let app = &mut self.cached_apps[app_idx];
 
-                // 3. Only trigger if we haven't started loading yet
                 if matches!(app.icon_state, IconState::Empty) {
                     app.icon_state = IconState::Loading;
 
                     tasks.push(Task::perform(
-                        process_icon(app.id.clone(), app.icon_name.clone()),
-                        |(id, state)| Message::IconProcessed(id, state),
+                        process_icon(app_idx, app.icon_name.clone()),
+                        |(app_idx, state)| Message::IconProcessed(app_idx, state),
                     ));
                 }
             }
@@ -297,13 +294,13 @@ impl Lucien {
 
                 Task::none()
             }
-            Message::IconProcessed(app_id, state) => {
-                if let Some(app) = self.cached_apps.iter_mut().find(|a| a.id == app_id) {
-                    if matches!(state, IconState::Empty) {
-                        app.icon_state = IconState::NotFound;
+            Message::IconProcessed(app_index, state) => {
+                if let Some(app) = self.cached_apps.get_mut(app_index) {
+                    app.icon_state = if matches!(state, IconState::Empty) {
+                        IconState::NotFound
                     } else {
-                        app.icon_state = state;
-                    }
+                        state
+                    };
                 }
 
                 Task::none()

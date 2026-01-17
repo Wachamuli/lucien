@@ -104,14 +104,14 @@ fn load_raster_icon(icon: &str) -> Option<image::Handle> {
     }
 }
 
-pub async fn process_icon(app_id: String, icon_name: Option<String>) -> (String, IconState) {
+pub async fn process_icon(app_index: usize, icon_name: Option<String>) -> (usize, IconState) {
     let Some(name) = icon_name else {
-        return (app_id, IconState::Empty);
+        return (app_index, IconState::Empty);
     };
 
     match load_raster_icon(&name) {
-        Some(handle) => (app_id, IconState::Ready(handle)),
-        None => (app_id, IconState::Empty),
+        Some(handle) => (app_index, IconState::Ready(handle)),
+        None => (app_index, IconState::Empty),
     }
 }
 
