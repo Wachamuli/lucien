@@ -8,11 +8,11 @@ use iced::{
 use resvg::{tiny_skia, usvg};
 use std::{io, os::unix::process::CommandExt, path::PathBuf, process};
 
+use crate::launcher::BakedIcons;
 use crate::launcher::Message;
-use crate::preferences::Theme;
-
-static STAR_ACTIVE: &[u8] = include_bytes!("../assets/star-fill.png");
-static STAR_INACTIVE: &[u8] = include_bytes!("../assets/star-line.png");
+use crate::theme::ButtonClass;
+use crate::theme::CustomTheme;
+use crate::theme::TextClass;
 
 #[derive(Debug, Clone)]
 pub enum IconState {
@@ -31,8 +31,6 @@ pub struct App {
     pub icon_state: IconState,
     pub icon_name: Option<String>, // Change for PathBuf?
 }
-
-static ENTER: &[u8] = include_bytes!("../assets/enter.png");
 
 pub fn all_apps() -> Vec<App> {
     gio::AppInfo::all()
@@ -145,13 +143,14 @@ impl App {
 
     pub fn itemlist<'a>(
         &'a self,
-        theme: &Theme,
+        icons: &BakedIcons,
+        theme: &CustomTheme,
         current_index: usize,
         index: usize,
         is_favorite: bool,
-    ) -> Button<'a, Message> {
+    ) -> Button<'a, Message, CustomTheme> {
         let style = &theme.launchpad.entry;
-        let icon_view: Element<Message> = match &self.icon_state {
+        let icon_view: Element<'a, Message, CustomTheme> = match &self.icon_state {
             IconState::Ready(handle) => image(handle)
                 .width(style.icon_size)
                 .height(style.icon_size)
@@ -165,15 +164,16 @@ impl App {
             }
         };
 
-        use iced::widget::image;
-        let shortcut_label: Element<_> = match index {
-            n if n == current_index => image(image::Handle::from_bytes(ENTER))
-                .width(18)
-                .height(18)
-                .into(),
+        let shortcut_widget = match &icons.enter {
+            Some(handle) => image(handle).width(18).height(18).into(),
+            None => iced::widget::horizontal_space().width(18).height(18).into(),
+        };
+
+        let shortcut_label: Element<'a, Message, CustomTheme> = match index {
+            n if n == current_index => shortcut_widget,
             n @ 0..5 => text(format!("Alt+{}", n + 1))
                 .size(12)
-                .color([1.0, 1.0, 1.0, 0.5])
+                .class(TextClass::TextDim)
                 .into(),
             _ => text("").into(),
         };
@@ -181,17 +181,18 @@ impl App {
         let is_selected = current_index == index;
 
         let star = if is_favorite {
-            image::Handle::from_bytes(STAR_ACTIVE)
+            &icons.star_active
         } else {
-            image::Handle::from_bytes(STAR_INACTIVE)
+            &icons.star_inactive
         };
 
-        let mark_favorite = button(image(star).width(18).height(18))
-            .on_press(Message::MarkFavorite(index))
-            .style(|_, _| iced::widget::button::Style {
-                background: Some(iced::Background::Color(iced::Color::TRANSPARENT)),
-                ..Default::default()
-            });
+        let mark_favorite: Element<'a, Message, CustomTheme> = match star {
+            Some(handle) => button(image(handle).width(18).height(18))
+                .on_press(Message::MarkFavorite(index))
+                .class(ButtonClass::Transparent)
+                .into(),
+            None => iced::widget::horizontal_space().width(18).height(18).into(),
+        };
 
         let actions = row![]
             .push_maybe(is_selected.then(|| mark_favorite))
@@ -201,7 +202,7 @@ impl App {
         let description = self.description.as_ref().map(|desc| {
             text(desc)
                 .size(style.secondary_font_size)
-                .color(*style.secondary_text)
+                .class(TextClass::SecondaryText)
         });
 
         button(
@@ -210,7 +211,7 @@ impl App {
                 iced::widget::column![
                     text(&self.name)
                         .size(style.font_size)
-                        .color(*style.main_text)
+                        // .color(*style.main_text)
                         .width(Length::Fill)
                         .font(iced::Font {
                             weight: iced::font::Weight::Bold,
@@ -228,5 +229,7 @@ impl App {
         .padding(iced::Padding::from(&style.padding))
         .height(style.height)
         .width(Length::Fill)
+        .class(ButtonClass::Itemlist)
+        .into()
     }
 }

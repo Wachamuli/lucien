@@ -4,7 +4,7 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
-iced = {version = "0.13.1", features = ["image", "svg", "tokio"]}
+iced = {version = "0.13.1", features = ["image", "svg", "tokio", "advanced"]}
 gio = "0.21.5"
 iced_layershell = "0.13.7"
 xdg = "3.0.0"
@@ -18,3 +18,7 @@ serde = "1.0.228"
 toml = "0.9.11"
 toml_edit = "0.24.0"
 tokio = {version = "1.49.0", features = ["fs", "rt", "macros", "rt-multi-thread"]}
+dhat = "0.3.3"
+
+[features]
+dhat-heap = []

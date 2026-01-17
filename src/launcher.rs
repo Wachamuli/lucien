@@ -5,11 +5,11 @@ use std::{
 
 use fuzzy_matcher::{FuzzyMatcher, skim::SkimMatcherV2};
 use iced::{
-    Alignment, Border, Element, Event, Length, Subscription, Task, event,
+    Alignment, Element, Event, Length, Subscription, Task, event,
     keyboard::{self, Key},
     widget::{
-        Column, Container, button, container, row,
-        scrollable::{self, Rail, RelativeOffset, Viewport},
+        Column, Container, container, horizontal_space, image, row,
+        scrollable::{self, RelativeOffset, Viewport},
         text, text_input,
     },
 };
@@ -18,6 +18,7 @@ use iced_layershell::to_layer_message;
 use crate::{
     app::{App, IconState, all_apps, process_icon},
     preferences::{self, Action, Preferences},
+    theme::{ButtonClass, ContainerClass, CustomTheme, TextClass},
 };
 
 const SECTION_HEIGHT: f32 = 36.0;
@@ -28,6 +29,10 @@ static SCROLLABLE_ID: LazyLock<scrollable::Id> = std::sync::LazyLock::new(scroll
 
 // #EBECF2
 static MAGNIFIER: &[u8] = include_bytes!("../assets/magnifier.png");
+static ENTER: &[u8] = include_bytes!("../assets/enter.png");
+static STAR_ACTIVE: &[u8] = include_bytes!("../assets/star-fill.png");
+static STAR_INACTIVE: &[u8] = include_bytes!("../assets/star-line.png");
+
 // static CUBE_ACTIVE: &[u8] = include_bytes!("../assets/tabler--cube-active.png");
 // static TERMINAL_PROMPT_ACTIVE: &[u8] = include_bytes!("../assets/mynaui--terminal-active.png");
 
@@ -47,8 +52,8 @@ pub struct Lucien {
     preferences: Preferences,
     selected_entry: usize,
     last_viewport: Option<Viewport>,
-    magnifier_icon: iced::widget::image::Handle,
     search_handle: Option<iced::task::Handle>,
+    icons: BakedIcons,
 }
 
 #[to_layer_message]
@@ -68,9 +73,16 @@ pub enum Message {
     SaveIntoDisk(Result<PathBuf, Arc<tokio::io::Error>>),
 }
 
+#[derive(Debug, Default)]
+pub struct BakedIcons {
+    pub magnifier: Option<image::Handle>,
+    pub star_active: Option<image::Handle>,
+    pub star_inactive: Option<image::Handle>,
+    pub enter: Option<image::Handle>,
+}
+
 impl Lucien {
     pub fn init(preferences: Preferences) -> (Self, Task<Message>) {
-        let magnifier_icon = iced::widget::image::Handle::from_bytes(MAGNIFIER);
         let auto_focus_prompt_task = text_input::focus(TEXT_INPUT_ID.clone());
         let scan_apps_task = Task::perform(async { all_apps() }, Message::AppsLoaded);
         let initial_tasks = Task::batch([auto_focus_prompt_task, scan_apps_task]);
@@ -85,11 +97,15 @@ impl Lucien {
             preferences,
             selected_entry: 0,
             last_viewport: None,
-            magnifier_icon: magnifier_icon,
             search_handle: None,
+            icons: BakedIcons::default(),
         };
 
         (initial_values, initial_tasks)
+    }
+
+    pub fn theme(&self) -> CustomTheme {
+        self.preferences.theme.clone()
     }
 
     fn update_ranked_apps(&mut self) {
@@ -132,7 +148,7 @@ impl Lucien {
             return Task::none();
         };
 
-        let id = self.cached_apps[*app].id.clone();
+        let id = &self.cached_apps[*app].id;
         let path = path.clone();
         // Toggle_favorite is a very opaque function. It actually
         // modifies the in-memory favorite_apps variable.
@@ -285,6 +301,13 @@ impl Lucien {
                 self.cached_apps = apps;
                 self.ranked_apps = (0..self.cached_apps.len()).collect();
 
+                self.icons = BakedIcons {
+                    enter: Some(image::Handle::from_bytes(ENTER)),
+                    magnifier: Some(image::Handle::from_bytes(MAGNIFIER)),
+                    star_active: Some(image::Handle::from_bytes(STAR_ACTIVE)),
+                    star_inactive: Some(image::Handle::from_bytes(STAR_INACTIVE)),
+                };
+
                 if !self.preferences.favorite_apps.is_empty() {
                     self.ranked_apps.sort_by_key(|index| {
                         let app = &self.cached_apps[*index];
@@ -435,20 +458,14 @@ impl Lucien {
         ])
     }
 
-    pub fn view(&self) -> Container<'_, Message> {
+    pub fn view(&self) -> Container<'_, Message, CustomTheme> {
         let theme = &self.preferences.theme;
-        let background = &theme.background;
-        // Maybe we can get rid of this conversion on the ui.
-        let border_style = iced::Border::from(&theme.border);
 
-        let text_main = iced::Color::from_rgba(0.95, 0.95, 0.95, 1.0);
-        let text_dim = iced::Color::from_rgba(1.0, 1.0, 1.0, 0.5);
-
-        fn section(name: &str, color: iced::Color) -> Container<'_, Message> {
+        fn section(name: &str) -> Container<'_, Message, CustomTheme> {
             container(
                 text(name)
                     .size(14)
-                    .color(color)
+                    .class(TextClass::TextDim)
                     .width(Length::Fill)
                     .font(iced::Font {
                         weight: iced::font::Weight::Bold,
@@ -462,14 +479,15 @@ impl Lucien {
                 bottom: 5.,
                 left: 10.,
             })
+            .into()
         }
 
         let mut starred_column;
         let mut general_column;
 
         if self.prompt.is_empty() && !self.preferences.favorite_apps.is_empty() {
-            starred_column = Column::new().push(section("Starred", text_dim));
-            general_column = Column::new().push(section("General", text_dim));
+            starred_column = Column::new().push(section("Starred"));
+            general_column = Column::new().push(section("General"));
         } else {
             starred_column = Column::new();
             general_column = Column::new();
@@ -480,24 +498,18 @@ impl Lucien {
             let is_selected = self.selected_entry == rank_pos;
             let is_favorite = self.preferences.favorite_apps.contains(&app.id);
 
-            let element: Element<Message> = app
-                .itemlist(theme, self.selected_entry, rank_pos, is_favorite)
-                .style(move |_, status| {
-                    let entry_style = &theme.launchpad.entry;
-                    let bg = if is_selected {
-                        &entry_style.focus_highlight
-                    } else if status == button::Status::Hovered {
-                        &entry_style.hover_highlight
-                    } else {
-                        &entry_style.background
-                    };
-
-                    button::Style {
-                        background: Some(iced::Background::Color(**bg)),
-                        text_color: if is_selected { text_main } else { text_dim },
-                        border: iced::Border::from(&entry_style.border),
-                        ..Default::default()
-                    }
+            let element: Element<Message, CustomTheme> = app
+                .itemlist(
+                    &self.icons,
+                    theme,
+                    self.selected_entry,
+                    rank_pos,
+                    is_favorite,
+                )
+                .class(if is_selected {
+                    ButtonClass::ItemlistSelected
+                } else {
+                    ButtonClass::Itemlist
                 })
                 .into();
 
@@ -508,10 +520,10 @@ impl Lucien {
             }
         }
 
-        let results_not_found: Container<_> = container(
+        let results_not_found: Container<Message, CustomTheme> = container(
             text("No Results Found")
                 .size(14)
-                .color(text_dim)
+                .class(TextClass::TextDim)
                 .width(Length::Fill)
                 .align_x(Alignment::Center)
                 .align_y(Alignment::Center)
@@ -527,88 +539,48 @@ impl Lucien {
             .push_maybe(self.ranked_apps.is_empty().then(|| results_not_found))
             .padding(theme.launchpad.padding)
             .width(Length::Fill);
-        let magnifier = iced::widget::image(&self.magnifier_icon)
-            .width(theme.prompt.icon_size)
-            .height(theme.prompt.icon_size);
-        let promp_input = iced::widget::text_input("Search...", &self.prompt)
-            .id(TEXT_INPUT_ID.clone())
-            .on_input(Message::PromptChange)
-            .on_submit(Message::LaunchApp(self.selected_entry))
-            .padding(8)
-            .size(theme.prompt.font_size)
-            .font(iced::Font {
-                weight: iced::font::Weight::Bold,
-                ..Default::default()
-            })
-            .style(move |_, _| iced::widget::text_input::Style {
-                background: iced::Background::Color(*theme.prompt.background),
-                border: iced::Border::from(&theme.prompt.border),
-                icon: *theme.prompt.placeholder_color,
-                placeholder: *theme.prompt.placeholder_color,
-                value: *theme.prompt.text_color,
-                selection: *theme.launchpad.entry.focus_highlight,
-            });
-        let prompt_view = row![]
+        let magnifier: Element<Message, CustomTheme> = match &self.icons.magnifier {
+            Some(handle) => image(handle)
+                .width(theme.prompt.icon_size)
+                .height(theme.prompt.icon_size)
+                .into(),
+            None => horizontal_space()
+                .width(theme.prompt.icon_size)
+                .height(theme.prompt.icon_size)
+                .into(),
+        };
+        let promp_input: Element<Message, CustomTheme> =
+            iced::widget::text_input("Search...", &self.prompt)
+                .id(TEXT_INPUT_ID.clone())
+                .on_input(Message::PromptChange)
+                .on_submit(Message::LaunchApp(self.selected_entry))
+                .padding(8)
+                .size(theme.prompt.font_size)
+                .font(iced::Font {
+                    weight: iced::font::Weight::Bold,
+                    ..Default::default()
+                })
+                .into();
+        let prompt_view: Element<Message, CustomTheme> = row![]
             .push(magnifier)
             .push(promp_input)
             // .push(self.status_indicator())
             .align_y(iced::Alignment::Center)
-            .spacing(2);
+            .spacing(2)
+            .into();
         let results = iced::widget::scrollable(content)
             .on_scroll(Message::ScrollableViewport)
-            .id(SCROLLABLE_ID.clone())
-            .style(move |_, _| scrollable::Style {
-                container: iced::widget::container::Style {
-                    background: Some(iced::Background::Color(iced::Color::TRANSPARENT)),
-                    border: Border {
-                        radius: iced::border::radius(20),
-                        ..Default::default()
-                    },
-                    ..Default::default()
-                },
-                vertical_rail: Rail {
-                    background: Some(iced::Background::Color(iced::Color::TRANSPARENT)),
-                    scroller: scrollable::Scroller {
-                        color: iced::Color::TRANSPARENT,
-                        border: Border {
-                            width: 0.0,
-                            ..Default::default()
-                        },
-                    },
-                    border: Border::default(),
-                },
-                horizontal_rail: Rail {
-                    background: None,
-                    scroller: scrollable::Scroller {
-                        color: text_dim,
-                        // color: border_style.color,
-                        border: Border {
-                            radius: iced::border::radius(5),
-                            ..Default::default()
-                        },
-                    },
-                    border: Border::default(),
-                },
-                gap: None,
-            });
+            .id(SCROLLABLE_ID.clone());
 
         container(iced::widget::column![
             container(prompt_view)
                 .padding(iced::Padding::from(&theme.prompt.margin))
                 .align_y(Alignment::Center),
-            iced::widget::horizontal_rule(1).style(move |_| iced::widget::rule::Style {
-                color: *theme.separator.color,
-                width: theme.separator.width,
-                fill_mode: iced::widget::rule::FillMode::Padded(theme.separator.padding),
-                radius: theme.separator.radius.into(),
-            }),
+            iced::widget::horizontal_rule(1),
             container(results),
         ])
-        .style(move |_| container::Style {
-            background: Some(iced::Background::Color(**background)),
-            border: border_style,
-            ..Default::default()
-        })
+        .class(ContainerClass::MainContainer)
+        .into()
     }
 
     // fn status_indicator<'a>(&'a self) -> Container<'a, Message> {
