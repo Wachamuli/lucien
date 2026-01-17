@@ -156,7 +156,10 @@ impl App {
                 .height(style.icon_size)
                 .into(),
             // Maybe add a placeholder?
-            IconState::Loading => iced::widget::horizontal_space().width(0).into(),
+            IconState::Loading => iced::widget::horizontal_space()
+                .width(style.icon_size)
+                .height(style.icon_size)
+                .into(),
             IconState::Empty => iced::widget::horizontal_space().width(0).into(),
         };
 
