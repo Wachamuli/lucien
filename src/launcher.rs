@@ -299,7 +299,11 @@ impl Lucien {
             }
             Message::IconProcessed(app_id, state) => {
                 if let Some(app) = self.cached_apps.iter_mut().find(|a| a.id == app_id) {
-                    app.icon_state = state;
+                    if matches!(state, IconState::Empty) {
+                        app.icon_state = IconState::NotFound;
+                    } else {
+                        app.icon_state = state;
+                    }
                 }
 
                 Task::none()

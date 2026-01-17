@@ -19,6 +19,7 @@ pub enum IconState {
     Ready(iced::widget::image::Handle),
     Loading,
     Empty,
+    NotFound,
 }
 
 #[derive(Debug, Clone)]
@@ -155,12 +156,13 @@ impl App {
                 .width(style.icon_size)
                 .height(style.icon_size)
                 .into(),
-            // Maybe add a placeholder?
             IconState::Loading => iced::widget::horizontal_space()
                 .width(style.icon_size)
                 .height(style.icon_size)
                 .into(),
-            IconState::Empty => iced::widget::horizontal_space().width(0).into(),
+            IconState::Empty | IconState::NotFound => {
+                iced::widget::horizontal_space().width(0).into()
+            }
         };
 
         use iced::widget::image;
