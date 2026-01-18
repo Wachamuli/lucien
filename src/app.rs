@@ -43,6 +43,14 @@ pub enum IconStatus {
 }
 
 #[derive(Debug, Clone)]
+pub enum IconState {
+    Ready(iced::widget::image::Handle),
+    Loading,
+    Empty,
+    NotFound,
+}
+
+#[derive(Debug, Clone)]
 pub struct App {
     commandline: Option<PathBuf>,
     pub id: String,
