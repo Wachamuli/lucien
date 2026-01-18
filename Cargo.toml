@@ -3,8 +3,8 @@ name = "lucien"
 version = "0.1.0"
 edition = "2024"
 
-[profile.bench]
-debug = true
+# [profile.release]
+# debug = true
 
 [dependencies]
 iced = {version = "0.13.1", features = ["image", "svg", "tokio", "advanced", "lazy"]}
@@ -21,7 +21,3 @@ serde = "1.0.228"
 toml = "0.9.11"
 toml_edit = "0.24.0"
 tokio = {version = "1.49.0", features = ["fs", "rt", "macros", "rt-multi-thread"]}
-dhat = "0.3.3"
-
-[features]
-dhat-heap = []

@@ -53,6 +53,7 @@ pub struct Lucien {
     selected_entry: usize,
     last_viewport: Option<Viewport>,
     search_handle: Option<iced::task::Handle>,
+    layout: AppLayout,
     icons: BakedIcons,
 }
 
@@ -94,6 +95,7 @@ impl Lucien {
             keyboard_modifiers: keyboard::Modifiers::empty(),
             cached_apps: Vec::new(),
             ranked_apps: Vec::new(),
+            layout: AppLayout::new(&preferences, ""),
             preferences,
             selected_entry: 0,
             last_viewport: None,
@@ -172,8 +174,7 @@ impl Lucien {
         self.selected_entry = wrapped_index(self.selected_entry, total, step);
 
         if old_pos != self.selected_entry {
-            let layout = AppLayout::new(&self.preferences, &self.prompt);
-            return self.snap_if_needed(&layout);
+            return self.snap_if_needed();
         }
 
         Task::none()
@@ -188,7 +189,7 @@ impl Lucien {
         }
     }
 
-    pub fn snap_if_needed(&self, layout: &AppLayout) -> Task<Message> {
+    pub fn snap_if_needed(&self) -> Task<Message> {
         let Some(viewport) = &self.last_viewport else {
             return Task::none();
         };
@@ -199,8 +200,8 @@ impl Lucien {
             .preferences
             .favorite_apps
             .contains(&self.cached_apps[app_idx].id);
-        let selection_top = layout.y_for_index(self.selected_entry, is_fav);
-        let selection_bottom = selection_top + layout.item_height;
+        let selection_top = self.layout.y_for_index(self.selected_entry, is_fav);
+        let selection_bottom = selection_top + self.layout.item_height;
 
         // 2. Viewport state
         let scroll_top = viewport.absolute_offset().y;
@@ -219,8 +220,8 @@ impl Lucien {
             // Scroll Up
             let mut top = selection_top - PADDING;
             // Adjust for headers if at the start of a section
-            if !layout.is_filtered
-                && (self.selected_entry == 0 || self.selected_entry == layout.fav_count)
+            if !self.layout.is_filtered
+                && (self.selected_entry == 0 || self.selected_entry == self.layout.fav_count)
             {
                 top -= SECTION_HEIGHT;
             }
@@ -264,7 +265,7 @@ impl Lucien {
         Task::batch(tasks)
     }
 
-    fn preload_visible_icons(&mut self, layout: &AppLayout) -> Task<Message> {
+    fn preload_visible_icons(&mut self) -> Task<Message> {
         let Some(viewport) = &self.last_viewport else {
             return Task::none();
         };
@@ -274,22 +275,24 @@ impl Lucien {
         let mut indices = Vec::new();
 
         // Calculate visible Starred items
-        if scroll_top < layout.starred_end_y {
-            let s = ((scroll_top - layout.starred_start_y).max(0.0) / layout.item_height).floor()
-                as usize;
-            let e = ((scroll_bottom - layout.starred_start_y).max(0.0) / layout.item_height).ceil()
-                as usize;
-            indices.extend(s..e.min(layout.fav_count));
+        if scroll_top < self.layout.starred_end_y {
+            let s = ((scroll_top - self.layout.starred_start_y).max(0.0) / self.layout.item_height)
+                .floor() as usize;
+            let e = ((scroll_bottom - self.layout.starred_start_y).max(0.0)
+                / self.layout.item_height)
+                .ceil() as usize;
+            indices.extend(s..e.min(self.layout.fav_count));
         }
 
         // Calculate visible General items
-        if scroll_bottom > layout.general_start_y {
-            let s = ((scroll_top - layout.general_start_y).max(0.0) / layout.item_height).floor()
-                as usize;
-            let e = ((scroll_bottom - layout.general_start_y).max(0.0) / layout.item_height).ceil()
-                as usize;
+        if scroll_bottom > self.layout.general_start_y {
+            let s = ((scroll_top - self.layout.general_start_y).max(0.0) / self.layout.item_height)
+                .floor() as usize;
+            let e = ((scroll_bottom - self.layout.general_start_y).max(0.0)
+                / self.layout.item_height)
+                .ceil() as usize;
             let total = self.ranked_apps.len();
-            indices.extend((s + layout.fav_count)..(e + layout.fav_count).min(total));
+            indices.extend((s + self.layout.fav_count)..(e + self.layout.fav_count).min(total));
         }
 
         self.preload_specific_range(indices)
@@ -392,16 +395,16 @@ impl Lucien {
                 let scroll_task =
                     scrollable::snap_to(SCROLLABLE_ID.clone(), RelativeOffset { x: 0.0, y: 0.0 });
 
-                let layout = AppLayout::new(&self.preferences, &self.prompt);
-                let preload_task = self.preload_visible_icons(&layout);
+                self.layout = AppLayout::new(&self.preferences, &self.prompt);
+                let preload_task = self.preload_visible_icons();
 
                 Task::batch([scroll_task, preload_task])
             }
             Message::MarkFavorite(index) => self.mark_favorite(index),
             Message::ScrollableViewport(viewport) => {
                 self.last_viewport = Some(viewport);
-                let layout = AppLayout::new(&self.preferences, &self.prompt);
-                self.preload_visible_icons(&layout)
+                self.layout = AppLayout::new(&self.preferences, &self.prompt);
+                self.preload_visible_icons()
             }
             Message::SystemEvent(Event::Keyboard(keyboard::Event::KeyPressed {
                 key: Key::Named(key),

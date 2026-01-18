@@ -147,7 +147,7 @@ impl From<&Padding> for iced::Padding {
 impl Default for Prompt {
     fn default() -> Self {
         Self {
-            background: DEFAULT_BACKGROUND_COLOR.into(),
+            background: TRANSPARENT.into(),
             font_size: 18,
             icon_size: 28,
             padding: Padding::from([8., 8., 8., 8.]),
