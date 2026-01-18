@@ -6,13 +6,13 @@ use iced::{
     widget::{Button, button, image, row, text},
 };
 use resvg::{tiny_skia, usvg};
-use std::sync::Arc;
 use std::{io, os::unix::process::CommandExt, path::PathBuf, process};
 
 use crate::launcher::BakedIcons;
 use crate::launcher::Message;
 use crate::theme::ButtonClass;
 use crate::theme::CustomTheme;
+use crate::theme::Entry as EntryStyle;
 use crate::theme::TextClass;
 
 #[derive(Debug, Clone)]
@@ -161,21 +161,18 @@ impl App {
         shell.spawn()
     }
 
-    pub fn itemlist(
+    pub fn entry(
         &self,
-        icons: Arc<BakedIcons>,
-        theme: CustomTheme,
+        icons: &BakedIcons,
+        style: &EntryStyle,
         index: usize,
         current_index: usize,
         is_favorite: bool,
     ) -> Element<'static, Message, CustomTheme> {
-        // 1. We must own the style values, not borrow them from the theme
-        let style = theme.launchpad.entry.clone();
         let is_selected = current_index == index;
 
-        // 2. Icon View: Must clone the Handle
         let icon_view: Element<'static, Message, CustomTheme> = match &self.icon_state {
-            IconState::Ready(handle) => image(handle.clone()) // CLONE HANDLE
+            IconState::Ready(handle) => image(handle.clone())
                 .width(style.icon_size)
                 .height(style.icon_size)
                 .into(),
@@ -186,8 +183,7 @@ impl App {
             _ => iced::widget::horizontal_space().width(0).into(),
         };
 
-        // 3. Shortcut: Must clone handles
-        let shortcut_widget: Element<'static, Message, CustomTheme> = match icons.enter.clone() {
+        let shortcut_widget: Element<'static, Message, CustomTheme> = match &icons.enter {
             Some(handle) => image(handle).width(18).height(18).into(),
             None => iced::widget::horizontal_space().width(18).height(18).into(),
         };
@@ -203,11 +199,10 @@ impl App {
             text("").into()
         };
 
-        // 4. Star: Must clone handles
         let star_handle = if is_favorite {
-            icons.star_active.clone()
+            &icons.star_active
         } else {
-            icons.star_inactive.clone()
+            &icons.star_inactive
         };
 
         let mark_favorite: Element<'static, Message, CustomTheme> = match star_handle {
@@ -223,9 +218,8 @@ impl App {
             .push(shortcut_label)
             .align_y(Alignment::Center);
 
-        // 5. Description: Must clone the String
         let description = self.description.as_ref().map(|desc| {
-            text(desc.clone()) // CLONE STRING
+            text(desc.clone())
                 .size(style.secondary_font_size)
                 .class(TextClass::SecondaryText)
         });
@@ -234,7 +228,7 @@ impl App {
             row![
                 icon_view,
                 iced::widget::column![
-                    text(self.name.clone()) // CLONE STRING
+                    text(self.name.clone())
                         .size(style.font_size)
                         .width(Length::Fill)
                         .font(iced::Font {
@@ -250,7 +244,7 @@ impl App {
             .align_y(iced::Alignment::Center),
         )
         .on_press(Message::LaunchApp(index))
-        .padding(iced::Padding::from(style.padding))
+        .padding(iced::Padding::from(&style.padding))
         .height(style.height)
         .width(Length::Fill)
         .class(if is_selected {

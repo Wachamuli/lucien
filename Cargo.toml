@@ -3,6 +3,9 @@ name = "lucien"
 version = "0.1.0"
 edition = "2024"
 
+[profile.bench]
+debug = true
+
 [dependencies]
 iced = {version = "0.13.1", features = ["image", "svg", "tokio", "advanced", "lazy"]}
 gio = "0.21.5"

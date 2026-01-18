@@ -18,7 +18,7 @@ use iced_layershell::to_layer_message;
 use crate::{
     app::{App, IconState, all_apps, process_icon},
     preferences::{self, Action, Preferences},
-    theme::{ButtonClass, ContainerClass, CustomTheme, TextClass},
+    theme::{ContainerClass, CustomTheme, TextClass},
 };
 
 const SECTION_HEIGHT: f32 = 36.0;
@@ -53,7 +53,7 @@ pub struct Lucien {
     selected_entry: usize,
     last_viewport: Option<Viewport>,
     search_handle: Option<iced::task::Handle>,
-    icons: Arc<BakedIcons>,
+    icons: BakedIcons,
 }
 
 #[to_layer_message]
@@ -98,7 +98,7 @@ impl Lucien {
             selected_entry: 0,
             last_viewport: None,
             search_handle: None,
-            icons: Arc::new(BakedIcons::default()),
+            icons: BakedIcons::default(),
         };
 
         (initial_values, initial_tasks)
@@ -301,12 +301,12 @@ impl Lucien {
                 self.cached_apps = apps;
                 self.ranked_apps = (0..self.cached_apps.len()).collect();
 
-                self.icons = Arc::new(BakedIcons {
+                self.icons = BakedIcons {
                     enter: Some(image::Handle::from_bytes(ENTER)),
                     magnifier: Some(image::Handle::from_bytes(MAGNIFIER)),
                     star_active: Some(image::Handle::from_bytes(STAR_ACTIVE)),
                     star_inactive: Some(image::Handle::from_bytes(STAR_INACTIVE)),
-                });
+                };
 
                 if !self.preferences.favorite_apps.is_empty() {
                     self.ranked_apps.sort_by_key(|index| {
@@ -498,21 +498,14 @@ impl Lucien {
             let is_favorite = self.preferences.favorite_apps.contains(&app.id);
             let is_selected = self.selected_entry == rank_pos;
 
-            let item_height = theme.launchpad.entry.height;
-            let theme = &self.preferences.theme;
             let icon_status = app.icon_state.status();
+            let item_height = theme.launchpad.entry.height;
+            let style = &self.preferences.theme.launchpad.entry;
+            let icons = &self.icons;
 
             let element: Element<Message, CustomTheme> = container(iced::widget::lazy(
                 (*app_index, is_selected, is_favorite, icon_status),
-                move |_| {
-                    app.itemlist(
-                        self.icons.clone(),
-                        theme.clone(),
-                        rank_pos,
-                        self.selected_entry,
-                        is_favorite,
-                    )
-                },
+                move |_| app.entry(&icons, style, rank_pos, self.selected_entry, is_favorite),
             ))
             .height(item_height)
             .width(Length::Fill)
