@@ -8,9 +8,9 @@ use crate::{launcher::Lucien, preferences::Preferences};
 mod app;
 mod launcher;
 mod preferences;
+mod theme;
 
 use iced_layershell::{
-    Appearance,
     reexport::{Anchor, KeyboardInteractivity, Layer},
     settings::LayerShellSettings,
 };
@@ -18,10 +18,17 @@ use nix::sys::socket::{self, AddressFamily, SockFlag, SockType, UnixAddr};
 use tracing::Level;
 use tracing_subscriber::{EnvFilter, fmt, prelude::*};
 
+#[cfg(feature = "dhat-heap")]
+#[global_allocator]
+static ALLOC: dhat::Alloc = dhat::Alloc;
+
 fn main() -> iced_layershell::Result {
     std::panic::set_hook(Box::new(|panic_info| {
         tracing::error!("LAUNCHER CRASHED: {}", panic_info);
     }));
+
+    #[cfg(feature = "dhat-heap")]
+    let _profiler = dhat::Profiler::new_heap();
 
     let package_name = env!("CARGO_PKG_NAME");
     let package_version = env!("CARGO_PKG_VERSION");
@@ -72,19 +79,12 @@ fn main() -> iced_layershell::Result {
         ..Default::default()
     };
 
-    iced_layershell::build_pattern::application(
-        "application_launcher",
-        Lucien::update,
-        Lucien::view,
-    )
-    .subscription(Lucien::subscription)
-    .layer_settings(layershell_settings)
-    .antialiasing(true)
-    .style(|_state, _theme| Appearance {
-        background_color: iced::Color::TRANSPARENT,
-        text_color: Default::default(),
-    })
-    .run_with(|| Lucien::init(pref))
+    iced_layershell::build_pattern::application(package_name, Lucien::update, Lucien::view)
+        .subscription(Lucien::subscription)
+        .theme(Lucien::theme)
+        .layer_settings(layershell_settings)
+        .antialiasing(true)
+        .run_with(|| Lucien::init(pref))
 }
 
 fn setup_tracing_subscriber(

@@ -1,24 +1,76 @@
-favorite_apps = ["dev.zed.Zed.desktop", "org.mozilla.firefox.desktop"]
-
-[keybindings]
-go_next_entry = { key = 'j', modifiers = ['control'] }
-go_previous_entry = { key = 'k', modifiers = ['control'] }
-mark = { key = 'm', modifiers = ['control'] }
+leading_icon_count = 10
+favorite_apps = []
 
 [theme]
-background = "#0F141CD9"
-border = {color = "#FF8C004D", width = 2, radius = [5, 5, 5, 5]}
+# Matches @bgdark (#272E33)
+background = "#272E33FF"
+
+[theme.border]
+# Matches @bggreen (#56635F)
+color = "#56635F"
+width = 1.0
+# Matches window { border-radius: 3px; }
+radius = [3.0, 3.0, 3.0, 3.0]
 
 [theme.prompt]
-icon_size  = 18
-font_size = 8
-placeholder_color = "#ccffFF"
-border = {color = "#FF8C004D", width = 2, radius = [5, 5, 5, 5]}
+font_size = 13
+# Matches inputbar { background-color: @bgalt (#343f44) }
+background = "#343F44FF"
+icon_size = 24
+padding = [11.0, 11.0, 11.0, 11.0]
+margin = [0.0, 0.0, 0.0, 0.0]
+placeholder_color = "#56635F"
+# Matches @fg0 (#A7C080)
+text_color = "#A7C080FF"
 
-[theme.separator]
-color = "#FF8C004D"
-width = 2
+[theme.prompt.border]
+# Matches inputbar { border: 1px; border-color: @bggreen; }
+color = "#56635F"
+width = 1.0
+radius = [2.0, 2.0, 2.0, 2.0]
+
+[theme.launchpad]
+padding = 10.0
 
 [theme.launchpad.entry]
-focus_highlight = "#FF8C004D"
-hover_highlight = "#FFB45433"
+# Matches listview { background-color: #2d353b }
+background = "#2D353BFF"
+# Matches element selected.normal { background-color: @accent-color (#A7C080) }
+focus_highlight = "#A7C080FF"
+# Subtle highlight for hover using @bggreen
+hover_highlight = "#56635F66"
+font_size = 13
+# Matches element { text-color: rgb(216, 222, 233) }
+main_text = "#D8DEE9FF"
+padding = [3.0, 3.0, 3.0, 3.0]
+height = 45.0
+icon_size = 24
+
+[theme.launchpad.entry.border]
+color = "#00000000"
+width = 0.0
+# Matches button { border-radius: 4px; }
+radius = [4.0, 4.0, 4.0, 4.0]
+
+[theme.separator]
+# Matches @bggreen
+color = "#56635F"
+width = 1
+padding = 0
+radius = 0.0
+
+[keybindings.mark]
+key = "f"
+modifiers = ["control"]
+
+[keybindings.go_previous_entry]
+key = "tab"
+modifiers = ["shift"]
+
+[keybindings.go_next_entry]
+key = "tab"
+modifiers = []
+
+[keybindings.exit]
+key = "escape"
+modifiers = []

@@ -3,16 +3,44 @@ use gio::prelude::IconExt;
 use iced::Alignment;
 use iced::{
     Element, Length,
-    widget::{Button, button, image, row, text},
+    widget::{button, image, row, text},
 };
 use resvg::{tiny_skia, usvg};
 use std::{io, os::unix::process::CommandExt, path::PathBuf, process};
 
+use crate::launcher::BakedIcons;
 use crate::launcher::Message;
-use crate::preferences::Theme;
+use crate::theme::ButtonClass;
+use crate::theme::CustomTheme;
+use crate::theme::Entry as EntryStyle;
+use crate::theme::TextClass;
 
-static STAR_ACTIVE: &[u8] = include_bytes!("../assets/star-fill.png");
-static STAR_INACTIVE: &[u8] = include_bytes!("../assets/star-line.png");
+#[derive(Debug, Clone)]
+pub enum IconState {
+    Ready(iced::widget::image::Handle),
+    Loading,
+    Empty,
+    NotFound,
+}
+
+impl IconState {
+    pub fn status(&self) -> IconStatus {
+        match self {
+            IconState::Ready(_) => IconStatus::Ready,
+            IconState::Loading => IconStatus::Loading,
+            IconState::Empty => IconStatus::Empty,
+            IconState::NotFound => IconStatus::NotFound,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum IconStatus {
+    Empty,
+    Loading,
+    Ready,
+    NotFound,
+}
 
 #[derive(Debug, Clone)]
 pub enum IconState {
@@ -31,8 +59,6 @@ pub struct App {
     pub icon_state: IconState,
     pub icon_name: Option<String>, // Change for PathBuf?
 }
-
-static ENTER: &[u8] = include_bytes!("../assets/enter.png");
 
 pub fn all_apps() -> Vec<App> {
     gio::AppInfo::all()
@@ -143,16 +169,18 @@ impl App {
         shell.spawn()
     }
 
-    pub fn itemlist<'a>(
-        &'a self,
-        theme: &Theme,
-        current_index: usize,
+    pub fn entry(
+        &self,
+        icons: &BakedIcons,
+        style: &EntryStyle,
         index: usize,
+        current_index: usize,
         is_favorite: bool,
-    ) -> Button<'a, Message> {
-        let style = &theme.launchpad.entry;
-        let icon_view: Element<Message> = match &self.icon_state {
-            IconState::Ready(handle) => image(handle)
+    ) -> Element<'static, Message, CustomTheme> {
+        let is_selected = current_index == index;
+
+        let icon_view: Element<'static, Message, CustomTheme> = match &self.icon_state {
+            IconState::Ready(handle) => image(handle.clone())
                 .width(style.icon_size)
                 .height(style.icon_size)
                 .into(),
@@ -160,38 +188,38 @@ impl App {
                 .width(style.icon_size)
                 .height(style.icon_size)
                 .into(),
-            IconState::Empty | IconState::NotFound => {
-                iced::widget::horizontal_space().width(0).into()
-            }
+            _ => iced::widget::horizontal_space().width(0).into(),
         };
 
-        use iced::widget::image;
-        let shortcut_label: Element<_> = match index {
-            n if n == current_index => image(image::Handle::from_bytes(ENTER))
-                .width(18)
-                .height(18)
-                .into(),
-            n @ 0..5 => text(format!("Alt+{}", n + 1))
+        let shortcut_widget: Element<'static, Message, CustomTheme> = match &icons.enter {
+            Some(handle) => image(handle).width(18).height(18).into(),
+            None => iced::widget::horizontal_space().width(18).height(18).into(),
+        };
+
+        let shortcut_label: Element<'static, Message, CustomTheme> = if is_selected {
+            shortcut_widget
+        } else if index < 5 {
+            text(format!("Alt+{}", index + 1))
                 .size(12)
-                .color([1.0, 1.0, 1.0, 0.5])
-                .into(),
-            _ => text("").into(),
-        };
-
-        let is_selected = current_index == index;
-
-        let star = if is_favorite {
-            image::Handle::from_bytes(STAR_ACTIVE)
+                .class(TextClass::TextDim)
+                .into()
         } else {
-            image::Handle::from_bytes(STAR_INACTIVE)
+            text("").into()
         };
 
-        let mark_favorite = button(image(star).width(18).height(18))
-            .on_press(Message::MarkFavorite(index))
-            .style(|_, _| iced::widget::button::Style {
-                background: Some(iced::Background::Color(iced::Color::TRANSPARENT)),
-                ..Default::default()
-            });
+        let star_handle = if is_favorite {
+            &icons.star_active
+        } else {
+            &icons.star_inactive
+        };
+
+        let mark_favorite: Element<'static, Message, CustomTheme> = match star_handle {
+            Some(handle) => button(image(handle).width(18).height(18))
+                .on_press(Message::MarkFavorite(index))
+                .class(ButtonClass::Transparent)
+                .into(),
+            None => iced::widget::horizontal_space().width(18).height(18).into(),
+        };
 
         let actions = row![]
             .push_maybe(is_selected.then(|| mark_favorite))
@@ -199,18 +227,17 @@ impl App {
             .align_y(Alignment::Center);
 
         let description = self.description.as_ref().map(|desc| {
-            text(desc)
+            text(desc.clone())
                 .size(style.secondary_font_size)
-                .color(*style.secondary_text)
+                .class(TextClass::SecondaryText)
         });
 
         button(
             row![
                 icon_view,
                 iced::widget::column![
-                    text(&self.name)
+                    text(self.name.clone())
                         .size(style.font_size)
-                        .color(*style.main_text)
                         .width(Length::Fill)
                         .font(iced::Font {
                             weight: iced::font::Weight::Bold,
@@ -228,5 +255,11 @@ impl App {
         .padding(iced::Padding::from(&style.padding))
         .height(style.height)
         .width(Length::Fill)
+        .class(if is_selected {
+            ButtonClass::ItemlistSelected
+        } else {
+            ButtonClass::Itemlist
+        })
+        .into()
     }
 }
