@@ -6,6 +6,7 @@ use iced::{
     widget::{Button, button, image, row, text},
 };
 use resvg::{tiny_skia, usvg};
+use std::sync::Arc;
 use std::{io, os::unix::process::CommandExt, path::PathBuf, process};
 
 use crate::launcher::BakedIcons;
@@ -19,6 +20,25 @@ pub enum IconState {
     Ready(iced::widget::image::Handle),
     Loading,
     Empty,
+    NotFound,
+}
+
+impl IconState {
+    pub fn status(&self) -> IconStatus {
+        match self {
+            IconState::Ready(_) => IconStatus::Ready,
+            IconState::Loading => IconStatus::Loading,
+            IconState::Empty => IconStatus::Empty,
+            IconState::NotFound => IconStatus::NotFound,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum IconStatus {
+    Empty,
+    Loading,
+    Ready,
     NotFound,
 }
 
@@ -141,17 +161,21 @@ impl App {
         shell.spawn()
     }
 
-    pub fn itemlist<'a>(
-        &'a self,
-        icons: &BakedIcons,
-        theme: &CustomTheme,
-        current_index: usize,
+    pub fn itemlist(
+        &self,
+        icons: Arc<BakedIcons>,
+        theme: CustomTheme,
         index: usize,
+        current_index: usize,
         is_favorite: bool,
-    ) -> Button<'a, Message, CustomTheme> {
-        let style = &theme.launchpad.entry;
-        let icon_view: Element<'a, Message, CustomTheme> = match &self.icon_state {
-            IconState::Ready(handle) => image(handle)
+    ) -> Element<'static, Message, CustomTheme> {
+        // 1. We must own the style values, not borrow them from the theme
+        let style = theme.launchpad.entry.clone();
+        let is_selected = current_index == index;
+
+        // 2. Icon View: Must clone the Handle
+        let icon_view: Element<'static, Message, CustomTheme> = match &self.icon_state {
+            IconState::Ready(handle) => image(handle.clone()) // CLONE HANDLE
                 .width(style.icon_size)
                 .height(style.icon_size)
                 .into(),
@@ -159,34 +183,34 @@ impl App {
                 .width(style.icon_size)
                 .height(style.icon_size)
                 .into(),
-            IconState::Empty | IconState::NotFound => {
-                iced::widget::horizontal_space().width(0).into()
-            }
+            _ => iced::widget::horizontal_space().width(0).into(),
         };
 
-        let shortcut_widget = match &icons.enter {
+        // 3. Shortcut: Must clone handles
+        let shortcut_widget: Element<'static, Message, CustomTheme> = match icons.enter.clone() {
             Some(handle) => image(handle).width(18).height(18).into(),
             None => iced::widget::horizontal_space().width(18).height(18).into(),
         };
 
-        let shortcut_label: Element<'a, Message, CustomTheme> = match index {
-            n if n == current_index => shortcut_widget,
-            n @ 0..5 => text(format!("Alt+{}", n + 1))
+        let shortcut_label: Element<'static, Message, CustomTheme> = if is_selected {
+            shortcut_widget
+        } else if index < 5 {
+            text(format!("Alt+{}", index + 1))
                 .size(12)
                 .class(TextClass::TextDim)
-                .into(),
-            _ => text("").into(),
-        };
-
-        let is_selected = current_index == index;
-
-        let star = if is_favorite {
-            &icons.star_active
+                .into()
         } else {
-            &icons.star_inactive
+            text("").into()
         };
 
-        let mark_favorite: Element<'a, Message, CustomTheme> = match star {
+        // 4. Star: Must clone handles
+        let star_handle = if is_favorite {
+            icons.star_active.clone()
+        } else {
+            icons.star_inactive.clone()
+        };
+
+        let mark_favorite: Element<'static, Message, CustomTheme> = match star_handle {
             Some(handle) => button(image(handle).width(18).height(18))
                 .on_press(Message::MarkFavorite(index))
                 .class(ButtonClass::Transparent)
@@ -199,8 +223,9 @@ impl App {
             .push(shortcut_label)
             .align_y(Alignment::Center);
 
+        // 5. Description: Must clone the String
         let description = self.description.as_ref().map(|desc| {
-            text(desc)
+            text(desc.clone()) // CLONE STRING
                 .size(style.secondary_font_size)
                 .class(TextClass::SecondaryText)
         });
@@ -209,9 +234,8 @@ impl App {
             row![
                 icon_view,
                 iced::widget::column![
-                    text(&self.name)
+                    text(self.name.clone()) // CLONE STRING
                         .size(style.font_size)
-                        // .color(*style.main_text)
                         .width(Length::Fill)
                         .font(iced::Font {
                             weight: iced::font::Weight::Bold,
@@ -226,10 +250,14 @@ impl App {
             .align_y(iced::Alignment::Center),
         )
         .on_press(Message::LaunchApp(index))
-        .padding(iced::Padding::from(&style.padding))
+        .padding(iced::Padding::from(style.padding))
         .height(style.height)
         .width(Length::Fill)
-        .class(ButtonClass::Itemlist)
+        .class(if is_selected {
+            ButtonClass::ItemlistSelected
+        } else {
+            ButtonClass::Itemlist
+        })
         .into()
     }
 }

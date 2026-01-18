@@ -53,7 +53,7 @@ pub struct Lucien {
     selected_entry: usize,
     last_viewport: Option<Viewport>,
     search_handle: Option<iced::task::Handle>,
-    icons: BakedIcons,
+    icons: Arc<BakedIcons>,
 }
 
 #[to_layer_message]
@@ -73,7 +73,7 @@ pub enum Message {
     SaveIntoDisk(Result<PathBuf, Arc<tokio::io::Error>>),
 }
 
-#[derive(Debug, Default)]
+#[derive(Debug, Default, Clone)]
 pub struct BakedIcons {
     pub magnifier: Option<image::Handle>,
     pub star_active: Option<image::Handle>,
@@ -98,7 +98,7 @@ impl Lucien {
             selected_entry: 0,
             last_viewport: None,
             search_handle: None,
-            icons: BakedIcons::default(),
+            icons: Arc::new(BakedIcons::default()),
         };
 
         (initial_values, initial_tasks)
@@ -301,12 +301,12 @@ impl Lucien {
                 self.cached_apps = apps;
                 self.ranked_apps = (0..self.cached_apps.len()).collect();
 
-                self.icons = BakedIcons {
+                self.icons = Arc::new(BakedIcons {
                     enter: Some(image::Handle::from_bytes(ENTER)),
                     magnifier: Some(image::Handle::from_bytes(MAGNIFIER)),
                     star_active: Some(image::Handle::from_bytes(STAR_ACTIVE)),
                     star_inactive: Some(image::Handle::from_bytes(STAR_INACTIVE)),
-                };
+                });
 
                 if !self.preferences.favorite_apps.is_empty() {
                     self.ranked_apps.sort_by_key(|index| {
@@ -495,25 +495,30 @@ impl Lucien {
 
         for (rank_pos, app_index) in self.ranked_apps.iter().enumerate() {
             let app = &self.cached_apps[*app_index];
-            let is_selected = self.selected_entry == rank_pos;
             let is_favorite = self.preferences.favorite_apps.contains(&app.id);
+            let is_selected = self.selected_entry == rank_pos;
 
-            let element: Element<Message, CustomTheme> = app
-                .itemlist(
-                    &self.icons,
-                    theme,
-                    self.selected_entry,
-                    rank_pos,
-                    is_favorite,
-                )
-                .class(if is_selected {
-                    ButtonClass::ItemlistSelected
-                } else {
-                    ButtonClass::Itemlist
-                })
-                .into();
+            let item_height = theme.launchpad.entry.height;
+            let theme = &self.preferences.theme;
+            let icon_status = app.icon_state.status();
 
-            if is_favorite {
+            let element: Element<Message, CustomTheme> = container(iced::widget::lazy(
+                (*app_index, is_selected, is_favorite, icon_status),
+                move |_| {
+                    app.itemlist(
+                        self.icons.clone(),
+                        theme.clone(),
+                        rank_pos,
+                        self.selected_entry,
+                        is_favorite,
+                    )
+                },
+            ))
+            .height(item_height)
+            .width(Length::Fill)
+            .into();
+
+            if is_favorite && self.prompt.is_empty() {
                 starred_column = starred_column.push(element);
             } else {
                 general_column = general_column.push(element);
