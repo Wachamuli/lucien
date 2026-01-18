@@ -1,76 +1,49 @@
+# Move this file to $XDG_CONFIG_HOME/lucien/preferences.toml
+# to apply this configuration.
 leading_icon_count = 10
 favorite_apps = []
 
-[theme]
-# Matches @bgdark (#272E33)
-background = "#272E33FF"
+# Available modifiers: , `alt`, `shift`, and `control`.
+# Available keys: `any character`, `tab`, and `escape`.
+[keybindings]
+exit = {key = "escape"}
+mark = {key = "f", modifiers = ["control"]}
+go_next_entry = {key = "tab"}
+go_previous_entry = { key = "tab", modifiers = ["shift"] }
 
-[theme.border]
-# Matches @bggreen (#56635F)
-color = "#56635F"
-width = 1.0
-# Matches window { border-radius: 3px; }
-radius = [3.0, 3.0, 3.0, 3.0]
+# KDE-Style Theme
+[theme]
+background = "#232627F2"
+border = {color = "#31363B", width = 1.0, radius = [8, 8, 8, 8]}
 
 [theme.prompt]
-font_size = 13
-# Matches inputbar { background-color: @bgalt (#343f44) }
-background = "#343F44FF"
-icon_size = 24
-padding = [11.0, 11.0, 11.0, 11.0]
-margin = [0.0, 0.0, 0.0, 0.0]
-placeholder_color = "#56635F"
-# Matches @fg0 (#A7C080)
-text_color = "#A7C080FF"
-
-[theme.prompt.border]
-# Matches inputbar { border: 1px; border-color: @bggreen; }
-color = "#56635F"
-width = 1.0
-radius = [2.0, 2.0, 2.0, 2.0]
-
-[theme.launchpad]
-padding = 10.0
-
-[theme.launchpad.entry]
-# Matches listview { background-color: #2d353b }
-background = "#2D353BFF"
-# Matches element selected.normal { background-color: @accent-color (#A7C080) }
-focus_highlight = "#A7C080FF"
-# Subtle highlight for hover using @bggreen
-hover_highlight = "#56635F66"
-font_size = 13
-# Matches element { text-color: rgb(216, 222, 233) }
-main_text = "#D8DEE9FF"
-padding = [3.0, 3.0, 3.0, 3.0]
-height = 45.0
-icon_size = 24
-
-[theme.launchpad.entry.border]
-color = "#00000000"
-width = 0.0
-# Matches button { border-radius: 4px; }
-radius = [4.0, 4.0, 4.0, 4.0]
+background = "#1B1E2000"
+placeholder_color = "#A1A9B1"
+text_color = "#FCFCFC"
+font_size = 18
+icon_size = 28
+padding = [12, 12, 12, 12]
+margin = [10, 10, 0, 10]
+border = {color = "#3DAEE9", width = 1.5, radius = [5, 5, 5, 5]}
 
 [theme.separator]
-# Matches @bggreen
-color = "#56635F"
-width = 1
+color = "#1B1E2000"
+width = 0
 padding = 0
 radius = 0.0
 
-[keybindings.mark]
-key = "f"
-modifiers = ["control"]
+[theme.launchpad]
+padding = 8.0
 
-[keybindings.go_previous_entry]
-key = "tab"
-modifiers = ["shift"]
-
-[keybindings.go_next_entry]
-key = "tab"
-modifiers = []
-
-[keybindings.exit]
-key = "escape"
-modifiers = []
+[theme.launchpad.entry]
+background = "#00000000"
+focus_highlight = "#3DAEE933"
+hover_highlight = "#3DAEE91A"
+font_size = 14
+secondary_font_size = 12
+main_text = "#FCFCFC"
+secondary_text = "#A1A9B1"
+padding = [ 10, 12, 10, 12 ]
+height = 54.0
+icon_size = 32
+border = {color = "#00000000", width = 0.0, radius = [ 5, 5, 5, 5 ]}
