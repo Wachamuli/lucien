@@ -3,7 +3,7 @@ use gio::prelude::IconExt;
 use iced::Alignment;
 use iced::{
     Element, Length,
-    widget::{Button, button, image, row, text},
+    widget::{button, image, row, text},
 };
 use resvg::{tiny_skia, usvg};
 use std::{io, os::unix::process::CommandExt, path::PathBuf, process};
