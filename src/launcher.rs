@@ -344,7 +344,18 @@ impl Lucien {
                     }
                 }
 
-                Task::none()
+                if self.prompt.is_empty() {
+                    return Task::done(Message::DebouncedFilter);
+                }
+
+                let (task, handle) = Task::future(async move {
+                    tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+                    Message::DebouncedFilter
+                })
+                .abortable();
+
+                self.search_handle = Some(handle);
+                return task;
             }
             Message::LaunchApp(index) => {
                 let Some(app_index) = self.ranked_apps.get(index) else {
