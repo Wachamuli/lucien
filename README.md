@@ -20,9 +20,11 @@ To run Lucien, your environment must meet the following criteria:
 
 - **Protocol Support**: Your compositor must support the *wlr-layer-shell* protocol (common in *Sway*, *Hyprland*, *Niri*, etc.).
 
-- **Build Dependencies**: Compiling from source requires the [Rust toolchain]("https://rust-lang.org/tools/install/").
+- **Build Dependencies**: Compiling from source requires the [Rust toolchain](https://rust-lang.org/tools/install/).
 
 ## Configuration
+
+For a complete starting point, you can find a reference template in the repository: [assets/preferences.toml](https://github.com/Wachamuli/lucien/blob/main/assets/preferences.toml)
 
 Lucien looks for settings in the following location: `$XDG_CONFIG_HOME/lucien/preferences.toml`
 
@@ -35,6 +37,14 @@ Lucien looks for settings in the following location: `$XDG_CONFIG_HOME/lucien/pr
 |Shift + Tab     	 |Select previous entry                         |
 |Alt + 1-5	       |Launch the specific entry (1 through 5)       |
 |Ctrl + f	         |Toggle favorite status for the selected entry |
+
+You can redefine any of the default keyboard shortcuts within the [keybindings] section of your preferences.toml. For example:
+
+```toml
+[keybindings]
+go_previous_entry = { key = "k", modifiers = ["control"] }
+go_next_entry = {key = "j", modifiers = ["control"]}
+```
 
 ## Installation
 
