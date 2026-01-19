@@ -8,6 +8,7 @@ use crate::{launcher::Lucien, preferences::Preferences};
 mod app;
 mod launcher;
 mod preferences;
+mod prompt;
 
 use iced_layershell::{
     reexport::{Anchor, KeyboardInteractivity, Layer},

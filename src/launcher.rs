@@ -8,7 +8,7 @@ use iced::{
     Alignment, Element, Event, Length, Subscription, Task, event,
     keyboard::{self, Key},
     widget::{
-        Column, Container, container, horizontal_space, image, row,
+        Column, Container, container, image,
         scrollable::{self, RelativeOffset, Viewport},
         text, text_input,
     },
@@ -17,8 +17,12 @@ use iced_layershell::to_layer_message;
 
 use crate::{
     app::{App, IconState, all_apps, process_icon},
-    preferences::theme::{ContainerClass, CustomTheme, TextClass},
-    preferences::{self, Preferences, keybindings::Action},
+    preferences::{
+        self, Preferences,
+        keybindings::Action,
+        theme::{ContainerClass, CustomTheme, TextClass},
+    },
+    prompt::Prompt,
 };
 
 const SECTION_HEIGHT: f32 = 36.0;
@@ -537,43 +541,19 @@ impl Lucien {
             .push_maybe(self.ranked_apps.is_empty().then(|| results_not_found))
             .padding(theme.launchpad.padding)
             .width(Length::Fill);
-        let magnifier: Element<Message, CustomTheme> = match &self.icons.magnifier {
-            Some(handle) => image(handle)
-                .width(theme.prompt.icon_size)
-                .height(theme.prompt.icon_size)
-                .into(),
-            None => horizontal_space()
-                .width(theme.prompt.icon_size)
-                .height(theme.prompt.icon_size)
-                .into(),
-        };
-        let promp_input: Element<Message, CustomTheme> =
-            iced::widget::text_input("Search...", &self.prompt)
-                .id(TEXT_INPUT_ID.clone())
-                .on_input(Message::PromptChange)
-                .on_submit(Message::LaunchApp(self.selected_entry))
-                .padding(8)
-                .size(theme.prompt.font_size)
-                .font(iced::Font {
-                    weight: iced::font::Weight::Bold,
-                    ..Default::default()
-                })
-                .into();
-        let prompt_view: Element<Message, CustomTheme> = row![]
-            .push(magnifier)
-            .push(promp_input)
-            // .push(self.status_indicator())
-            .align_y(iced::Alignment::Center)
-            .spacing(2)
-            .into();
         let results = iced::widget::scrollable(content)
             .on_scroll(Message::ScrollableViewport)
             .id(SCROLLABLE_ID.clone());
 
+        let prompt = Prompt::new(&self.prompt, &self.preferences.theme)
+            .magnifier(self.icons.magnifier.as_ref())
+            .id(TEXT_INPUT_ID.clone())
+            .on_input(Message::PromptChange)
+            .on_submit(Message::LaunchApp(self.selected_entry))
+            .view();
+
         container(iced::widget::column![
-            container(prompt_view)
-                .padding(iced::Padding::from(&theme.prompt.margin))
-                .align_y(Alignment::Center),
+            prompt,
             iced::widget::horizontal_rule(1),
             container(results),
         ])
