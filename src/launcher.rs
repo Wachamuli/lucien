@@ -17,8 +17,8 @@ use iced_layershell::to_layer_message;
 
 use crate::{
     app::{App, IconState, all_apps, process_icon},
-    preferences::{self, Action, Preferences},
-    theme::{ContainerClass, CustomTheme, TextClass},
+    preferences::theme::{ContainerClass, CustomTheme, TextClass},
+    preferences::{self, Preferences, keybindings::Action},
 };
 
 const SECTION_HEIGHT: f32 = 36.0;

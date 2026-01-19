@@ -8,12 +8,10 @@ use iced::{
 use resvg::{tiny_skia, usvg};
 use std::{io, os::unix::process::CommandExt, path::PathBuf, process};
 
-use crate::launcher::BakedIcons;
-use crate::launcher::Message;
-use crate::theme::ButtonClass;
-use crate::theme::CustomTheme;
-use crate::theme::Entry as EntryStyle;
-use crate::theme::TextClass;
+use crate::{
+    launcher::{BakedIcons, Message},
+    preferences::theme::{ButtonClass, CustomTheme, Entry as EntryStyle, TextClass},
+};
 
 #[derive(Debug, Clone)]
 pub enum IconState {
