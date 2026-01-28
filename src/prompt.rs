@@ -91,6 +91,5 @@ where
         container(prompt)
             .padding(iced::Padding::from(&self.style.prompt.margin))
             .align_y(Alignment::Center)
-            .into()
     }
 }

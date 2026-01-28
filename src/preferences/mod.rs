@@ -37,8 +37,8 @@ impl Preferences {
     pub async fn load() -> io::Result<Self> {
         let package_name = env!("CARGO_PKG_NAME");
         let settings_file_name = "preferences.toml";
-        let xdg_dirs = xdg::BaseDirectories::with_prefix(&package_name);
-        let settings_file_path = xdg_dirs.place_config_file(&settings_file_name)?;
+        let xdg_dirs = xdg::BaseDirectories::with_prefix(package_name);
+        let settings_file_path = xdg_dirs.place_config_file(settings_file_name)?;
 
         let settings_file_string = tokio::fs::read_to_string(&settings_file_path)
             .await

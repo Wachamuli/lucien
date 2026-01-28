@@ -168,7 +168,7 @@ impl Lucien {
 
     fn go_to_entry(&mut self, step: isize) -> Task<Message> {
         let total = self.ranked_apps.len();
-        if total <= 0 {
+        if total == 0 {
             return Task::none();
         }
 
@@ -234,17 +234,17 @@ impl Lucien {
             target_y = Some(selection_bottom + PADDING - view_height);
         }
 
-        target_y
-            .map(|y| {
-                scrollable::snap_to(
-                    SCROLLABLE_ID.clone(),
-                    RelativeOffset {
-                        x: 0.0,
-                        y: (y.clamp(0.0, max_scroll)) / max_scroll,
-                    },
-                )
-            })
-            .unwrap_or(Task::none())
+        let Some(y) = target_y else {
+            return Task::none();
+        };
+
+        scrollable::snap_to(
+            SCROLLABLE_ID.clone(),
+            RelativeOffset {
+                x: 0.0,
+                y: (y.clamp(0.0, max_scroll)) / max_scroll,
+            },
+        )
     }
 
     fn preload_specific_range(&mut self, indices: Vec<usize>) -> Task<Message> {
@@ -254,11 +254,12 @@ impl Lucien {
             if let Some(&app_idx) = self.ranked_apps.get(rank_pos) {
                 let app = &mut self.cached_apps[app_idx];
 
-                if matches!(app.icon_state, IconState::Empty) {
-                    app.icon_state = IconState::Loading;
+                if let IconState::Pending(ref path) = app.icon {
+                    let path = path.clone();
+                    app.icon = IconState::Loading;
 
                     tasks.push(Task::perform(
-                        process_icon(app_idx, app.icon_name.clone()),
+                        process_icon(app_idx, path),
                         |(app_idx, state)| Message::IconProcessed(app_idx, state),
                     ));
                 }
@@ -323,11 +324,7 @@ impl Lucien {
             }
             Message::IconProcessed(app_index, state) => {
                 if let Some(app) = self.cached_apps.get_mut(app_index) {
-                    app.icon_state = if matches!(state, IconState::Empty) {
-                        IconState::NotFound
-                    } else {
-                        state
-                    };
+                    app.icon = state
                 }
 
                 Task::none()
@@ -387,7 +384,7 @@ impl Lucien {
                 .abortable();
 
                 self.search_handle = Some(handle);
-                return task;
+                task
             }
             Message::DebouncedFilter => {
                 self.selected_entry = 0;
@@ -483,7 +480,6 @@ impl Lucien {
                 bottom: 5.,
                 left: 10.,
             })
-            .into()
         }
 
         let mut starred_column;
@@ -502,14 +498,14 @@ impl Lucien {
             let is_favorite = self.preferences.favorite_apps.contains(&app.id);
             let is_selected = self.selected_entry == rank_pos;
 
-            let icon_status = app.icon_state.status();
+            let icon_status = app.icon.hashable();
             let item_height = theme.launchpad.entry.height;
             let style = &self.preferences.theme.launchpad.entry;
             let icons = &self.icons;
 
             let element: Element<Message, CustomTheme> = container(iced::widget::lazy(
                 (*app_index, is_selected, is_favorite, icon_status),
-                move |_| app.entry(&icons, style, rank_pos, self.selected_entry, is_favorite),
+                move |_| app.entry(icons, style, rank_pos, self.selected_entry, is_favorite),
             ))
             .height(item_height)
             .width(Length::Fill)
@@ -538,7 +534,7 @@ impl Lucien {
         let content = Column::new()
             .push(starred_column)
             .push(general_column)
-            .push_maybe(self.ranked_apps.is_empty().then(|| results_not_found))
+            .push_maybe(self.ranked_apps.is_empty().then_some(results_not_found))
             .padding(theme.launchpad.padding)
             .width(Length::Fill);
         let results = iced::widget::scrollable(content)
@@ -558,7 +554,6 @@ impl Lucien {
             container(results),
         ])
         .class(ContainerClass::MainContainer)
-        .into()
     }
 
     // fn status_indicator<'a>(&'a self) -> Container<'a, Message> {

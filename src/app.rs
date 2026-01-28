@@ -1,8 +1,6 @@
-use gio::prelude::AppInfoExt;
-use gio::prelude::IconExt;
-use iced::Alignment;
+use gio::prelude::{AppInfoExt, IconExt};
 use iced::{
-    Element, Length,
+    Alignment, Element, Length,
     widget::{button, image, row, text},
 };
 use resvg::{tiny_skia, usvg};
@@ -16,17 +14,17 @@ use crate::{
 #[derive(Debug, Clone)]
 pub enum IconState {
     Ready(iced::widget::image::Handle),
+    Pending(PathBuf),
     Loading,
-    Empty,
     NotFound,
 }
 
 impl IconState {
-    pub fn status(&self) -> IconStatus {
+    pub fn hashable(&self) -> IconStatus {
         match self {
             IconState::Ready(_) => IconStatus::Ready,
             IconState::Loading => IconStatus::Loading,
-            IconState::Empty => IconStatus::Empty,
+            IconState::Pending(_) => IconStatus::Empty,
             IconState::NotFound => IconStatus::NotFound,
         }
     }
@@ -46,8 +44,7 @@ pub struct App {
     pub id: String,
     pub name: String,
     pub description: Option<String>,
-    pub icon_state: IconState,
-    pub icon_name: Option<String>, // Change for PathBuf?
+    pub icon: IconState,
 }
 
 pub fn all_apps() -> Vec<App> {
@@ -58,20 +55,27 @@ pub fn all_apps() -> Vec<App> {
                 return None;
             }
 
+            let icon = app.icon().map_or(IconState::NotFound, |i| {
+                let Some(cion) = i.to_string() else {
+                    return IconState::NotFound;
+                };
+
+                IconState::Pending(PathBuf::from(cion))
+            });
+
             Some(App {
                 id: app.id().unwrap_or_default().to_string(),
                 commandline: app.commandline(),
                 name: app.name().to_string(),
                 description: app.description().map(String::from),
-                icon_state: IconState::Empty,
-                icon_name: app.icon().and_then(|s| s.to_string()).map(String::from),
+                icon,
             })
         })
         .collect()
 }
 
-fn get_icon_path_from_xdgicon(iconname: &str) -> Option<PathBuf> {
-    if iconname.contains("/") || iconname.contains("\\") {
+fn get_icon_path_from_xdgicon(iconname: &PathBuf) -> Option<PathBuf> {
+    if iconname.starts_with("/") || iconname.starts_with("\\") {
         return Some(PathBuf::from(iconname));
     }
 
@@ -83,7 +87,10 @@ fn get_icon_path_from_xdgicon(iconname: &str) -> Option<PathBuf> {
 
     for size in sizes {
         let extension = if size == "scalable" { "svg" } else { "png" };
-        let sub_path = format!("icons/hicolor/{size}/apps/{iconname}.{extension}");
+        let sub_path = format!(
+            "icons/hicolor/{size}/apps/{iconname}.{extension}",
+            iconname = iconname.display()
+        );
 
         if let Some(path) = xdg_dirs.find_data_file(&sub_path) {
             return Some(path);
@@ -91,7 +98,7 @@ fn get_icon_path_from_xdgicon(iconname: &str) -> Option<PathBuf> {
     }
 
     for ext in ["svg", "png", "ico"] {
-        let pixmap_path = format!("pixmaps/{}.{}", iconname, ext);
+        let pixmap_path = format!("pixmaps/{iconname}.{ext}", iconname = iconname.display());
         if let Some(path) = xdg_dirs.find_data_file(&pixmap_path) {
             return Some(path);
         }
@@ -114,8 +121,8 @@ fn rasterize_svg(path: PathBuf, size: u32) -> Option<image::Handle> {
     Some(image::Handle::from_rgba(size, size, pixmap.data().to_vec()))
 }
 
-fn load_raster_icon(icon: &str) -> Option<image::Handle> {
-    let path = get_icon_path_from_xdgicon(&icon)?;
+fn load_raster_icon(icon: &PathBuf) -> Option<image::Handle> {
+    let path = get_icon_path_from_xdgicon(icon)?;
     let extension = path.extension()?.to_str()?;
 
     match extension {
@@ -125,14 +132,10 @@ fn load_raster_icon(icon: &str) -> Option<image::Handle> {
     }
 }
 
-pub async fn process_icon(app_index: usize, icon_name: Option<String>) -> (usize, IconState) {
-    let Some(name) = icon_name else {
-        return (app_index, IconState::Empty);
-    };
-
-    match load_raster_icon(&name) {
+pub async fn process_icon(app_index: usize, icon_name: PathBuf) -> (usize, IconState) {
+    match load_raster_icon(&icon_name) {
         Some(handle) => (app_index, IconState::Ready(handle)),
-        None => (app_index, IconState::Empty),
+        None => (app_index, IconState::NotFound),
     }
 }
 
@@ -174,7 +177,7 @@ impl App {
     ) -> Element<'static, Message, CustomTheme> {
         let is_selected = current_index == index;
 
-        let icon_view: Element<'static, Message, CustomTheme> = match &self.icon_state {
+        let icon_view: Element<'static, Message, CustomTheme> = match &self.icon {
             IconState::Ready(handle) => image(handle.clone())
                 .width(style.icon_size)
                 .height(style.icon_size)
@@ -217,7 +220,7 @@ impl App {
         };
 
         let actions = row![]
-            .push_maybe(is_selected.then(|| mark_favorite))
+            .push_maybe(is_selected.then_some(mark_favorite))
             .push(shortcut_label)
             .align_y(Alignment::Center);
 
