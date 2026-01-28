@@ -1,4 +1,3 @@
-use gio::Icon as GioIcon;
 use gio::prelude::{AppInfoExt, IconExt};
 use iced::{
     Alignment, Element, Length,
@@ -15,8 +14,8 @@ use crate::{
 #[derive(Debug, Clone)]
 pub enum IconState {
     Ready(iced::widget::image::Handle),
+    Pending(PathBuf),
     Loading,
-    Empty,
     NotFound,
 }
 
@@ -25,7 +24,7 @@ impl IconState {
         match self {
             IconState::Ready(_) => IconStatus::Ready,
             IconState::Loading => IconStatus::Loading,
-            IconState::Empty => IconStatus::Empty,
+            IconState::Pending(_) => IconStatus::Empty,
             IconState::NotFound => IconStatus::NotFound,
         }
     }
@@ -45,22 +44,7 @@ pub struct App {
     pub id: String,
     pub name: String,
     pub description: Option<String>,
-    pub icon: Icon,
-}
-
-#[derive(Debug, Clone)]
-pub struct Icon {
-    pub name: Option<PathBuf>,
-    pub state: IconState,
-}
-
-impl Icon {
-    pub fn new(name: Option<GioIcon>) -> Self {
-        Self {
-            name: name.and_then(|s| s.to_string()).map(PathBuf::from),
-            state: IconState::Empty,
-        }
-    }
+    pub icon: IconState,
 }
 
 pub fn all_apps() -> Vec<App> {
@@ -71,12 +55,20 @@ pub fn all_apps() -> Vec<App> {
                 return None;
             }
 
+            let icon = app.icon().map_or(IconState::NotFound, |i| {
+                let Some(cion) = i.to_string() else {
+                    return IconState::NotFound;
+                };
+
+                IconState::Pending(PathBuf::from(cion))
+            });
+
             Some(App {
                 id: app.id().unwrap_or_default().to_string(),
                 commandline: app.commandline(),
                 name: app.name().to_string(),
                 description: app.description().map(String::from),
-                icon: Icon::new(app.icon()),
+                icon,
             })
         })
         .collect()
@@ -140,14 +132,10 @@ fn load_raster_icon(icon: &PathBuf) -> Option<image::Handle> {
     }
 }
 
-pub async fn process_icon(app_index: usize, icon_name: Option<PathBuf>) -> (usize, IconState) {
-    let Some(name) = icon_name else {
-        return (app_index, IconState::Empty);
-    };
-
-    match load_raster_icon(&name) {
+pub async fn process_icon(app_index: usize, icon_name: PathBuf) -> (usize, IconState) {
+    match load_raster_icon(&icon_name) {
         Some(handle) => (app_index, IconState::Ready(handle)),
-        None => (app_index, IconState::Empty),
+        None => (app_index, IconState::NotFound),
     }
 }
 
@@ -189,7 +177,7 @@ impl App {
     ) -> Element<'static, Message, CustomTheme> {
         let is_selected = current_index == index;
 
-        let icon_view: Element<'static, Message, CustomTheme> = match &self.icon.state {
+        let icon_view: Element<'static, Message, CustomTheme> = match &self.icon {
             IconState::Ready(handle) => image(handle.clone())
                 .width(style.icon_size)
                 .height(style.icon_size)

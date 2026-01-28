@@ -254,11 +254,12 @@ impl Lucien {
             if let Some(&app_idx) = self.ranked_apps.get(rank_pos) {
                 let app = &mut self.cached_apps[app_idx];
 
-                if matches!(app.icon.state, IconState::Empty) {
-                    app.icon.state = IconState::Loading;
+                if let IconState::Pending(ref path) = app.icon {
+                    let path = path.clone();
+                    app.icon = IconState::Loading;
 
                     tasks.push(Task::perform(
-                        process_icon(app_idx, app.icon.name.clone()),
+                        process_icon(app_idx, path),
                         |(app_idx, state)| Message::IconProcessed(app_idx, state),
                     ));
                 }
@@ -323,11 +324,7 @@ impl Lucien {
             }
             Message::IconProcessed(app_index, state) => {
                 if let Some(app) = self.cached_apps.get_mut(app_index) {
-                    app.icon.state = if matches!(state, IconState::Empty) {
-                        IconState::NotFound
-                    } else {
-                        state
-                    };
+                    app.icon = state
                 }
 
                 Task::none()
@@ -502,7 +499,7 @@ impl Lucien {
             let is_favorite = self.preferences.favorite_apps.contains(&app.id);
             let is_selected = self.selected_entry == rank_pos;
 
-            let icon_status = app.icon.state.hashable();
+            let icon_status = app.icon.hashable();
             let item_height = theme.launchpad.entry.height;
             let style = &self.preferences.theme.launchpad.entry;
             let icons = &self.icons;
