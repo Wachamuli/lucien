@@ -53,14 +53,19 @@ pub struct App {
 pub fn all_apps() -> Vec<App> {
     gio::AppInfo::all()
         .iter()
-        .filter(|app| app.should_show())
-        .map(|app| App {
-            id: app.id().unwrap_or_default().to_string(),
-            commandline: app.commandline(),
-            name: app.name().to_string(),
-            description: app.description().map(String::from),
-            icon_state: IconState::Empty,
-            icon_name: app.icon().and_then(|s| s.to_string()).map(String::from),
+        .filter_map(|app| {
+            if !app.should_show() {
+                return None;
+            }
+
+            Some(App {
+                id: app.id().unwrap_or_default().to_string(),
+                commandline: app.commandline(),
+                name: app.name().to_string(),
+                description: app.description().map(String::from),
+                icon_state: IconState::Empty,
+                icon_name: app.icon().and_then(|s| s.to_string()).map(String::from),
+            })
         })
         .collect()
 }
