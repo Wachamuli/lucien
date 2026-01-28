@@ -168,7 +168,7 @@ impl Lucien {
 
     fn go_to_entry(&mut self, step: isize) -> Task<Message> {
         let total = self.ranked_apps.len();
-        if total <= 0 {
+        if total == 0 {
             return Task::none();
         }
 
@@ -384,7 +384,7 @@ impl Lucien {
                 .abortable();
 
                 self.search_handle = Some(handle);
-                return task;
+                task
             }
             Message::DebouncedFilter => {
                 self.selected_entry = 0;
@@ -480,7 +480,6 @@ impl Lucien {
                 bottom: 5.,
                 left: 10.,
             })
-            .into()
         }
 
         let mut starred_column;
@@ -506,7 +505,7 @@ impl Lucien {
 
             let element: Element<Message, CustomTheme> = container(iced::widget::lazy(
                 (*app_index, is_selected, is_favorite, icon_status),
-                move |_| app.entry(&icons, style, rank_pos, self.selected_entry, is_favorite),
+                move |_| app.entry(icons, style, rank_pos, self.selected_entry, is_favorite),
             ))
             .height(item_height)
             .width(Length::Fill)
@@ -535,7 +534,7 @@ impl Lucien {
         let content = Column::new()
             .push(starred_column)
             .push(general_column)
-            .push_maybe(self.ranked_apps.is_empty().then(|| results_not_found))
+            .push_maybe(self.ranked_apps.is_empty().then_some(results_not_found))
             .padding(theme.launchpad.padding)
             .width(Length::Fill);
         let results = iced::widget::scrollable(content)
@@ -555,7 +554,6 @@ impl Lucien {
             container(results),
         ])
         .class(ContainerClass::MainContainer)
-        .into()
     }
 
     // fn status_indicator<'a>(&'a self) -> Container<'a, Message> {

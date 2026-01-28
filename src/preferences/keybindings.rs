@@ -62,7 +62,8 @@ impl Keystrokes {
                 if let Key::Char(d) = &self.key {
                     return c.to_string() == d.to_string();
                 }
-                return false;
+
+                false
             }
             _ => false,
         }

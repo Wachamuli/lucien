@@ -220,7 +220,7 @@ impl App {
         };
 
         let actions = row![]
-            .push_maybe(is_selected.then(|| mark_favorite))
+            .push_maybe(is_selected.then_some(mark_favorite))
             .push(shortcut_label)
             .align_y(Alignment::Center);
 

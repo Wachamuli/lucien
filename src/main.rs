@@ -45,7 +45,7 @@ fn main() -> iced_layershell::Result {
         }
     };
 
-    let xdg_dirs = xdg::BaseDirectories::with_prefix(&package_name);
+    let xdg_dirs = xdg::BaseDirectories::with_prefix(package_name);
     let cache_dir = xdg_dirs.get_cache_home().expect(
         "Could not determine the user's Home directory. Ensure the $HOME environment variable is set."
     );
@@ -107,7 +107,7 @@ fn setup_tracing_subscriber(
         .with(fmt::layer().with_ansi(false).with_writer(non_blocking_file))
         .init();
 
-    return _logger_guard;
+    _logger_guard
 }
 
 fn get_single_instance(name: &str) -> nix::Result<OwnedFd> {

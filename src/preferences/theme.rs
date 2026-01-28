@@ -91,9 +91,9 @@ impl<'de> Deserialize<'de> for HexColor {
     {
         let color = String::deserialize(deserializer)?;
         let converted_color = iced::Color::parse(&color).ok_or_else(|| {
-            serde::de::Error::custom(format!(
-                "Invalid color. Use #RGB, #RRGGBB, #RGBA, or #RRGGBBAA format instead."
-            ))
+            serde::de::Error::custom(
+                "Invalid color. Use #RGB, #RRGGBB, #RGBA, or #RRGGBBAA format instead.",
+            )
         })?;
 
         Ok(HexColor(converted_color))
