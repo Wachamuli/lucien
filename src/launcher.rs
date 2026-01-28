@@ -234,17 +234,17 @@ impl Lucien {
             target_y = Some(selection_bottom + PADDING - view_height);
         }
 
-        target_y
-            .map(|y| {
-                scrollable::snap_to(
-                    SCROLLABLE_ID.clone(),
-                    RelativeOffset {
-                        x: 0.0,
-                        y: (y.clamp(0.0, max_scroll)) / max_scroll,
-                    },
-                )
-            })
-            .unwrap_or(Task::none())
+        let Some(y) = target_y else {
+            return Task::none();
+        };
+
+        scrollable::snap_to(
+            SCROLLABLE_ID.clone(),
+            RelativeOffset {
+                x: 0.0,
+                y: (y.clamp(0.0, max_scroll)) / max_scroll,
+            },
+        )
     }
 
     fn preload_specific_range(&mut self, indices: Vec<usize>) -> Task<Message> {
@@ -254,11 +254,11 @@ impl Lucien {
             if let Some(&app_idx) = self.ranked_apps.get(rank_pos) {
                 let app = &mut self.cached_apps[app_idx];
 
-                if matches!(app.icon_state, IconState::Empty) {
-                    app.icon_state = IconState::Loading;
+                if matches!(app.icon.state, IconState::Empty) {
+                    app.icon.state = IconState::Loading;
 
                     tasks.push(Task::perform(
-                        process_icon(app_idx, app.icon_name.clone()),
+                        process_icon(app_idx, app.icon.name.clone()),
                         |(app_idx, state)| Message::IconProcessed(app_idx, state),
                     ));
                 }
@@ -323,7 +323,7 @@ impl Lucien {
             }
             Message::IconProcessed(app_index, state) => {
                 if let Some(app) = self.cached_apps.get_mut(app_index) {
-                    app.icon_state = if matches!(state, IconState::Empty) {
+                    app.icon.state = if matches!(state, IconState::Empty) {
                         IconState::NotFound
                     } else {
                         state
@@ -502,7 +502,7 @@ impl Lucien {
             let is_favorite = self.preferences.favorite_apps.contains(&app.id);
             let is_selected = self.selected_entry == rank_pos;
 
-            let icon_status = app.icon_state.status();
+            let icon_status = app.icon.state.hashable();
             let item_height = theme.launchpad.entry.height;
             let style = &self.preferences.theme.launchpad.entry;
             let icons = &self.icons;

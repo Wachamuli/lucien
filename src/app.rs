@@ -1,8 +1,7 @@
-use gio::prelude::AppInfoExt;
-use gio::prelude::IconExt;
-use iced::Alignment;
+use gio::Icon as GioIcon;
+use gio::prelude::{AppInfoExt, IconExt};
 use iced::{
-    Element, Length,
+    Alignment, Element, Length,
     widget::{button, image, row, text},
 };
 use resvg::{tiny_skia, usvg};
@@ -22,7 +21,7 @@ pub enum IconState {
 }
 
 impl IconState {
-    pub fn status(&self) -> IconStatus {
+    pub fn hashable(&self) -> IconStatus {
         match self {
             IconState::Ready(_) => IconStatus::Ready,
             IconState::Loading => IconStatus::Loading,
@@ -46,8 +45,22 @@ pub struct App {
     pub id: String,
     pub name: String,
     pub description: Option<String>,
-    pub icon_state: IconState,
-    pub icon_name: Option<String>, // Change for PathBuf?
+    pub icon: Icon,
+}
+
+#[derive(Debug, Clone)]
+pub struct Icon {
+    pub name: Option<PathBuf>,
+    pub state: IconState,
+}
+
+impl Icon {
+    pub fn new(name: Option<GioIcon>) -> Self {
+        Self {
+            name: name.and_then(|s| s.to_string()).map(PathBuf::from),
+            state: IconState::Empty,
+        }
+    }
 }
 
 pub fn all_apps() -> Vec<App> {
@@ -63,15 +76,14 @@ pub fn all_apps() -> Vec<App> {
                 commandline: app.commandline(),
                 name: app.name().to_string(),
                 description: app.description().map(String::from),
-                icon_state: IconState::Empty,
-                icon_name: app.icon().and_then(|s| s.to_string()).map(String::from),
+                icon: Icon::new(app.icon()),
             })
         })
         .collect()
 }
 
-fn get_icon_path_from_xdgicon(iconname: &str) -> Option<PathBuf> {
-    if iconname.contains("/") || iconname.contains("\\") {
+fn get_icon_path_from_xdgicon(iconname: &PathBuf) -> Option<PathBuf> {
+    if iconname.starts_with("/") || iconname.starts_with("\\") {
         return Some(PathBuf::from(iconname));
     }
 
@@ -83,7 +95,10 @@ fn get_icon_path_from_xdgicon(iconname: &str) -> Option<PathBuf> {
 
     for size in sizes {
         let extension = if size == "scalable" { "svg" } else { "png" };
-        let sub_path = format!("icons/hicolor/{size}/apps/{iconname}.{extension}");
+        let sub_path = format!(
+            "icons/hicolor/{size}/apps/{iconname}.{extension}",
+            iconname = iconname.display()
+        );
 
         if let Some(path) = xdg_dirs.find_data_file(&sub_path) {
             return Some(path);
@@ -91,7 +106,7 @@ fn get_icon_path_from_xdgicon(iconname: &str) -> Option<PathBuf> {
     }
 
     for ext in ["svg", "png", "ico"] {
-        let pixmap_path = format!("pixmaps/{}.{}", iconname, ext);
+        let pixmap_path = format!("pixmaps/{iconname}.{ext}", iconname = iconname.display());
         if let Some(path) = xdg_dirs.find_data_file(&pixmap_path) {
             return Some(path);
         }
@@ -114,8 +129,8 @@ fn rasterize_svg(path: PathBuf, size: u32) -> Option<image::Handle> {
     Some(image::Handle::from_rgba(size, size, pixmap.data().to_vec()))
 }
 
-fn load_raster_icon(icon: &str) -> Option<image::Handle> {
-    let path = get_icon_path_from_xdgicon(&icon)?;
+fn load_raster_icon(icon: &PathBuf) -> Option<image::Handle> {
+    let path = get_icon_path_from_xdgicon(icon)?;
     let extension = path.extension()?.to_str()?;
 
     match extension {
@@ -125,7 +140,7 @@ fn load_raster_icon(icon: &str) -> Option<image::Handle> {
     }
 }
 
-pub async fn process_icon(app_index: usize, icon_name: Option<String>) -> (usize, IconState) {
+pub async fn process_icon(app_index: usize, icon_name: Option<PathBuf>) -> (usize, IconState) {
     let Some(name) = icon_name else {
         return (app_index, IconState::Empty);
     };
@@ -174,7 +189,7 @@ impl App {
     ) -> Element<'static, Message, CustomTheme> {
         let is_selected = current_index == index;
 
-        let icon_view: Element<'static, Message, CustomTheme> = match &self.icon_state {
+        let icon_view: Element<'static, Message, CustomTheme> = match &self.icon.state {
             IconState::Ready(handle) => image(handle.clone())
                 .width(style.icon_size)
                 .height(style.icon_size)
