@@ -10,6 +10,7 @@ mod launcher;
 mod preferences;
 mod prompt;
 
+use anyhow::Context;
 use iced_layershell::{
     reexport::{Anchor, KeyboardInteractivity, Layer},
     settings::LayerShellSettings,
@@ -22,9 +23,9 @@ use tracing_subscriber::{EnvFilter, fmt, prelude::*};
 #[global_allocator]
 static ALLOC: dhat::Alloc = dhat::Alloc;
 
-fn main() -> iced_layershell::Result {
-    std::panic::set_hook(Box::new(|panic_info| {
-        tracing::error!("LAUNCHER CRASHED: {}", panic_info);
+fn main() -> anyhow::Result<()> {
+    std::panic::set_hook(Box::new(|info| {
+        tracing::error!("Application panicked: {info}");
     }));
 
     #[cfg(feature = "dhat-heap")]
@@ -33,43 +34,16 @@ fn main() -> iced_layershell::Result {
     let package_name = env!("CARGO_PKG_NAME");
     let package_version = env!("CARGO_PKG_VERSION");
 
-    let _single_instance_guard = match get_single_instance(package_name) {
-        Ok(lock) => lock,
-        Err(e) => {
-            tracing::error!(
-                "Another instance of {} is already running. {}",
-                &package_name,
-                e
-            );
-            return Ok(());
-        }
-    };
+    let _single_instance_lock = get_single_instance(package_name)?;
 
-    let xdg_dirs = xdg::BaseDirectories::with_prefix(package_name);
-    let cache_dir = xdg_dirs.get_cache_home().expect(
-        "Could not determine the user's Home directory. Ensure the $HOME environment variable is set."
-    );
+    let cache_dir = xdg::BaseDirectories::with_prefix(package_name).get_cache_home().context(
+            "Could not determine the user's Home directory. Ensure the $HOME environment variable is set."
+        )?;
 
-    let _log_guard = setup_tracing_subscriber(cache_dir, "logs");
+    let _log_guard = setup_tracing_subscriber(cache_dir, "logs")?;
     tracing::info!("Running {package_name} v.{package_version}...");
 
-    let rt = tokio::runtime::Runtime::new()
-        .expect("Unable to create async runtime to open Preferences file");
-
-    let pref = match rt.block_on(Preferences::load()) {
-        Ok(p) => {
-            tracing::debug!("Running under user-defined preferences.");
-            p
-        }
-        Err(e) => {
-            if matches!(e.kind(), std::io::ErrorKind::InvalidInput) {
-                tracing::error!(diagnostic = %e,"Syntax error detected");
-            }
-
-            tracing::warn!("Using in-memory defaults.");
-            Preferences::default()
-        }
-    };
+    let pref = load_application_preferences()?;
 
     let layershell_settings = LayerShellSettings {
         size: Some((700, 500)),
@@ -84,22 +58,38 @@ fn main() -> iced_layershell::Result {
         .theme(Lucien::theme)
         .layer_settings(layershell_settings)
         .antialiasing(true)
-        .run_with(|| Lucien::init(pref))
+        .run_with(|| Lucien::init(pref))?;
+
+    Ok(())
+}
+
+fn load_application_preferences() -> anyhow::Result<Preferences> {
+    match Preferences::load() {
+        Ok(p) => {
+            tracing::debug!("Running under user-defined preferences.");
+            Ok(p)
+        }
+        Err(e) if e.kind() == std::io::ErrorKind::InvalidInput => {
+            tracing::warn!(diagnostic = %e, "Invalid preferences syntax, using defaults.");
+            Ok(Preferences::default())
+        }
+        Err(e) => Err(e).context("Failed to load preferences"),
+    }
 }
 
 fn setup_tracing_subscriber(
     cache_dir: PathBuf,
     filename: &str,
-) -> tracing_appender::non_blocking::WorkerGuard {
+) -> anyhow::Result<tracing_appender::non_blocking::WorkerGuard> {
     let file_appender = tracing_appender::rolling::daily(cache_dir, filename);
     let (non_blocking_file, _logger_guard) = tracing_appender::non_blocking(file_appender);
     let env_filter = EnvFilter::from_default_env()
         .add_directive(Level::INFO.into())
-        .add_directive("iced_wgpu=error".parse().unwrap())
-        .add_directive("usvg=error".parse().unwrap())
-        .add_directive("wgpu_hal=error".parse().unwrap())
-        .add_directive("wgpu_core=error".parse().unwrap())
-        .add_directive("calloop=error".parse().unwrap());
+        .add_directive("iced_wgpu=error".parse()?)
+        .add_directive("usvg=error".parse()?)
+        .add_directive("wgpu_hal=error".parse()?)
+        .add_directive("wgpu_core=error".parse()?)
+        .add_directive("calloop=error".parse()?);
 
     tracing_subscriber::registry()
         .with(env_filter)
@@ -107,17 +97,19 @@ fn setup_tracing_subscriber(
         .with(fmt::layer().with_ansi(false).with_writer(non_blocking_file))
         .init();
 
-    _logger_guard
+    Ok(_logger_guard)
 }
 
-fn get_single_instance(name: &str) -> nix::Result<OwnedFd> {
+fn get_single_instance(name: &str) -> anyhow::Result<OwnedFd> {
     let sock = socket::socket(
         AddressFamily::Unix,
         SockType::Stream,
         SockFlag::SOCK_CLOEXEC,
         None,
-    )?;
-    let address = UnixAddr::new_abstract(name.as_bytes())?;
-    socket::bind(sock.as_raw_fd(), &address)?;
+    )
+    .context("Unable to create socket.")?;
+    let address =
+        UnixAddr::new_abstract(name.as_bytes()).context("Invalid name for an abstract socket.")?;
+    socket::bind(sock.as_raw_fd(), &address).context("An Instance is already running.")?;
     Ok(sock)
 }

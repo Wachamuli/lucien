@@ -34,18 +34,16 @@ impl Default for Preferences {
 }
 
 impl Preferences {
-    pub async fn load() -> io::Result<Self> {
+    pub fn load() -> io::Result<Self> {
         let package_name = env!("CARGO_PKG_NAME");
         let settings_file_name = "preferences.toml";
         let xdg_dirs = xdg::BaseDirectories::with_prefix(package_name);
         let settings_file_path = xdg_dirs.place_config_file(settings_file_name)?;
 
-        let settings_file_string = tokio::fs::read_to_string(&settings_file_path)
-            .await
-            .unwrap_or_default();
+        let settings_file_string = std::fs::read_to_string(&settings_file_path).unwrap_or_default();
 
         let mut preferences = toml::from_str::<Preferences>(&settings_file_string)
-            .map_err(|e| io::Error::new(io::ErrorKind::InvalidInput, e.message()))?;
+            .map_err(|e| io::Error::new(io::ErrorKind::InvalidInput, e))?;
 
         let mut extended_keybindings = default_keybindings();
         extended_keybindings.extend(preferences.keybindings);
