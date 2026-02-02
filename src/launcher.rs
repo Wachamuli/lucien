@@ -414,39 +414,73 @@ impl Lucien {
             })
         }
 
-        let mut starred_column;
-        let mut general_column;
+        let theme = &self.preferences.theme;
+        let layout = AppLayout::new(&self.preferences, &self.prompt);
 
-        if self.prompt.is_empty() && !self.preferences.favorite_apps.is_empty() {
-            starred_column = Column::new().push(section("Starred"));
-            general_column = Column::new().push(section("General"));
+        // Calculate visible range
+        let visible_range = if let Some(viewport) = &self.last_viewport {
+            let scroll_top = viewport.absolute_offset().y;
+            let scroll_bottom = scroll_top + viewport.bounds().height;
+
+            // Add buffer for smooth scrolling
+            let buffer = layout.item_height * 3.0;
+            let start_y = (scroll_top - buffer).max(0.0);
+            let end_y = scroll_bottom + buffer;
+
+            calculate_visible_indices(&layout, start_y, end_y, self.ranked_apps.len())
         } else {
-            starred_column = Column::new();
-            general_column = Column::new();
+            // Initial load - show first ~15 items
+            0..15.min(self.ranked_apps.len())
+        };
+
+        let mut starred_column = Column::new();
+        let mut general_column = Column::new();
+
+        // Add section headers if needed
+        if self.prompt.is_empty() && !self.preferences.favorite_apps.is_empty() {
+            starred_column = starred_column.push(section("Starred"));
+            general_column = general_column.push(section("General"));
         }
 
-        for (rank_pos, app_index) in self.ranked_apps.iter().enumerate() {
-            let app = &self.cached_apps[*app_index];
+        // Only create widgets for visible items
+        for rank_pos in visible_range.clone() {
+            let Some(&app_index) = self.ranked_apps.get(rank_pos) else {
+                continue;
+            };
+
+            let app = &self.cached_apps[app_index];
             let is_favorite = self.preferences.favorite_apps.contains(&app.id);
-            let is_selected = self.selected_entry == rank_pos;
 
-            let item_height = theme.launchpad.entry.height;
-            let style = &self.preferences.theme.launchpad.entry;
-            let icons = &self.icons;
+            // Load icon on-demand (synchronously, cached by iced)
 
-            let element: Element<Message, CustomTheme> = container(iced::widget::lazy(
-                (*app_index, is_selected, is_favorite),
-                move |_| app.entry(icons, style, rank_pos, self.selected_entry, is_favorite),
-            ))
-            .height(item_height)
-            .width(Length::Fill)
-            .into();
+            let element = app.entry(
+                &self.icons,
+                &theme.launchpad.entry,
+                rank_pos,
+                self.selected_entry,
+                is_favorite,
+            );
 
             if is_favorite && self.prompt.is_empty() {
                 starred_column = starred_column.push(element);
             } else {
                 general_column = general_column.push(element);
             }
+        }
+
+        // Add spacers for items outside visible range
+        let (top_spacer_height, bottom_spacer_height) =
+            calculate_spacer_heights(&layout, &visible_range, self.ranked_apps.len());
+
+        if top_spacer_height > 0.0 {
+            starred_column = Column::new()
+                .push(iced::widget::Space::new(Length::Fill, top_spacer_height))
+                .push(starred_column);
+        }
+
+        if bottom_spacer_height > 0.0 {
+            general_column =
+                general_column.push(iced::widget::Space::new(Length::Fill, bottom_spacer_height));
         }
 
         let results_not_found: Container<Message, CustomTheme> = container(
@@ -582,4 +616,49 @@ impl AppLayout {
             self.padding + (index as f32 * self.item_height)
         }
     }
+}
+
+fn calculate_visible_indices(
+    layout: &AppLayout,
+    start_y: f32,
+    end_y: f32,
+    total_items: usize,
+) -> std::ops::Range<usize> {
+    let fav_count = layout.fav_count;
+    let mut start_idx = 0;
+    let mut end_idx = total_items;
+
+    // Calculate start index
+    if start_y > layout.starred_end_y {
+        // Scrolled past favorites
+        let offset_in_general = start_y - layout.general_start_y;
+        start_idx = fav_count + (offset_in_general / layout.item_height).floor() as usize;
+    } else if start_y > layout.starred_start_y {
+        // Within favorites
+        let offset = start_y - layout.starred_start_y;
+        start_idx = (offset / layout.item_height).floor() as usize;
+    }
+
+    // Calculate end index
+    if end_y > layout.general_start_y {
+        let offset_in_general = end_y - layout.general_start_y;
+        end_idx = fav_count + (offset_in_general / layout.item_height).ceil() as usize;
+    } else if end_y > layout.starred_start_y {
+        let offset = end_y - layout.starred_start_y;
+        end_idx = (offset / layout.item_height).ceil() as usize;
+    }
+
+    start_idx.min(total_items)..end_idx.min(total_items)
+}
+
+fn calculate_spacer_heights(
+    layout: &AppLayout,
+    visible_range: &std::ops::Range<usize>,
+    total_items: usize,
+) -> (f32, f32) {
+    let top_height = visible_range.start as f32 * layout.item_height;
+    let bottom_count = total_items.saturating_sub(visible_range.end);
+    let bottom_height = bottom_count as f32 * layout.item_height;
+
+    (top_height, bottom_height)
 }

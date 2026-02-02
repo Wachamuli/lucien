@@ -1,6 +1,6 @@
 use std::ops::Deref;
 
-use iced::widget::{button, container, rule, scrollable, text, text_input};
+use iced::widget::{button, container, rule, scrollable, svg, text, text_input};
 use iced_layershell::DefaultStyle;
 use serde::{self, Deserialize, Serialize};
 
@@ -449,5 +449,21 @@ impl text_input::Catalog for CustomTheme {
             value: *self.prompt.text_color,
             selection: *self.launchpad.entry.focus_highlight,
         }
+    }
+}
+
+pub enum SvgClass {
+    Default,
+}
+
+impl svg::Catalog for CustomTheme {
+    type Class<'a> = SvgClass;
+
+    fn default<'a>() -> Self::Class<'a> {
+        SvgClass::Default
+    }
+
+    fn style(&self, _class: &Self::Class<'_>, _status: svg::Status) -> svg::Style {
+        svg::Style::default()
     }
 }
