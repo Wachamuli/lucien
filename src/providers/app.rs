@@ -7,39 +7,12 @@ use std::{io, os::unix::process::CommandExt, path::PathBuf, process};
 use crate::providers::{Entry, Provider};
 
 #[derive(Debug, Clone)]
-pub enum IconState {
-    Ready(iced::widget::image::Handle),
-    Pending(PathBuf),
-    Loading,
-    NotFound,
-}
-
-impl IconState {
-    pub fn hashable(&self) -> IconStatus {
-        match self {
-            IconState::Ready(_) => IconStatus::Ready,
-            IconState::Loading => IconStatus::Loading,
-            IconState::Pending(_) => IconStatus::Empty,
-            IconState::NotFound => IconStatus::NotFound,
-        }
-    }
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub enum IconStatus {
-    Empty,
-    Loading,
-    Ready,
-    NotFound,
-}
-
-#[derive(Debug, Clone)]
 pub struct App {
     commandline: Option<PathBuf>,
     pub id: String,
     pub name: String,
     pub description: Option<String>,
-    pub icon: IconState,
+    pub icon: Option<PathBuf>,
 }
 
 fn get_icon_path_from_xdgicon(iconname: &PathBuf) -> Option<PathBuf> {
@@ -100,11 +73,23 @@ fn load_raster_icon(icon: &PathBuf) -> Option<image::Handle> {
     }
 }
 
-pub async fn process_icon(app_index: usize, icon_name: PathBuf) -> (usize, IconState) {
-    match load_raster_icon(&icon_name) {
-        Some(handle) => (app_index, IconState::Ready(handle)),
-        None => (app_index, IconState::NotFound),
+pub fn load_icon_sync(path: &PathBuf) -> Option<image::Handle> {
+    use std::collections::HashMap;
+    use std::sync::OnceLock;
+
+    static CACHE: OnceLock<std::sync::Mutex<HashMap<PathBuf, Option<image::Handle>>>> =
+        OnceLock::new();
+    let cache = CACHE.get_or_init(|| std::sync::Mutex::new(HashMap::new()));
+
+    let mut cache = cache.lock().unwrap();
+
+    if let Some(cached) = cache.get(path) {
+        return cached.clone();
     }
+
+    let handle = load_raster_icon(path);
+    cache.insert(path.clone(), handle.clone());
+    handle
 }
 
 pub fn launch(app: &App) -> io::Result<process::Child> {
@@ -183,20 +168,12 @@ impl Provider for AppProvider {
                     return None;
                 }
 
-                let icon = app.icon().map_or(IconState::NotFound, |i| {
-                    let Some(cion) = i.to_string() else {
-                        return IconState::NotFound;
-                    };
-
-                    IconState::Pending(PathBuf::from(cion))
-                });
-
                 Some(App {
                     id: app.id().unwrap_or_default().to_string(),
                     commandline: app.commandline(),
                     name: app.name().to_string(),
                     description: app.description().map(String::from),
-                    icon,
+                    icon: app.icon().and_then(|p| p.to_string()).map(PathBuf::from),
                 })
             })
             .collect()

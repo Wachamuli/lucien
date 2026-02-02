@@ -24,7 +24,7 @@ use crate::{
     prompt::Prompt,
     providers::{
         Entry, Provider,
-        app::{App, AppProvider, IconState},
+        app::{App, AppProvider},
         display_entry,
     },
 };
@@ -291,59 +291,6 @@ impl Lucien {
         )
     }
 
-    // fn preload_specific_range(&mut self, indices: Vec<usize>) -> Task<Message> {
-    //     let mut tasks = Vec::new();
-
-    //     for rank_pos in indices {
-    //         if let Some(&app_idx) = self.ranked_apps.get(rank_pos) {
-    //             let app = &mut self.cached_apps[app_idx];
-
-    //             if let IconState::Pending(ref path) = app.icon {
-    //                 let path = path.clone();
-    //                 app.icon = IconState::Loading;
-
-    //                 tasks.push(Task::perform(
-    //                     process_icon(app_idx, path),
-    //                     |(app_idx, state)| Message::IconProcessed(app_idx, state),
-    //                 ));
-    //             }
-    //         }
-    //     }
-
-    //     Task::batch(tasks)
-    // }
-
-    // fn preload_visible_icons(&mut self, layout: &AppLayout) -> Task<Message> {
-    //     let Some(viewport) = &self.last_viewport else {
-    //         return Task::none();
-    //     };
-    //     let scroll_top = viewport.absolute_offset().y;
-    //     let scroll_bottom = scroll_top + viewport.bounds().height;
-
-    //     let mut indices = Vec::new();
-
-    //     // Calculate visible Starred items
-    //     if scroll_top < layout.starred_end_y {
-    //         let s = ((scroll_top - layout.starred_start_y).max(0.0) / layout.item_height).floor()
-    //             as usize;
-    //         let e = ((scroll_bottom - layout.starred_start_y).max(0.0) / layout.item_height).ceil()
-    //             as usize;
-    //         indices.extend(s..e.min(layout.fav_count));
-    //     }
-
-    //     // Calculate visible General items
-    //     if scroll_bottom > layout.general_start_y {
-    //         let s = ((scroll_top - layout.general_start_y).max(0.0) / layout.item_height).floor()
-    //             as usize;
-    //         let e = ((scroll_bottom - layout.general_start_y).max(0.0) / layout.item_height).ceil()
-    //             as usize;
-    //         let total = self.ranked_apps.len();
-    //         indices.extend((s + layout.fav_count)..(e + layout.fav_count).min(total));
-    //     }
-
-    //     self.preload_specific_range(indices)
-    // }
-
     pub fn update(&mut self, message: Message) -> Task<Message> {
         match message {
             Message::PreloadEntries(apps) => {
@@ -366,13 +313,6 @@ impl Lucien {
 
                 Task::none()
             }
-            // Message::IconProcessed(app_index, state) => {
-            //     if let Some(app) = self.cached_apps.get_mut(app_index) {
-            //         app.icon = state
-            //     }
-
-            //     Task::none()
-            // }
             Message::SaveIntoDisk(result) => {
                 match result {
                     Ok(path) => tracing::debug!("Preference saved into disk: {:?}", path),
@@ -434,20 +374,12 @@ impl Lucien {
                 self.selected_entry = 0;
                 self.update_ranked_apps();
 
-                let scroll_task =
-                    scrollable::snap_to(SCROLLABLE_ID.clone(), RelativeOffset { x: 0.0, y: 0.0 });
-
-                // let layout = AppLayout::new(&self.preferences, &self.prompt);
-                // let preload_task = self.preload_visible_icons(&layout);
-
-                Task::batch([scroll_task])
+                scrollable::snap_to(SCROLLABLE_ID.clone(), RelativeOffset { x: 0.0, y: 0.0 })
             }
             Message::MarkFavorite(index) => self.mark_favorite(index),
             Message::ScrollableViewport(viewport) => {
                 self.last_viewport = Some(viewport);
                 Task::none()
-                // let layout = AppLayout::new(&self.preferences, &self.prompt);
-                // self.preload_visible_icons(&layout)
             }
             Message::SystemEvent(Event::Keyboard(keyboard::Event::KeyPressed {
                 key: Key::Named(key),
@@ -543,7 +475,6 @@ impl Lucien {
             let is_favorite = self.preferences.favorite_apps.contains(&app.id());
             let is_selected = self.selected_entry == rank_pos;
 
-            // let icon_status = app.icon.hashable();
             let item_height = theme.launchpad.entry.height;
             let style = &self.preferences.theme.launchpad.entry;
             let icons = &self.icons;

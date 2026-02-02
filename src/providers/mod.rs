@@ -34,16 +34,16 @@ pub fn display_entry(
 ) -> Element<'static, Message, CustomTheme> {
     let is_selected = current_index == index;
 
-    // let icon_view: Element<'static, Message, CustomTheme> = match &self.icon {
-    //     IconState::Ready(handle) => image(handle.clone())
-    //         .width(style.icon_size)
-    //         .height(style.icon_size)
-    //         .into(),
-    //     IconState::Loading => iced::widget::horizontal_space()
-    //         .width(style.icon_size)
-    //         .height(style.icon_size)
-    //         .into(),
-    //     _ => iced::widget::horizontal_space().width(0).into(),
+    // let icon_view: Element<'_, Message, CustomTheme> = if let Some(icon_path) = &self.icon {
+    //     match app::load_icon_sync(icon_path) {
+    //         Some(handle) => image(handle)
+    //             .width(style.icon_size)
+    //             .height(style.icon_size)
+    //             .into(),
+    //         None => iced::widget::horizontal_space().width(0).into(),
+    //     }
+    // } else {
+    //     iced::widget::horizontal_space().width(0).into()
     // };
 
     let shortcut_widget: Element<'static, Message, CustomTheme> = match &icons.enter {
