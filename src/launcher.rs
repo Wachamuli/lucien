@@ -22,7 +22,10 @@ use crate::{
         theme::{ContainerClass, CustomTheme, TextClass},
     },
     prompt::Prompt,
-    providers::app::{App, IconState, all_apps, process_icon},
+    providers::{
+        app::{App, IconState, all_apps, process_icon},
+        display_entry,
+    },
 };
 
 const SECTION_HEIGHT: f32 = 36.0;
@@ -505,7 +508,16 @@ impl Lucien {
 
             let element: Element<Message, CustomTheme> = container(iced::widget::lazy(
                 (*app_index, is_selected, is_favorite, icon_status),
-                move |_| app.entry(icons, style, rank_pos, self.selected_entry, is_favorite),
+                move |_| {
+                    display_entry(
+                        app,
+                        icons,
+                        style,
+                        rank_pos,
+                        self.selected_entry,
+                        is_favorite,
+                    )
+                },
             ))
             .height(item_height)
             .width(Length::Fill)
