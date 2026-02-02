@@ -12,39 +12,12 @@ use crate::{
 };
 
 #[derive(Debug, Clone)]
-pub enum IconState {
-    Ready(iced::widget::image::Handle),
-    Pending(PathBuf),
-    Loading,
-    NotFound,
-}
-
-impl IconState {
-    pub fn hashable(&self) -> IconStatus {
-        match self {
-            IconState::Ready(_) => IconStatus::Ready,
-            IconState::Loading => IconStatus::Loading,
-            IconState::Pending(_) => IconStatus::Empty,
-            IconState::NotFound => IconStatus::NotFound,
-        }
-    }
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub enum IconStatus {
-    Empty,
-    Loading,
-    Ready,
-    NotFound,
-}
-
-#[derive(Debug, Clone)]
 pub struct App {
     commandline: Option<PathBuf>,
     pub id: String,
     pub name: String,
     pub description: Option<String>,
-    pub icon: IconState,
+    pub icon: Option<PathBuf>,
 }
 
 pub fn all_apps() -> Vec<App> {
@@ -55,20 +28,12 @@ pub fn all_apps() -> Vec<App> {
                 return None;
             }
 
-            let icon = app.icon().map_or(IconState::NotFound, |i| {
-                let Some(cion) = i.to_string() else {
-                    return IconState::NotFound;
-                };
-
-                IconState::Pending(PathBuf::from(cion))
-            });
-
             Some(App {
                 id: app.id().unwrap_or_default().to_string(),
                 commandline: app.commandline(),
                 name: app.name().to_string(),
                 description: app.description().map(String::from),
-                icon,
+                icon: app.icon().and_then(|p| p.to_string()).map(PathBuf::from),
             })
         })
         .collect()
@@ -132,17 +97,29 @@ fn load_raster_icon(icon: &PathBuf) -> Option<image::Handle> {
     }
 }
 
-pub async fn process_icon(app_index: usize, icon_name: PathBuf) -> (usize, IconState) {
-    match load_raster_icon(&icon_name) {
-        Some(handle) => (app_index, IconState::Ready(handle)),
-        None => (app_index, IconState::NotFound),
+fn load_icon_sync(path: &PathBuf) -> Option<image::Handle> {
+    use std::collections::HashMap;
+    use std::sync::OnceLock;
+
+    static CACHE: OnceLock<std::sync::Mutex<HashMap<PathBuf, Option<image::Handle>>>> =
+        OnceLock::new();
+    let cache = CACHE.get_or_init(|| std::sync::Mutex::new(HashMap::new()));
+
+    let mut cache = cache.lock().unwrap();
+
+    if let Some(cached) = cache.get(path) {
+        return cached.clone();
     }
+
+    let handle = load_raster_icon(path);
+    cache.insert(path.clone(), handle.clone());
+    handle
 }
 
 impl App {
     pub fn launch(&self) -> io::Result<process::Child> {
         let raw_cmd = self.commandline.as_ref().ok_or_else(|| {
-            std::io::Error::new(std::io::ErrorKind::NotFound, "No command line found")
+            std::io::Error::new(std::io::ErrorKind::NotFound, "No command line found.")
         })?;
         let clean_cmd = raw_cmd
             .to_str()
@@ -177,16 +154,16 @@ impl App {
     ) -> Element<'static, Message, CustomTheme> {
         let is_selected = current_index == index;
 
-        let icon_view: Element<'static, Message, CustomTheme> = match &self.icon {
-            IconState::Ready(handle) => image(handle.clone())
-                .width(style.icon_size)
-                .height(style.icon_size)
-                .into(),
-            IconState::Loading => iced::widget::horizontal_space()
-                .width(style.icon_size)
-                .height(style.icon_size)
-                .into(),
-            _ => iced::widget::horizontal_space().width(0).into(),
+        let icon_view: Element<'_, Message, CustomTheme> = if let Some(icon_path) = &self.icon {
+            match load_icon_sync(icon_path) {
+                Some(handle) => image(handle)
+                    .width(style.icon_size)
+                    .height(style.icon_size)
+                    .into(),
+                None => iced::widget::horizontal_space().width(0).into(),
+            }
+        } else {
+            iced::widget::horizontal_space().width(0).into()
         };
 
         let shortcut_widget: Element<'static, Message, CustomTheme> = match &icons.enter {
