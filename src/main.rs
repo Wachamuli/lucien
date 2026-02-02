@@ -5,10 +5,10 @@ use std::{
 
 use crate::{launcher::Lucien, preferences::Preferences};
 
-mod app;
 mod launcher;
 mod preferences;
 mod prompt;
+mod providers;
 
 use anyhow::Context;
 use iced_layershell::{

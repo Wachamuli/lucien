@@ -16,13 +16,13 @@ use iced::{
 use iced_layershell::to_layer_message;
 
 use crate::{
-    app::{App, IconState, all_apps, process_icon},
     preferences::{
         self, Preferences,
         keybindings::Action,
         theme::{ContainerClass, CustomTheme, TextClass},
     },
     prompt::Prompt,
+    providers::app::{App, IconState, all_apps, process_icon},
 };
 
 const SECTION_HEIGHT: f32 = 36.0;
