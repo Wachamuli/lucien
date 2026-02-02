@@ -11,13 +11,21 @@ use crate::{
 pub mod app;
 pub mod file;
 
+pub trait Provider {
+    type Entry: Entry;
+
+    fn scan() -> Vec<Self::Entry>;
+}
+
 pub trait Entry {
+    fn id(&self) -> String;
     fn main(&self) -> String;
     fn secondary(&self) -> Option<String>;
+    fn launch(&self) -> anyhow::Result<()>;
 }
 
 pub fn display_entry(
-    entry: impl Entry,
+    entry: &impl Entry,
     icons: &BakedIcons,
     style: &EntryStyle,
     index: usize,

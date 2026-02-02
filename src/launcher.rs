@@ -23,7 +23,8 @@ use crate::{
     },
     prompt::Prompt,
     providers::{
-        app::{App, IconState, all_apps, process_icon},
+        Entry, Provider,
+        app::{App, AppProvider, IconState},
         display_entry,
     },
 };
@@ -49,13 +50,50 @@ static STAR_INACTIVE: &[u8] = include_bytes!("../assets/star-line.png");
 // static FOLDER_INACTIVE: &[u8] = include_bytes!("../assets/proicons--folder.png");
 // static CLIPBOARD_INACTIVE: &[u8] = include_bytes!("../assets/tabler--clipboard.png");
 
-// #[derive(Debug)]
+#[derive(Debug, Clone)]
+enum AnyEntry {
+    App(App),
+}
+
+impl Entry for AnyEntry {
+    fn id(&self) -> String {
+        match self {
+            AnyEntry::App(app) => app.id.clone(),
+        }
+    }
+
+    fn main(&self) -> String {
+        match self {
+            AnyEntry::App(app) => app.name.clone(),
+        }
+    }
+
+    fn secondary(&self) -> Option<String> {
+        match self {
+            AnyEntry::App(app) => app.description.clone(),
+        }
+    }
+
+    fn launch(&self) -> anyhow::Result<()> {
+        match self {
+            AnyEntry::App(app) => app.launch(),
+        }
+    }
+}
+
+enum ProviderKind {
+    Apps,
+}
+
 pub struct Lucien {
+    current_provider: ProviderKind,
     prompt: String,
     matcher: SkimMatcherV2,
     keyboard_modifiers: keyboard::Modifiers,
-    cached_apps: Vec<App>,
-    ranked_apps: Vec<usize>,
+
+    cached_entries: Vec<AnyEntry>,
+    ranked_entries: Vec<usize>,
+
     preferences: Preferences,
     selected_entry: usize,
     last_viewport: Option<Viewport>,
@@ -66,8 +104,8 @@ pub struct Lucien {
 #[to_layer_message]
 #[derive(Debug, Clone)]
 pub enum Message {
-    AppsLoaded(Vec<App>),
-    IconProcessed(usize, IconState),
+    PreloadEntries(Vec<AnyEntry>),
+    // IconProcessed(usize, IconState),
     PromptChange(String),
     DebouncedFilter,
     LaunchApp(usize),
@@ -91,16 +129,19 @@ pub struct BakedIcons {
 impl Lucien {
     pub fn init(preferences: Preferences) -> (Self, Task<Message>) {
         let auto_focus_prompt_task = text_input::focus(TEXT_INPUT_ID.clone());
-        let scan_apps_task = Task::perform(async { all_apps() }, Message::AppsLoaded);
-        let initial_tasks = Task::batch([auto_focus_prompt_task, scan_apps_task]);
+        let scan_task = Task::perform(
+            async { AppProvider::scan().into_iter().map(AnyEntry::App).collect() },
+            Message::PreloadEntries,
+        );
+        let initial_tasks = Task::batch([auto_focus_prompt_task, scan_task]);
 
         let initial_values = Self {
-            // mode: Mode::Launcher,
+            current_provider: ProviderKind::Apps,
             prompt: String::new(),
             matcher: SkimMatcherV2::default(),
             keyboard_modifiers: keyboard::Modifiers::empty(),
-            cached_apps: Vec::new(),
-            ranked_apps: Vec::new(),
+            cached_entries: Vec::new(),
+            ranked_entries: Vec::new(),
             preferences,
             selected_entry: 0,
             last_viewport: None,
@@ -117,20 +158,20 @@ impl Lucien {
 
     fn update_ranked_apps(&mut self) {
         let mut ranked: Vec<(i64, usize)> = self
-            .cached_apps
+            .cached_entries
             .iter()
             .enumerate()
             .filter_map(|(index, app)| {
-                let score = self.matcher.fuzzy_match(&app.name, &self.prompt)?;
+                let score = self.matcher.fuzzy_match(&app.main(), &self.prompt)?;
                 Some((score, index))
             })
             .collect();
 
         ranked.sort_by(|(score_a, index_a), (score_b, index_b)| {
-            let app_a = &self.cached_apps[*index_a];
-            let app_b = &self.cached_apps[*index_b];
-            let a_is_fav = self.preferences.favorite_apps.contains(&app_a.id);
-            let b_is_fav = self.preferences.favorite_apps.contains(&app_b.id);
+            let app_a = &self.cached_entries[*index_a];
+            let app_b = &self.cached_entries[*index_b];
+            let a_is_fav = self.preferences.favorite_apps.contains(&app_a.id());
+            let b_is_fav = self.preferences.favorite_apps.contains(&app_b.id());
 
             match (a_is_fav, b_is_fav) {
                 (true, false) => std::cmp::Ordering::Less,
@@ -139,14 +180,14 @@ impl Lucien {
             }
         });
 
-        self.ranked_apps = ranked
+        self.ranked_entries = ranked
             .into_iter()
             .map(|(_score, app_index)| app_index)
             .collect();
     }
 
     fn mark_favorite(&mut self, index: usize) -> Task<Message> {
-        let Some(app) = self.ranked_apps.get(index) else {
+        let Some(app) = self.ranked_entries.get(index) else {
             return Task::none();
         };
 
@@ -155,7 +196,7 @@ impl Lucien {
             return Task::none();
         };
 
-        let id = &self.cached_apps[*app].id;
+        let id = &self.cached_entries[*app].id();
         let path = path.clone();
         // Toggle_favorite is a very opaque function. It actually
         // modifies the in-memory favorite_apps variable.
@@ -170,7 +211,7 @@ impl Lucien {
     }
 
     fn go_to_entry(&mut self, step: isize) -> Task<Message> {
-        let total = self.ranked_apps.len();
+        let total = self.ranked_entries.len();
         if total == 0 {
             return Task::none();
         }
@@ -201,11 +242,11 @@ impl Lucien {
         };
 
         // 1. Get coordinates from injected layout
-        let app_idx = self.ranked_apps[self.selected_entry];
+        let app_idx = self.ranked_entries[self.selected_entry];
         let is_fav = self
             .preferences
             .favorite_apps
-            .contains(&self.cached_apps[app_idx].id);
+            .contains(&self.cached_entries[app_idx].id());
         let selection_top = layout.y_for_index(self.selected_entry, is_fav);
         let selection_bottom = selection_top + layout.item_height;
 
@@ -250,64 +291,64 @@ impl Lucien {
         )
     }
 
-    fn preload_specific_range(&mut self, indices: Vec<usize>) -> Task<Message> {
-        let mut tasks = Vec::new();
+    // fn preload_specific_range(&mut self, indices: Vec<usize>) -> Task<Message> {
+    //     let mut tasks = Vec::new();
 
-        for rank_pos in indices {
-            if let Some(&app_idx) = self.ranked_apps.get(rank_pos) {
-                let app = &mut self.cached_apps[app_idx];
+    //     for rank_pos in indices {
+    //         if let Some(&app_idx) = self.ranked_apps.get(rank_pos) {
+    //             let app = &mut self.cached_apps[app_idx];
 
-                if let IconState::Pending(ref path) = app.icon {
-                    let path = path.clone();
-                    app.icon = IconState::Loading;
+    //             if let IconState::Pending(ref path) = app.icon {
+    //                 let path = path.clone();
+    //                 app.icon = IconState::Loading;
 
-                    tasks.push(Task::perform(
-                        process_icon(app_idx, path),
-                        |(app_idx, state)| Message::IconProcessed(app_idx, state),
-                    ));
-                }
-            }
-        }
+    //                 tasks.push(Task::perform(
+    //                     process_icon(app_idx, path),
+    //                     |(app_idx, state)| Message::IconProcessed(app_idx, state),
+    //                 ));
+    //             }
+    //         }
+    //     }
 
-        Task::batch(tasks)
-    }
+    //     Task::batch(tasks)
+    // }
 
-    fn preload_visible_icons(&mut self, layout: &AppLayout) -> Task<Message> {
-        let Some(viewport) = &self.last_viewport else {
-            return Task::none();
-        };
-        let scroll_top = viewport.absolute_offset().y;
-        let scroll_bottom = scroll_top + viewport.bounds().height;
+    // fn preload_visible_icons(&mut self, layout: &AppLayout) -> Task<Message> {
+    //     let Some(viewport) = &self.last_viewport else {
+    //         return Task::none();
+    //     };
+    //     let scroll_top = viewport.absolute_offset().y;
+    //     let scroll_bottom = scroll_top + viewport.bounds().height;
 
-        let mut indices = Vec::new();
+    //     let mut indices = Vec::new();
 
-        // Calculate visible Starred items
-        if scroll_top < layout.starred_end_y {
-            let s = ((scroll_top - layout.starred_start_y).max(0.0) / layout.item_height).floor()
-                as usize;
-            let e = ((scroll_bottom - layout.starred_start_y).max(0.0) / layout.item_height).ceil()
-                as usize;
-            indices.extend(s..e.min(layout.fav_count));
-        }
+    //     // Calculate visible Starred items
+    //     if scroll_top < layout.starred_end_y {
+    //         let s = ((scroll_top - layout.starred_start_y).max(0.0) / layout.item_height).floor()
+    //             as usize;
+    //         let e = ((scroll_bottom - layout.starred_start_y).max(0.0) / layout.item_height).ceil()
+    //             as usize;
+    //         indices.extend(s..e.min(layout.fav_count));
+    //     }
 
-        // Calculate visible General items
-        if scroll_bottom > layout.general_start_y {
-            let s = ((scroll_top - layout.general_start_y).max(0.0) / layout.item_height).floor()
-                as usize;
-            let e = ((scroll_bottom - layout.general_start_y).max(0.0) / layout.item_height).ceil()
-                as usize;
-            let total = self.ranked_apps.len();
-            indices.extend((s + layout.fav_count)..(e + layout.fav_count).min(total));
-        }
+    //     // Calculate visible General items
+    //     if scroll_bottom > layout.general_start_y {
+    //         let s = ((scroll_top - layout.general_start_y).max(0.0) / layout.item_height).floor()
+    //             as usize;
+    //         let e = ((scroll_bottom - layout.general_start_y).max(0.0) / layout.item_height).ceil()
+    //             as usize;
+    //         let total = self.ranked_apps.len();
+    //         indices.extend((s + layout.fav_count)..(e + layout.fav_count).min(total));
+    //     }
 
-        self.preload_specific_range(indices)
-    }
+    //     self.preload_specific_range(indices)
+    // }
 
     pub fn update(&mut self, message: Message) -> Task<Message> {
         match message {
-            Message::AppsLoaded(apps) => {
-                self.cached_apps = apps;
-                self.ranked_apps = (0..self.cached_apps.len()).collect();
+            Message::PreloadEntries(apps) => {
+                self.cached_entries = apps;
+                self.ranked_entries = (0..self.cached_entries.len()).collect();
 
                 self.icons = BakedIcons {
                     enter: Some(image::Handle::from_bytes(ENTER)),
@@ -317,21 +358,21 @@ impl Lucien {
                 };
 
                 if !self.preferences.favorite_apps.is_empty() {
-                    self.ranked_apps.sort_by_key(|index| {
-                        let app = &self.cached_apps[*index];
-                        !self.preferences.favorite_apps.contains(&app.id)
+                    self.ranked_entries.sort_by_key(|index| {
+                        let app = &self.cached_entries[*index];
+                        !self.preferences.favorite_apps.contains(&app.id())
                     });
                 }
 
                 Task::none()
             }
-            Message::IconProcessed(app_index, state) => {
-                if let Some(app) = self.cached_apps.get_mut(app_index) {
-                    app.icon = state
-                }
+            // Message::IconProcessed(app_index, state) => {
+            //     if let Some(app) = self.cached_apps.get_mut(app_index) {
+            //         app.icon = state
+            //     }
 
-                Task::none()
-            }
+            //     Task::none()
+            // }
             Message::SaveIntoDisk(result) => {
                 match result {
                     Ok(path) => tracing::debug!("Preference saved into disk: {:?}", path),
@@ -351,16 +392,16 @@ impl Lucien {
                 Task::none()
             }
             Message::LaunchApp(index) => {
-                let Some(app_index) = self.ranked_apps.get(index) else {
+                let Some(app_index) = self.ranked_entries.get(index) else {
                     return Task::none();
                 };
 
-                let app = &self.cached_apps[*app_index];
+                let app = &self.cached_entries[*app_index];
 
                 match app.launch() {
                     Ok(_) => iced::exit(),
                     Err(e) => {
-                        tracing::error!("Failed to launch {}, due to: {}", app.id, e);
+                        tracing::error!("Failed to launch {}, due to: {}", app.id(), e);
                         Task::none()
                     }
                 }
@@ -396,16 +437,17 @@ impl Lucien {
                 let scroll_task =
                     scrollable::snap_to(SCROLLABLE_ID.clone(), RelativeOffset { x: 0.0, y: 0.0 });
 
-                let layout = AppLayout::new(&self.preferences, &self.prompt);
-                let preload_task = self.preload_visible_icons(&layout);
+                // let layout = AppLayout::new(&self.preferences, &self.prompt);
+                // let preload_task = self.preload_visible_icons(&layout);
 
-                Task::batch([scroll_task, preload_task])
+                Task::batch([scroll_task])
             }
             Message::MarkFavorite(index) => self.mark_favorite(index),
             Message::ScrollableViewport(viewport) => {
                 self.last_viewport = Some(viewport);
-                let layout = AppLayout::new(&self.preferences, &self.prompt);
-                self.preload_visible_icons(&layout)
+                Task::none()
+                // let layout = AppLayout::new(&self.preferences, &self.prompt);
+                // self.preload_visible_icons(&layout)
             }
             Message::SystemEvent(Event::Keyboard(keyboard::Event::KeyPressed {
                 key: Key::Named(key),
@@ -496,18 +538,18 @@ impl Lucien {
             general_column = Column::new();
         }
 
-        for (rank_pos, app_index) in self.ranked_apps.iter().enumerate() {
-            let app = &self.cached_apps[*app_index];
-            let is_favorite = self.preferences.favorite_apps.contains(&app.id);
+        for (rank_pos, app_index) in self.ranked_entries.iter().enumerate() {
+            let app = &self.cached_entries[*app_index];
+            let is_favorite = self.preferences.favorite_apps.contains(&app.id());
             let is_selected = self.selected_entry == rank_pos;
 
-            let icon_status = app.icon.hashable();
+            // let icon_status = app.icon.hashable();
             let item_height = theme.launchpad.entry.height;
             let style = &self.preferences.theme.launchpad.entry;
             let icons = &self.icons;
 
             let element: Element<Message, CustomTheme> = container(iced::widget::lazy(
-                (*app_index, is_selected, is_favorite, icon_status),
+                (*app_index, is_selected, is_favorite),
                 move |_| {
                     display_entry(
                         app,
@@ -546,7 +588,7 @@ impl Lucien {
         let content = Column::new()
             .push(starred_column)
             .push(general_column)
-            .push_maybe(self.ranked_apps.is_empty().then_some(results_not_found))
+            .push_maybe(self.ranked_entries.is_empty().then_some(results_not_found))
             .padding(theme.launchpad.padding)
             .width(Length::Fill);
         let results = iced::widget::scrollable(content)
