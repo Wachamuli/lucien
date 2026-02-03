@@ -113,7 +113,7 @@ impl App {
                 .pre_exec(|| {
                     nix::unistd::setsid()
                         .map(|_| ())
-                        .map_err(|e| io::Error::new(io::ErrorKind::PermissionDenied, e.desc()))
+                        .map_err(|e| io::Error::new(io::ErrorKind::PermissionDenied, e))
                 });
         }
 
@@ -132,7 +132,7 @@ impl Provider for AppProvider {
                     return None;
                 }
 
-                Some(AnyEntry::App(App {
+                Some(AnyEntry::AppEntry(App {
                     id: app.id().unwrap_or_default().to_string(),
                     commandline: app.commandline(),
                     name: app.name().to_string(),

@@ -6,7 +6,7 @@ use iced::{
 use crate::{
     launcher::{BakedIcons, Message},
     preferences::theme::{ButtonClass, CustomTheme, Entry as EntryStyle, TextClass},
-    providers::app::App,
+    providers::{app::App, file::File},
 };
 
 pub mod app;
@@ -18,32 +18,45 @@ pub trait Provider {
 
 #[derive(Debug, Clone)]
 pub enum AnyEntry {
-    App(App),
+    AppEntry(App),
+    FileEntry(File),
 }
 
 impl Entry for AnyEntry {
     fn id(&self) -> &str {
         match self {
-            AnyEntry::App(app) => &app.id,
+            AnyEntry::AppEntry(app) => &app.id,
+            AnyEntry::FileEntry(file) => file.path.to_str().unwrap_or_default(),
         }
     }
 
     fn main(&self) -> &str {
         match self {
-            AnyEntry::App(app) => &app.name,
+            AnyEntry::AppEntry(app) => &app.name,
+            AnyEntry::FileEntry(file) => file
+                .path
+                .file_name()
+                .unwrap_or_default()
+                .to_str()
+                .unwrap_or_default(),
         }
     }
 
     fn secondary(&self) -> Option<&str> {
         match self {
-            AnyEntry::App(app) => app.description.as_deref(),
+            AnyEntry::AppEntry(app) => app.description.as_deref(),
+            AnyEntry::FileEntry(file) => file.path.to_str(),
         }
     }
 
     fn launch(&self) -> anyhow::Result<()> {
         match self {
-            AnyEntry::App(app) => {
+            AnyEntry::AppEntry(app) => {
                 let _ = app.launch();
+                Ok(())
+            }
+            AnyEntry::FileEntry(file) => {
+                let _ = file.launch();
                 Ok(())
             }
         }

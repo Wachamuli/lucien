@@ -22,7 +22,10 @@ use crate::{
         theme::{ContainerClass, CustomTheme, TextClass},
     },
     prompt::Prompt,
-    providers::{AnyEntry, Entry, Provider, ProviderKind, app::AppProvider, display_entry},
+    providers::{
+        AnyEntry, Entry, Provider, ProviderKind, app::AppProvider, display_entry,
+        file::FileProvider,
+    },
 };
 
 const SECTION_HEIGHT: f32 = 36.0;
@@ -45,11 +48,6 @@ static STAR_INACTIVE: &[u8] = include_bytes!("../assets/star-line.png");
 // static TERMINAL_PROMPT_INACTIVE: &[u8] = include_bytes!("../assets/mynaui--terminal.png");
 // static FOLDER_INACTIVE: &[u8] = include_bytes!("../assets/proicons--folder.png");
 // static CLIPBOARD_INACTIVE: &[u8] = include_bytes!("../assets/tabler--clipboard.png");
-
-struct ProviderMode {
-    kind: ProviderKind,
-    entries: Vec<AnyEntry>,
-}
 
 pub struct Lucien {
     current_provider: ProviderKind,
@@ -90,7 +88,7 @@ pub struct BakedIcons {
 impl Lucien {
     pub fn init(preferences: Preferences) -> (Self, Task<Message>) {
         let auto_focus_prompt_task = text_input::focus(TEXT_INPUT_ID.clone());
-        let scan_task = Task::perform(async { AppProvider::scan() }, Message::PreloadEntries);
+        let scan_task = Task::perform(async { FileProvider::scan() }, Message::PreloadEntries);
         let initial_tasks = Task::batch([auto_focus_prompt_task, scan_task]);
 
         let initial_values = Self {
