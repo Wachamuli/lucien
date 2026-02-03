@@ -16,7 +16,7 @@ pub struct App {
 }
 
 fn get_icon_path_from_xdgicon(iconname: &PathBuf) -> Option<PathBuf> {
-    if iconname.starts_with("/") || iconname.starts_with("\\") {
+    if iconname.is_absolute() {
         return Some(PathBuf::from(iconname));
     }
 
@@ -48,7 +48,7 @@ fn get_icon_path_from_xdgicon(iconname: &PathBuf) -> Option<PathBuf> {
     None
 }
 
-fn rasterize_svg(path: PathBuf, size: u32) -> Option<image::Handle> {
+fn rasterize_svg(path: PathBuf, size: u32) -> Option<tiny_skia::Pixmap> {
     let svg_data = std::fs::read(path).ok()?;
     let tree = usvg::Tree::from_data(&svg_data, &usvg::Options::default()).ok()?;
 
@@ -59,21 +59,24 @@ fn rasterize_svg(path: PathBuf, size: u32) -> Option<image::Handle> {
     );
 
     resvg::render(&tree, transform, &mut pixmap.as_mut());
-    Some(image::Handle::from_rgba(size, size, pixmap.data().to_vec()))
+    Some(pixmap)
 }
 
-fn load_raster_icon(icon: &PathBuf) -> Option<image::Handle> {
-    let path = get_icon_path_from_xdgicon(icon)?;
+fn load_raster_icon(path: &PathBuf, size: u32) -> Option<image::Handle> {
+    let path = get_icon_path_from_xdgicon(path)?;
     let extension = path.extension()?.to_str()?;
 
     match extension {
-        "svg" => rasterize_svg(path, 64),
-        "png" | "jpg" | "jpeg" => Some(image::Handle::from_path(path)),
+        "svg" => {
+            let pixmap = rasterize_svg(path, size)?;
+            Some(image::Handle::from_rgba(size, size, pixmap.data().to_vec()))
+        }
+        "png" => Some(image::Handle::from_path(path)),
         _ => None,
     }
 }
 
-pub fn load_icon_sync(path: &PathBuf) -> Option<image::Handle> {
+pub fn load_icon_sync(path: &PathBuf, size: u32) -> Option<image::Handle> {
     use std::collections::HashMap;
     use std::sync::OnceLock;
 
@@ -87,7 +90,7 @@ pub fn load_icon_sync(path: &PathBuf) -> Option<image::Handle> {
         return cached.clone();
     }
 
-    let handle = load_raster_icon(path);
+    let handle = load_raster_icon(path, size);
     cache.insert(path.clone(), handle.clone());
     handle
 }

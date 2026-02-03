@@ -4,7 +4,7 @@ use iced::{
 };
 
 use crate::{
-    launcher::{BakedIcons, Message},
+    launcher::{BakedIcons, MAGNIFIER, Message, STAR_ACTIVE},
     preferences::theme::{ButtonClass, CustomTheme, Entry as EntryStyle, TextClass},
     providers::{app::App, file::File},
 };
@@ -14,6 +14,14 @@ pub mod file;
 
 pub trait Provider {
     fn scan() -> Vec<AnyEntry>;
+}
+
+pub trait Entry {
+    fn id(&self) -> &str;
+    fn main(&self) -> &str;
+    fn secondary(&self) -> Option<&str>;
+    fn launch(&self) -> anyhow::Result<()>;
+    fn icon(&self, style: &EntryStyle) -> Element<'_, Message, CustomTheme>;
 }
 
 #[derive(Debug, Clone)]
@@ -61,17 +69,41 @@ impl Entry for AnyEntry {
             }
         }
     }
+
+    fn icon(&self, style: &EntryStyle) -> Element<'_, Message, CustomTheme> {
+        match self {
+            AnyEntry::AppEntry(app) => {
+                if let Some(icon_path) = &app.icon {
+                    match app::load_icon_sync(icon_path, style.icon_size as u32) {
+                        Some(handle) => image(handle)
+                            .width(style.icon_size)
+                            .height(style.icon_size)
+                            .into(),
+                        None => iced::widget::horizontal_space().width(0).into(),
+                    }
+                } else {
+                    iced::widget::horizontal_space().width(0).into()
+                }
+            }
+            AnyEntry::FileEntry(file) => {
+                if file.is_dir {
+                    image(image::Handle::from_bytes(MAGNIFIER))
+                        .width(style.icon_size)
+                        .height(style.icon_size)
+                        .into()
+                } else {
+                    image(image::Handle::from_bytes(STAR_ACTIVE))
+                        .width(style.icon_size)
+                        .height(style.icon_size)
+                        .into()
+                }
+            }
+        }
+    }
 }
 
 pub enum ProviderKind {
     Apps,
-}
-
-pub trait Entry {
-    fn id(&self) -> &str;
-    fn main(&self) -> &str;
-    fn secondary(&self) -> Option<&str>;
-    fn launch(&self) -> anyhow::Result<()>;
 }
 
 pub fn display_entry<'a>(
@@ -82,18 +114,6 @@ pub fn display_entry<'a>(
     is_selected: bool,
     is_favorite: bool,
 ) -> Element<'a, Message, CustomTheme> {
-    // let icon_view: Element<'_, Message, CustomTheme> = if let Some(icon_path) = &self.icon {
-    //     match app::load_icon_sync(icon_path) {
-    //         Some(handle) => image(handle)
-    //             .width(style.icon_size)
-    //             .height(style.icon_size)
-    //             .into(),
-    //         None => iced::widget::horizontal_space().width(0).into(),
-    //     }
-    // } else {
-    //     iced::widget::horizontal_space().width(0).into()
-    // };
-
     let shortcut_widget: Element<'a, Message, CustomTheme> = match &icons.enter {
         Some(handle) => image(handle).width(18).height(18).into(),
         None => iced::widget::horizontal_space().width(18).height(18).into(),
@@ -137,7 +157,7 @@ pub fn display_entry<'a>(
 
     button(
         row![
-            // icon_view,
+            entry.icon(style),
             iced::widget::column![
                 text(entry.main())
                     .size(style.font_size)

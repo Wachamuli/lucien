@@ -35,9 +35,9 @@ static SCROLLABLE_ID: LazyLock<scrollable::Id> = std::sync::LazyLock::new(scroll
 // static DEBOUNCER_ID: LazyLock<task::Id> = std::sync::LazyLock::new(scrollable::Id::unique);
 
 // #EBECF2
-static MAGNIFIER: &[u8] = include_bytes!("../assets/magnifier.png");
+pub static MAGNIFIER: &[u8] = include_bytes!("../assets/magnifier.png");
 static ENTER: &[u8] = include_bytes!("../assets/enter.png");
-static STAR_ACTIVE: &[u8] = include_bytes!("../assets/star-fill.png");
+pub static STAR_ACTIVE: &[u8] = include_bytes!("../assets/star-fill.png");
 static STAR_INACTIVE: &[u8] = include_bytes!("../assets/star-line.png");
 
 // static CUBE_ACTIVE: &[u8] = include_bytes!("../assets/tabler--cube-active.png");
@@ -88,7 +88,7 @@ pub struct BakedIcons {
 impl Lucien {
     pub fn init(preferences: Preferences) -> (Self, Task<Message>) {
         let auto_focus_prompt_task = text_input::focus(TEXT_INPUT_ID.clone());
-        let scan_task = Task::perform(async { FileProvider::scan() }, Message::PreloadEntries);
+        let scan_task = Task::perform(async { AppProvider::scan() }, Message::PreloadEntries);
         let initial_tasks = Task::batch([auto_focus_prompt_task, scan_task]);
 
         let initial_values = Self {
