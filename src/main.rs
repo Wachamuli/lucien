@@ -47,7 +47,7 @@ fn main() -> anyhow::Result<()> {
 
     let layershell_settings = LayerShellSettings {
         size: Some((700, 500)),
-        anchor: Anchor::Bottom | Anchor::Left | Anchor::Right | Anchor::Top,
+        anchor: Anchor::empty(),
         keyboard_interactivity: KeyboardInteractivity::Exclusive,
         layer: Layer::Overlay,
         ..Default::default()
