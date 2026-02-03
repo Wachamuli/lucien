@@ -22,11 +22,7 @@ use crate::{
         theme::{ContainerClass, CustomTheme, TextClass},
     },
     prompt::Prompt,
-    providers::{
-        Entry, Provider,
-        app::{App, AppProvider},
-        display_entry,
-    },
+    providers::{AnyEntry, Entry, Provider, ProviderKind, app::AppProvider, display_entry},
 };
 
 const SECTION_HEIGHT: f32 = 36.0;
@@ -50,39 +46,9 @@ static STAR_INACTIVE: &[u8] = include_bytes!("../assets/star-line.png");
 // static FOLDER_INACTIVE: &[u8] = include_bytes!("../assets/proicons--folder.png");
 // static CLIPBOARD_INACTIVE: &[u8] = include_bytes!("../assets/tabler--clipboard.png");
 
-#[derive(Debug, Clone)]
-enum AnyEntry {
-    App(App),
-}
-
-impl Entry for AnyEntry {
-    fn id(&self) -> String {
-        match self {
-            AnyEntry::App(app) => app.id.clone(),
-        }
-    }
-
-    fn main(&self) -> String {
-        match self {
-            AnyEntry::App(app) => app.name.clone(),
-        }
-    }
-
-    fn secondary(&self) -> Option<String> {
-        match self {
-            AnyEntry::App(app) => app.description.clone(),
-        }
-    }
-
-    fn launch(&self) -> anyhow::Result<()> {
-        match self {
-            AnyEntry::App(app) => app.launch(),
-        }
-    }
-}
-
-enum ProviderKind {
-    Apps,
+struct ProviderMode {
+    kind: ProviderKind,
+    entries: Vec<AnyEntry>,
 }
 
 pub struct Lucien {
@@ -90,10 +56,8 @@ pub struct Lucien {
     prompt: String,
     matcher: SkimMatcherV2,
     keyboard_modifiers: keyboard::Modifiers,
-
     cached_entries: Vec<AnyEntry>,
     ranked_entries: Vec<usize>,
-
     preferences: Preferences,
     selected_entry: usize,
     last_viewport: Option<Viewport>,
@@ -105,14 +69,11 @@ pub struct Lucien {
 #[derive(Debug, Clone)]
 pub enum Message {
     PreloadEntries(Vec<AnyEntry>),
-    // IconProcessed(usize, IconState),
     PromptChange(String),
     DebouncedFilter,
-    LaunchApp(usize),
+    LaunchEntry(usize),
     MarkFavorite(usize),
-
     Keybinding(keyboard::Key, keyboard::Modifiers),
-
     ScrollableViewport(Viewport),
     SystemEvent(iced::Event),
     SaveIntoDisk(Result<PathBuf, Arc<tokio::io::Error>>),
@@ -129,10 +90,7 @@ pub struct BakedIcons {
 impl Lucien {
     pub fn init(preferences: Preferences) -> (Self, Task<Message>) {
         let auto_focus_prompt_task = text_input::focus(TEXT_INPUT_ID.clone());
-        let scan_task = Task::perform(
-            async { AppProvider::scan().into_iter().map(AnyEntry::App).collect() },
-            Message::PreloadEntries,
-        );
+        let scan_task = Task::perform(async { AppProvider::scan() }, Message::PreloadEntries);
         let initial_tasks = Task::batch([auto_focus_prompt_task, scan_task]);
 
         let initial_values = Self {
@@ -170,8 +128,8 @@ impl Lucien {
         ranked.sort_by(|(score_a, index_a), (score_b, index_b)| {
             let app_a = &self.cached_entries[*index_a];
             let app_b = &self.cached_entries[*index_b];
-            let a_is_fav = self.preferences.favorite_apps.contains(&app_a.id());
-            let b_is_fav = self.preferences.favorite_apps.contains(&app_b.id());
+            let a_is_fav = self.preferences.favorite_apps.contains(app_a.id());
+            let b_is_fav = self.preferences.favorite_apps.contains(app_b.id());
 
             match (a_is_fav, b_is_fav) {
                 (true, false) => std::cmp::Ordering::Less,
@@ -201,7 +159,7 @@ impl Lucien {
         // Toggle_favorite is a very opaque function. It actually
         // modifies the in-memory favorite_apps variable.
         // Maybe I should expose this assignnment operation at this level.
-        let favorite_apps = self.preferences.toggle_favorite(id);
+        let favorite_apps = self.preferences.toggle_favorite(*id);
         self.update_ranked_apps();
 
         Task::perform(
@@ -246,7 +204,7 @@ impl Lucien {
         let is_fav = self
             .preferences
             .favorite_apps
-            .contains(&self.cached_entries[app_idx].id());
+            .contains(self.cached_entries[app_idx].id());
         let selection_top = layout.y_for_index(self.selected_entry, is_fav);
         let selection_bottom = selection_top + layout.item_height;
 
@@ -307,7 +265,7 @@ impl Lucien {
                 if !self.preferences.favorite_apps.is_empty() {
                     self.ranked_entries.sort_by_key(|index| {
                         let app = &self.cached_entries[*index];
-                        !self.preferences.favorite_apps.contains(&app.id())
+                        !self.preferences.favorite_apps.contains(app.id())
                     });
                 }
 
@@ -331,17 +289,17 @@ impl Lucien {
 
                 Task::none()
             }
-            Message::LaunchApp(index) => {
-                let Some(app_index) = self.ranked_entries.get(index) else {
+            Message::LaunchEntry(index) => {
+                let Some(entry_index) = self.ranked_entries.get(index) else {
                     return Task::none();
                 };
 
-                let app = &self.cached_entries[*app_index];
+                let entry = &self.cached_entries[*entry_index];
 
-                match app.launch() {
+                match entry.launch() {
                     Ok(_) => iced::exit(),
                     Err(e) => {
-                        tracing::error!("Failed to launch {}, due to: {}", app.id(), e);
+                        tracing::error!("Failed to launch {}, due to: {}", entry.id(), e);
                         Task::none()
                     }
                 }
@@ -421,11 +379,11 @@ impl Lucien {
                     }),
                     _,
                 ) if modifiers.alt() => match physical_key_pressed {
-                    keyboard::key::Code::Digit1 => Some(Message::LaunchApp(0)),
-                    keyboard::key::Code::Digit2 => Some(Message::LaunchApp(1)),
-                    keyboard::key::Code::Digit3 => Some(Message::LaunchApp(2)),
-                    keyboard::key::Code::Digit4 => Some(Message::LaunchApp(3)),
-                    keyboard::key::Code::Digit5 => Some(Message::LaunchApp(4)),
+                    keyboard::key::Code::Digit1 => Some(Message::LaunchEntry(0)),
+                    keyboard::key::Code::Digit2 => Some(Message::LaunchEntry(1)),
+                    keyboard::key::Code::Digit3 => Some(Message::LaunchEntry(2)),
+                    keyboard::key::Code::Digit4 => Some(Message::LaunchEntry(3)),
+                    keyboard::key::Code::Digit5 => Some(Message::LaunchEntry(4)),
                     _ => None,
                 },
                 (Event::Keyboard(keyboard::Event::KeyPressed { key, modifiers, .. }), _) => {
@@ -471,30 +429,40 @@ impl Lucien {
         }
 
         for (rank_pos, app_index) in self.ranked_entries.iter().enumerate() {
-            let app = &self.cached_entries[*app_index];
-            let is_favorite = self.preferences.favorite_apps.contains(&app.id());
+            let entry = &self.cached_entries[*app_index];
+            let is_favorite = self.preferences.favorite_apps.contains(entry.id());
             let is_selected = self.selected_entry == rank_pos;
 
             let item_height = theme.launchpad.entry.height;
             let style = &self.preferences.theme.launchpad.entry;
-            let icons = &self.icons;
 
-            let element: Element<Message, CustomTheme> = container(iced::widget::lazy(
-                (*app_index, is_selected, is_favorite),
-                move |_| {
-                    display_entry(
-                        app,
-                        icons,
-                        style,
-                        rank_pos,
-                        self.selected_entry,
-                        is_favorite,
-                    )
-                },
+            let element = container(display_entry(
+                entry,
+                &self.icons,
+                style,
+                rank_pos,
+                is_selected,
+                is_favorite,
             ))
             .height(item_height)
-            .width(Length::Fill)
-            .into();
+            .width(Length::Fill);
+
+            // let element: Element<Message, CustomTheme> = container(iced::widget::lazy(
+            //     (*app_index, is_selected, is_favorite),
+            //     move |_| {
+            //         display_entry(
+            //             entry,
+            //             &self.icons,
+            //             style,
+            //             rank_pos,
+            //             is_selected,
+            //             is_favorite,
+            //         )
+            //     },
+            // ))
+            // .height(item_height)
+            // .width(Length::Fill)
+            // .into();
 
             if is_favorite && self.prompt.is_empty() {
                 starred_column = starred_column.push(element);
@@ -530,7 +498,7 @@ impl Lucien {
             .magnifier(self.icons.magnifier.as_ref())
             .id(TEXT_INPUT_ID.clone())
             .on_input(Message::PromptChange)
-            .on_submit(Message::LaunchApp(self.selected_entry))
+            .on_submit(Message::LaunchEntry(self.selected_entry))
             .view();
 
         container(iced::widget::column![

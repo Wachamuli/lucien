@@ -4,7 +4,7 @@ use iced::widget::image;
 use resvg::{tiny_skia, usvg};
 use std::{io, os::unix::process::CommandExt, path::PathBuf, process};
 
-use crate::providers::{Entry, Provider};
+use crate::providers::{AnyEntry, Provider};
 
 #[derive(Debug, Clone)]
 pub struct App {
@@ -92,75 +92,39 @@ pub fn load_icon_sync(path: &PathBuf) -> Option<image::Handle> {
     handle
 }
 
-pub fn launch(app: &App) -> io::Result<process::Child> {
-    let raw_cmd = app.commandline.as_ref().ok_or_else(|| {
-        std::io::Error::new(std::io::ErrorKind::NotFound, "No command line found")
-    })?;
-    let clean_cmd = raw_cmd
-        .to_str()
-        .unwrap_or("")
-        .split_whitespace()
-        .filter(|arg| !arg.starts_with('%'))
-        .collect::<Vec<_>>()
-        .join(" ");
-    let mut shell = process::Command::new("sh");
+impl App {
+    pub fn launch(&self) -> io::Result<process::Child> {
+        let raw_cmd = self.commandline.as_ref().ok_or_else(|| {
+            std::io::Error::new(std::io::ErrorKind::NotFound, "No command line found.")
+        })?;
+        let clean_cmd = raw_cmd
+            .to_str()
+            .unwrap_or("")
+            .split_whitespace()
+            .filter(|arg| !arg.starts_with('%'))
+            .collect::<Vec<_>>()
+            .join(" ");
+        let mut shell = process::Command::new("sh");
 
-    unsafe {
-        shell
-            .arg("-c")
-            .arg(format!("{} &", clean_cmd))
-            .pre_exec(|| {
-                nix::unistd::setsid()
-                    .map(|_| ())
-                    .map_err(|e| io::Error::new(io::ErrorKind::PermissionDenied, e.desc()))
-            });
-    }
+        unsafe {
+            shell
+                .arg("-c")
+                .arg(format!("{} &", clean_cmd))
+                .pre_exec(|| {
+                    nix::unistd::setsid()
+                        .map(|_| ())
+                        .map_err(|e| io::Error::new(io::ErrorKind::PermissionDenied, e.desc()))
+                });
+        }
 
-    shell.spawn()
-}
-
-impl Entry for &App {
-    fn id(&self) -> String {
-        self.id.clone()
-    }
-    fn main(&self) -> String {
-        self.name.clone()
-    }
-
-    fn secondary(&self) -> Option<String> {
-        self.description.clone()
-    }
-
-    fn launch(&self) -> anyhow::Result<()> {
-        launch(self);
-        Ok(())
-    }
-}
-
-impl Entry for App {
-    fn id(&self) -> String {
-        self.id.clone()
-    }
-    fn main(&self) -> String {
-        self.name.clone()
-    }
-
-    fn secondary(&self) -> Option<String> {
-        self.description.clone()
-    }
-
-    fn launch(&self) -> anyhow::Result<()> {
-        launch(self);
-        Ok(())
+        shell.spawn()
     }
 }
 
 pub struct AppProvider;
 
 impl Provider for AppProvider {
-    type Entry = App;
-
-    fn scan() -> Vec<App> {
+    fn scan() -> Vec<AnyEntry> {
         gio::AppInfo::all()
             .iter()
             .filter_map(|app| {
@@ -168,13 +132,13 @@ impl Provider for AppProvider {
                     return None;
                 }
 
-                Some(App {
+                Some(AnyEntry::App(App {
                     id: app.id().unwrap_or_default().to_string(),
                     commandline: app.commandline(),
                     name: app.name().to_string(),
                     description: app.description().map(String::from),
                     icon: app.icon().and_then(|p| p.to_string()).map(PathBuf::from),
-                })
+                }))
             })
             .collect()
     }

@@ -6,34 +6,69 @@ use iced::{
 use crate::{
     launcher::{BakedIcons, Message},
     preferences::theme::{ButtonClass, CustomTheme, Entry as EntryStyle, TextClass},
+    providers::app::App,
 };
 
 pub mod app;
 pub mod file;
 
 pub trait Provider {
-    type Entry: Entry;
+    fn scan() -> Vec<AnyEntry>;
+}
 
-    fn scan() -> Vec<Self::Entry>;
+#[derive(Debug, Clone)]
+pub enum AnyEntry {
+    App(App),
+}
+
+impl Entry for AnyEntry {
+    fn id(&self) -> &str {
+        match self {
+            AnyEntry::App(app) => &app.id,
+        }
+    }
+
+    fn main(&self) -> &str {
+        match self {
+            AnyEntry::App(app) => &app.name,
+        }
+    }
+
+    fn secondary(&self) -> Option<&str> {
+        match self {
+            AnyEntry::App(app) => app.description.as_deref(),
+        }
+    }
+
+    fn launch(&self) -> anyhow::Result<()> {
+        match self {
+            AnyEntry::App(app) => {
+                let _ = app.launch();
+                Ok(())
+            }
+        }
+    }
+}
+
+pub enum ProviderKind {
+    Apps,
 }
 
 pub trait Entry {
-    fn id(&self) -> String;
-    fn main(&self) -> String;
-    fn secondary(&self) -> Option<String>;
+    fn id(&self) -> &str;
+    fn main(&self) -> &str;
+    fn secondary(&self) -> Option<&str>;
     fn launch(&self) -> anyhow::Result<()>;
 }
 
-pub fn display_entry(
-    entry: &impl Entry,
-    icons: &BakedIcons,
-    style: &EntryStyle,
+pub fn display_entry<'a>(
+    entry: &'a impl Entry,
+    icons: &'a BakedIcons,
+    style: &'a EntryStyle,
     index: usize,
-    current_index: usize,
+    is_selected: bool,
     is_favorite: bool,
-) -> Element<'static, Message, CustomTheme> {
-    let is_selected = current_index == index;
-
+) -> Element<'a, Message, CustomTheme> {
     // let icon_view: Element<'_, Message, CustomTheme> = if let Some(icon_path) = &self.icon {
     //     match app::load_icon_sync(icon_path) {
     //         Some(handle) => image(handle)
@@ -46,12 +81,12 @@ pub fn display_entry(
     //     iced::widget::horizontal_space().width(0).into()
     // };
 
-    let shortcut_widget: Element<'static, Message, CustomTheme> = match &icons.enter {
+    let shortcut_widget: Element<'a, Message, CustomTheme> = match &icons.enter {
         Some(handle) => image(handle).width(18).height(18).into(),
         None => iced::widget::horizontal_space().width(18).height(18).into(),
     };
 
-    let shortcut_label: Element<'static, Message, CustomTheme> = if is_selected {
+    let shortcut_label: Element<'a, Message, CustomTheme> = if is_selected {
         shortcut_widget
     } else if index < 5 {
         text(format!("Alt+{}", index + 1))
@@ -68,7 +103,7 @@ pub fn display_entry(
         &icons.star_inactive
     };
 
-    let mark_favorite: Element<'static, Message, CustomTheme> = match star_handle {
+    let mark_favorite: Element<'a, Message, CustomTheme> = match star_handle {
         Some(handle) => button(image(handle).width(18).height(18))
             .on_press(Message::MarkFavorite(index))
             .class(ButtonClass::Transparent)
@@ -81,8 +116,8 @@ pub fn display_entry(
         .push(shortcut_label)
         .align_y(Alignment::Center);
 
-    let description = entry.secondary().as_ref().map(|desc| {
-        text(desc.clone())
+    let description = entry.secondary().map(|desc| {
+        text(desc)
             .size(style.secondary_font_size)
             .class(TextClass::SecondaryText)
     });
@@ -91,7 +126,7 @@ pub fn display_entry(
         row![
             // icon_view,
             iced::widget::column![
-                text(entry.main().clone())
+                text(entry.main())
                     .size(style.font_size)
                     .width(Length::Fill)
                     .font(iced::Font {
@@ -106,7 +141,7 @@ pub fn display_entry(
         .spacing(12)
         .align_y(iced::Alignment::Center),
     )
-    .on_press(Message::LaunchApp(index))
+    .on_press(Message::LaunchEntry(index))
     .padding(iced::Padding::from(&style.padding))
     .height(style.height)
     .width(Length::Fill)
