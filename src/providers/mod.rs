@@ -1,12 +1,17 @@
+use std::path::PathBuf;
+
 use iced::{
     Alignment, Element, Length,
     widget::{button, image, row, text},
 };
 
 use crate::{
-    launcher::{BakedIcons, MAGNIFIER, Message, STAR_ACTIVE},
+    launcher::{BakedIcons, Message},
     preferences::theme::{ButtonClass, CustomTheme, Entry as EntryStyle, TextClass},
-    providers::{app::App, file::File},
+    providers::{
+        app::{App, get_icon_path_from_xdgicon},
+        file::File,
+    },
 };
 
 pub mod app;
@@ -73,8 +78,33 @@ impl Entry for AnyEntry {
     fn icon(&self, style: &EntryStyle) -> Element<'_, Message, CustomTheme> {
         match self {
             AnyEntry::AppEntry(app) => {
-                if let Some(icon_path) = &app.icon {
-                    match app::load_icon_sync(icon_path, style.icon_size as u32) {
+                if let Some(iconname) = &app.icon {
+                    if let Some(icon_path) = get_icon_path_from_xdgicon(iconname) {
+                        match app::load_icon_with_cache(&icon_path, style.icon_size as u32) {
+                            Some(handle) => image(handle)
+                                .width(style.icon_size)
+                                .height(style.icon_size)
+                                .into(),
+                            None => iced::widget::horizontal_space().width(0).into(),
+                        }
+                    } else {
+                        iced::widget::horizontal_space().width(0).into()
+                    }
+                } else {
+                    iced::widget::horizontal_space().width(0).into()
+                }
+            }
+            AnyEntry::FileEntry(file) => {
+                let dir_icon_path =
+                    "/usr/share/icons/Adwaita/scalable/mimetypes/inode-directory.svg";
+                let file_icon_path =
+                    "/usr/share/icons/Adwaita/scalable/mimetypes/application-x-generic.svg";
+
+                if file.is_dir {
+                    match app::load_icon_with_cache(
+                        &PathBuf::from(dir_icon_path),
+                        style.icon_size as u32,
+                    ) {
                         Some(handle) => image(handle)
                             .width(style.icon_size)
                             .height(style.icon_size)
@@ -82,20 +112,17 @@ impl Entry for AnyEntry {
                         None => iced::widget::horizontal_space().width(0).into(),
                     }
                 } else {
-                    iced::widget::horizontal_space().width(0).into()
-                }
-            }
-            AnyEntry::FileEntry(file) => {
-                if file.is_dir {
-                    image(image::Handle::from_bytes(MAGNIFIER))
-                        .width(style.icon_size)
-                        .height(style.icon_size)
-                        .into()
-                } else {
-                    image(image::Handle::from_bytes(STAR_ACTIVE))
-                        .width(style.icon_size)
-                        .height(style.icon_size)
-                        .into()
+                    println!("This is a file");
+                    match app::load_icon_with_cache(
+                        &PathBuf::from(file_icon_path),
+                        style.icon_size as u32,
+                    ) {
+                        Some(handle) => image(handle)
+                            .width(style.icon_size)
+                            .height(style.icon_size)
+                            .into(),
+                        None => iced::widget::horizontal_space().width(0).into(),
+                    }
                 }
             }
         }

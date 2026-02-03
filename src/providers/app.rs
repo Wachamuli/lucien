@@ -15,7 +15,7 @@ pub struct App {
     pub icon: Option<PathBuf>,
 }
 
-fn get_icon_path_from_xdgicon(iconname: &PathBuf) -> Option<PathBuf> {
+pub fn get_icon_path_from_xdgicon(iconname: &PathBuf) -> Option<PathBuf> {
     if iconname.is_absolute() {
         return Some(PathBuf::from(iconname));
     }
@@ -48,7 +48,7 @@ fn get_icon_path_from_xdgicon(iconname: &PathBuf) -> Option<PathBuf> {
     None
 }
 
-fn rasterize_svg(path: PathBuf, size: u32) -> Option<tiny_skia::Pixmap> {
+fn rasterize_svg(path: &PathBuf, size: u32) -> Option<tiny_skia::Pixmap> {
     let svg_data = std::fs::read(path).ok()?;
     let tree = usvg::Tree::from_data(&svg_data, &usvg::Options::default()).ok()?;
 
@@ -63,7 +63,6 @@ fn rasterize_svg(path: PathBuf, size: u32) -> Option<tiny_skia::Pixmap> {
 }
 
 fn load_raster_icon(path: &PathBuf, size: u32) -> Option<image::Handle> {
-    let path = get_icon_path_from_xdgicon(path)?;
     let extension = path.extension()?.to_str()?;
 
     match extension {
@@ -76,7 +75,7 @@ fn load_raster_icon(path: &PathBuf, size: u32) -> Option<image::Handle> {
     }
 }
 
-pub fn load_icon_sync(path: &PathBuf, size: u32) -> Option<image::Handle> {
+pub fn load_icon_with_cache(path: &PathBuf, size: u32) -> Option<image::Handle> {
     use std::collections::HashMap;
     use std::sync::OnceLock;
 
