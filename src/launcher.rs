@@ -88,7 +88,11 @@ impl Lucien {
         let default_provider = ProviderKind::File(FileProvider);
         let default_provider_clone = default_provider.clone();
         let scan_task = Task::perform(
-            async move { default_provider_clone.scan(&"/home/wachamuli".into()) },
+            async move {
+                default_provider_clone
+                    .handler()
+                    .scan(&"/home/wachamuli".into())
+            },
             Message::PreloadEntries,
         );
         let initial_tasks = Task::batch([auto_focus_prompt_task, scan_task]);
@@ -303,13 +307,13 @@ impl Lucien {
                     return Task::perform(
                         async move {
                             println!("{}", path.display());
-                            provider_clone.scan(&path)
+                            provider_clone.handler().scan(&path)
                         },
                         Message::PreloadEntries,
                     );
                 }
 
-                match self.provider.launch(&entry.id) {
+                match self.provider.handler().launch(&entry.id) {
                     Ok(_) => iced::exit(),
                     Err(e) => {
                         tracing::error!("Failed to launch {}, due to: {}", entry.id, e);
@@ -449,7 +453,7 @@ impl Lucien {
 
             let item_height = theme.launchpad.entry.height;
             let style = &self.preferences.theme.launchpad.entry;
-            let icon = self.provider.get_icon(entry.icon.clone(), style);
+            let icon = self.provider.handler().get_icon(entry.icon.clone(), style);
 
             let element = container(display_entry(
                 entry,

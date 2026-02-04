@@ -10,7 +10,7 @@ use super::{Entry, Provider};
 pub struct FileProvider;
 
 impl Provider for FileProvider {
-    fn scan(dir: &PathBuf) -> Vec<Entry> {
+    fn scan(&self, dir: &PathBuf) -> Vec<Entry> {
         std::fs::read_dir(dir)
             .unwrap()
             .map(|entry| {
@@ -31,7 +31,7 @@ impl Provider for FileProvider {
             .collect::<Vec<_>>()
     }
 
-    fn launch(id: &str) -> anyhow::Result<()> {
+    fn launch(&self, id: &str) -> anyhow::Result<()> {
         let mut shell = Command::new("sh");
 
         unsafe {
@@ -50,6 +50,7 @@ impl Provider for FileProvider {
     }
 
     fn get_icon<'a>(
+        &self,
         path: Option<PathBuf>,
         style: &crate::preferences::theme::Entry,
     ) -> iced::Element<'a, crate::launcher::Message, crate::preferences::theme::CustomTheme> {

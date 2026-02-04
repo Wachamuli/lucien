@@ -21,37 +21,22 @@ pub enum ProviderKind {
 }
 
 impl ProviderKind {
-    pub fn scan(&self, dir: &PathBuf) -> Vec<Entry> {
+    pub fn handler(&self) -> &dyn Provider {
         match self {
-            ProviderKind::App(_) => AppProvider::scan(dir),
-            ProviderKind::File(_) => FileProvider::scan(dir),
-        }
-    }
-
-    pub fn launch(&self, id: &str) -> anyhow::Result<()> {
-        match self {
-            ProviderKind::App(_) => AppProvider::launch(id),
-            ProviderKind::File(_) => FileProvider::launch(id),
-        }
-    }
-
-    pub fn get_icon<'a>(
-        &self,
-        path: Option<PathBuf>,
-        style: &EntryStyle,
-    ) -> Element<'a, Message, CustomTheme> {
-        match self {
-            ProviderKind::App(_) => AppProvider::get_icon(path, style),
-            ProviderKind::File(_) => FileProvider::get_icon(path, style),
+            ProviderKind::App(p) => p,
+            ProviderKind::File(p) => p,
         }
     }
 }
 
 pub trait Provider {
-    fn scan(dir: &PathBuf) -> Vec<Entry>;
-    fn launch(id: &str) -> anyhow::Result<()>;
-    fn get_icon<'a>(path: Option<PathBuf>, style: &EntryStyle)
-    -> Element<'a, Message, CustomTheme>;
+    fn scan(&self, dir: &PathBuf) -> Vec<Entry>;
+    fn launch(&self, id: &str) -> anyhow::Result<()>;
+    fn get_icon<'a>(
+        &self,
+        path: Option<PathBuf>,
+        style: &EntryStyle,
+    ) -> Element<'a, Message, CustomTheme>;
 }
 
 #[derive(Debug, Clone)]

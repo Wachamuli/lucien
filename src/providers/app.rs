@@ -12,7 +12,7 @@ use super::{Entry, Provider};
 pub struct AppProvider;
 
 impl Provider for AppProvider {
-    fn scan(_dir: &PathBuf) -> Vec<Entry> {
+    fn scan(&self, _dir: &PathBuf) -> Vec<Entry> {
         gio::AppInfo::all()
             .iter()
             .filter_map(|app| {
@@ -30,7 +30,7 @@ impl Provider for AppProvider {
             .collect()
     }
 
-    fn launch(id: &str) -> anyhow::Result<()> {
+    fn launch(&self, id: &str) -> anyhow::Result<()> {
         let clean_cmd = id
             .split_whitespace()
             .filter(|arg| !arg.starts_with('%'))
@@ -54,6 +54,7 @@ impl Provider for AppProvider {
     }
 
     fn get_icon<'a>(
+        &self,
         path: Option<PathBuf>,
         style: &EntryStyle,
     ) -> iced::Element<'a, crate::launcher::Message, crate::preferences::theme::CustomTheme> {
