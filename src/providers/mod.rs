@@ -14,13 +14,14 @@ use crate::{
 pub mod app;
 pub mod file;
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Copy)]
 pub enum ProviderKind {
     App(AppProvider),
     File(FileProvider),
 }
 
 impl ProviderKind {
+    // TODO: Replace dynamic dispatch with monomorphization
     pub fn handler(&self) -> &dyn Provider {
         match self {
             ProviderKind::App(p) => p,

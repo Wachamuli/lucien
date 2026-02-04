@@ -86,13 +86,8 @@ impl Lucien {
     pub fn init(preferences: Preferences) -> (Self, Task<Message>) {
         let auto_focus_prompt_task = text_input::focus(TEXT_INPUT_ID.clone());
         let default_provider = ProviderKind::File(FileProvider);
-        let default_provider_clone = default_provider.clone();
         let scan_task = Task::perform(
-            async move {
-                default_provider_clone
-                    .handler()
-                    .scan(&"/home/wachamuli".into())
-            },
+            async move { default_provider.handler().scan(&"/home/wachamuli".into()) },
             Message::PreloadEntries,
         );
         let initial_tasks = Task::batch([auto_focus_prompt_task, scan_task]);

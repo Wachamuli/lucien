@@ -6,7 +6,7 @@ use crate::providers::app::load_icon_with_cache;
 
 use super::{Entry, Provider};
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Copy)]
 pub struct FileProvider;
 
 impl Provider for FileProvider {
