@@ -5,7 +5,7 @@ use std::{
 
 use fuzzy_matcher::{FuzzyMatcher, skim::SkimMatcherV2};
 use iced::{
-    Alignment, Element, Event, Length, Subscription, Task, event,
+    Alignment, Event, Length, Subscription, Task, event,
     keyboard::{self, Key},
     widget::{
         Column, Container, container, image,
@@ -22,7 +22,7 @@ use crate::{
         theme::{ContainerClass, CustomTheme, TextClass},
     },
     prompt::Prompt,
-    providers::{Entry, Provider, app::AppProvider, display_entry, file::FileProvider},
+    providers::{Entry, ProviderKind, app::AppProvider, display_entry, file::FileProvider},
 };
 
 const SECTION_HEIGHT: f32 = 36.0;
@@ -46,6 +46,7 @@ static STAR_INACTIVE: &[u8] = include_bytes!("../assets/star-line.png");
 // static CLIPBOARD_INACTIVE: &[u8] = include_bytes!("../assets/tabler--clipboard.png");
 
 pub struct Lucien {
+    provider: ProviderKind,
     prompt: String,
     matcher: SkimMatcherV2,
     keyboard_modifiers: keyboard::Modifiers,
@@ -84,15 +85,16 @@ pub struct BakedIcons {
 impl Lucien {
     pub fn init(preferences: Preferences) -> (Self, Task<Message>) {
         let auto_focus_prompt_task = text_input::focus(TEXT_INPUT_ID.clone());
-        // file_scanner("/home/wachamuli".into())
-        // let scan_task = Task::perform(async { FileProvider::scan() }, Message::PreloadEntries);
+        let default_provider = ProviderKind::File(FileProvider);
+        let default_provider_clone = default_provider.clone();
         let scan_task = Task::perform(
-            async { FileProvider::scan(&"/home/wachamuli".into()) },
+            async move { default_provider_clone.scan(&"/home/wachamuli".into()) },
             Message::PreloadEntries,
         );
         let initial_tasks = Task::batch([auto_focus_prompt_task, scan_task]);
 
         let initial_values = Self {
+            provider: default_provider,
             prompt: String::new(),
             matcher: SkimMatcherV2::default(),
             keyboard_modifiers: keyboard::Modifiers::empty(),
@@ -294,18 +296,20 @@ impl Lucien {
 
                 let entry = &self.cached_entries[*entry_index];
 
+                let provider_clone = self.provider.clone();
+
                 let path = PathBuf::from(entry.secondary.as_ref().unwrap());
-                if (path.is_dir()) {
+                if path.is_dir() {
                     return Task::perform(
                         async move {
                             println!("{}", path.display());
-                            FileProvider::scan(&path)
+                            provider_clone.scan(&path)
                         },
                         Message::PreloadEntries,
                     );
                 }
 
-                match FileProvider::launch(&entry.id) {
+                match self.provider.launch(&entry.id) {
                     Ok(_) => iced::exit(),
                     Err(e) => {
                         tracing::error!("Failed to launch {}, due to: {}", entry.id, e);
@@ -445,7 +449,7 @@ impl Lucien {
 
             let item_height = theme.launchpad.entry.height;
             let style = &self.preferences.theme.launchpad.entry;
-            let icon = FileProvider::get_icon(entry.icon.clone(), style);
+            let icon = self.provider.get_icon(entry.icon.clone(), style);
 
             let element = container(display_entry(
                 entry,

@@ -8,6 +8,7 @@ use crate::preferences::theme::Entry as EntryStyle;
 
 use super::{Entry, Provider};
 
+#[derive(Debug, Clone)]
 pub struct AppProvider;
 
 impl Provider for AppProvider {

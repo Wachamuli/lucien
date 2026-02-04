@@ -8,10 +8,44 @@ use iced::{
 use crate::{
     launcher::{BakedIcons, Message},
     preferences::theme::{ButtonClass, CustomTheme, Entry as EntryStyle, TextClass},
+    providers::{app::AppProvider, file::FileProvider},
 };
 
 pub mod app;
 pub mod file;
+
+#[derive(Debug, Clone)]
+pub enum ProviderKind {
+    App(AppProvider),
+    File(FileProvider),
+}
+
+impl ProviderKind {
+    pub fn scan(&self, dir: &PathBuf) -> Vec<Entry> {
+        match self {
+            ProviderKind::App(_) => AppProvider::scan(dir),
+            ProviderKind::File(_) => FileProvider::scan(dir),
+        }
+    }
+
+    pub fn launch(&self, id: &str) -> anyhow::Result<()> {
+        match self {
+            ProviderKind::App(_) => AppProvider::launch(id),
+            ProviderKind::File(_) => FileProvider::launch(id),
+        }
+    }
+
+    pub fn get_icon<'a>(
+        &self,
+        path: Option<PathBuf>,
+        style: &EntryStyle,
+    ) -> Element<'a, Message, CustomTheme> {
+        match self {
+            ProviderKind::App(_) => AppProvider::get_icon(path, style),
+            ProviderKind::File(_) => FileProvider::get_icon(path, style),
+        }
+    }
+}
 
 pub trait Provider {
     fn scan(dir: &PathBuf) -> Vec<Entry>;
