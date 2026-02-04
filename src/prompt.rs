@@ -11,6 +11,7 @@ pub struct Prompt<'a, Message> {
     style: &'a CustomTheme,
     on_input: Option<Box<dyn Fn(String) -> Message + 'a>>,
     on_submit: Option<Message>,
+    indicator: Option<Container<'a, Message, CustomTheme>>,
     id: Option<text_input::Id>,
 }
 
@@ -25,6 +26,7 @@ where
             magnifier: None,
             on_input: None,
             on_submit: None,
+            indicator: None,
             id: None,
         }
     }
@@ -46,6 +48,11 @@ where
 
     pub fn magnifier(mut self, image: &'a image::Handle) -> Self {
         self.magnifier = Some(image);
+        self
+    }
+
+    pub fn indicator(mut self, content: Container<'a, Message, CustomTheme>) -> Self {
+        self.indicator = Some(content);
         self
     }
 
@@ -84,6 +91,7 @@ where
         let prompt: Element<Message, CustomTheme> = row![]
             .push(magnifier)
             .push(input)
+            .push_maybe(self.indicator)
             .align_y(iced::Alignment::Center)
             .spacing(2)
             .into();

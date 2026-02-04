@@ -33,16 +33,15 @@ static SCROLLABLE_ID: LazyLock<scrollable::Id> = std::sync::LazyLock::new(scroll
 // #EBECF2
 static MAGNIFIER: &[u8] = include_bytes!("../assets/magnifier.png");
 static ENTER: &[u8] = include_bytes!("../assets/enter.png");
-static STAR_ACTIVE: &[u8] = include_bytes!("../assets/star-fill.png");
-static STAR_INACTIVE: &[u8] = include_bytes!("../assets/star-line.png");
 
+static STAR_ACTIVE: &[u8] = include_bytes!("../assets/star-fill.png");
 static CUBE_ACTIVE: &[u8] = include_bytes!("../assets/tabler--cube-active.png");
-static TERMINAL_PROMPT_ACTIVE: &[u8] = include_bytes!("../assets/mynaui--terminal-active.png");
+static FOLDER_ACTIVE: &[u8] = include_bytes!("../assets/proicons--folder.png");
 
 // // #808080
 static CUBE_INACTIVE: &[u8] = include_bytes!("../assets/tabler--cube.png");
-static TERMINAL_PROMPT_INACTIVE: &[u8] = include_bytes!("../assets/mynaui--terminal.png");
-// static FOLDER_INACTIVE: &[u8] = include_bytes!("../assets/proicons--folder.png");
+static FOLDER_INACTIVE: &[u8] = include_bytes!("../assets/proicons--folder-inactive.png");
+static STAR_INACTIVE: &[u8] = include_bytes!("../assets/star-line.png");
 // static CLIPBOARD_INACTIVE: &[u8] = include_bytes!("../assets/tabler--clipboard.png");
 
 pub struct Lucien {
@@ -520,6 +519,7 @@ impl Lucien {
             .id(SCROLLABLE_ID.clone());
 
         let prompt = Prompt::new(&self.prompt, &self.preferences.theme)
+            .indicator(self.provider_indicator())
             .magnifier(&self.icons.magnifier)
             .id(TEXT_INPUT_ID.clone())
             .on_input(Message::PromptChange)
@@ -534,7 +534,7 @@ impl Lucien {
         .class(ContainerClass::MainContainer)
     }
 
-    fn provider_indicator<'a>(&'a self) -> Container<'a, Message> {
+    fn provider_indicator<'a>(&'a self) -> Container<'a, Message, CustomTheme> {
         use iced::widget::image;
 
         let launcher_icon = match self.provider {
@@ -543,8 +543,8 @@ impl Lucien {
         };
 
         let terminal_icon = match self.provider {
-            ProviderKind::File(_) => TERMINAL_PROMPT_ACTIVE,
-            _ => TERMINAL_PROMPT_INACTIVE,
+            ProviderKind::File(_) => FOLDER_ACTIVE,
+            _ => FOLDER_INACTIVE,
         };
 
         container(
