@@ -22,7 +22,7 @@ use crate::{
         theme::{ContainerClass, CustomTheme, TextClass},
     },
     prompt::Prompt,
-    providers::{Entry, ProviderKind, app::AppProvider, display_entry, file::FileProvider},
+    providers::{Entry, ProviderKind, app::AppProvider, display_entry},
 };
 
 const SECTION_HEIGHT: f32 = 36.0;
@@ -85,7 +85,7 @@ pub struct BakedIcons {
 impl Lucien {
     pub fn init(preferences: Preferences) -> (Self, Task<Message>) {
         let auto_focus_prompt_task = text_input::focus(TEXT_INPUT_ID.clone());
-        let default_provider = ProviderKind::File(FileProvider);
+        let default_provider = ProviderKind::App(AppProvider);
         let scan_task = Task::perform(
             async move { default_provider.handler().scan(&"/home/wachamuli".into()) },
             Message::PreloadEntries,
@@ -448,11 +448,14 @@ impl Lucien {
 
             let item_height = theme.launchpad.entry.height;
             let style = &self.preferences.theme.launchpad.entry;
-            let icon = self.provider.handler().get_icon(entry.icon.clone(), style);
+            let icon_handle = entry
+                .icon
+                .as_ref()
+                .and_then(|e| self.provider.handler().get_icon(&e, style.icon_size as u32));
 
             let element = container(display_entry(
                 entry,
-                icon,
+                icon_handle,
                 &self.icons,
                 style,
                 rank_pos,

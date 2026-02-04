@@ -49,31 +49,15 @@ impl Provider for FileProvider {
         Ok(())
     }
 
-    fn get_icon<'a>(
-        &self,
-        path: Option<PathBuf>,
-        style: &crate::preferences::theme::Entry,
-    ) -> iced::Element<'a, crate::launcher::Message, crate::preferences::theme::CustomTheme> {
+    fn get_icon(&self, path: &PathBuf, size: u32) -> Option<image::Handle> {
         let dir_icon_path = "/usr/share/icons/Adwaita/scalable/mimetypes/inode-directory.svg";
         let file_icon_path =
             "/usr/share/icons/Adwaita/scalable/mimetypes/application-x-generic.svg";
 
-        if path.unwrap().is_dir() {
-            match load_icon_with_cache(&PathBuf::from(dir_icon_path), style.icon_size as u32) {
-                Some(handle) => image(handle)
-                    .width(style.icon_size)
-                    .height(style.icon_size)
-                    .into(),
-                None => iced::widget::horizontal_space().width(0).into(),
-            }
-        } else {
-            match load_icon_with_cache(&PathBuf::from(file_icon_path), style.icon_size as u32) {
-                Some(handle) => image(handle)
-                    .width(style.icon_size)
-                    .height(style.icon_size)
-                    .into(),
-                None => iced::widget::horizontal_space().width(0).into(),
-            }
+        if path.is_dir() {
+            return load_icon_with_cache(&PathBuf::from(dir_icon_path), size);
         }
+
+        load_icon_with_cache(&PathBuf::from(file_icon_path), size)
     }
 }

@@ -8,7 +8,7 @@ use iced::{
 use crate::{
     launcher::{BakedIcons, Message},
     preferences::theme::{ButtonClass, CustomTheme, Entry as EntryStyle, TextClass},
-    providers::{app::AppProvider, file::FileProvider},
+    providers::app::AppProvider,
 };
 
 pub mod app;
@@ -17,7 +17,7 @@ pub mod file;
 #[derive(Debug, Clone, Copy)]
 pub enum ProviderKind {
     App(AppProvider),
-    File(FileProvider),
+    // File(FileProvider),
 }
 
 impl ProviderKind {
@@ -25,7 +25,7 @@ impl ProviderKind {
     pub fn handler(&self) -> &dyn Provider {
         match self {
             ProviderKind::App(p) => p,
-            ProviderKind::File(p) => p,
+            // ProviderKind::File(p) => p,
         }
     }
 }
@@ -33,11 +33,7 @@ impl ProviderKind {
 pub trait Provider {
     fn scan(&self, dir: &PathBuf) -> Vec<Entry>;
     fn launch(&self, id: &str) -> anyhow::Result<()>;
-    fn get_icon<'a>(
-        &self,
-        path: Option<PathBuf>,
-        style: &EntryStyle,
-    ) -> Element<'a, Message, CustomTheme>;
+    fn get_icon(&self, path: &PathBuf, size: u32) -> Option<image::Handle>;
 }
 
 #[derive(Debug, Clone)]
@@ -61,7 +57,7 @@ impl Entry {
 
 pub fn display_entry<'a>(
     entry: &'a Entry,
-    icon: Element<'a, Message, CustomTheme>,
+    icon: Option<image::Handle>,
     baked_icons: &'a BakedIcons,
     style: &'a EntryStyle,
     index: usize,
@@ -109,9 +105,17 @@ pub fn display_entry<'a>(
             .class(TextClass::SecondaryText)
     });
 
+    let icon_view: Element<'a, Message, CustomTheme> = match icon {
+        Some(handle) => image(handle)
+            .width(style.icon_size)
+            .height(style.icon_size)
+            .into(),
+        None => iced::widget::horizontal_space().width(0).into(),
+    };
+
     button(
         row![
-            icon,
+            icon_view,
             iced::widget::column![
                 text(&entry.main)
                     .size(style.font_size)

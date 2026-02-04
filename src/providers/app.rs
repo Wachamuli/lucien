@@ -4,8 +4,6 @@ use iced::widget::image;
 use resvg::{tiny_skia, usvg};
 use std::{io, os::unix::process::CommandExt, path::PathBuf, process};
 
-use crate::preferences::theme::Entry as EntryStyle;
-
 use super::{Entry, Provider};
 
 #[derive(Debug, Clone, Copy)]
@@ -53,31 +51,14 @@ impl Provider for AppProvider {
         Ok(())
     }
 
-    fn get_icon<'a>(
-        &self,
-        path: Option<PathBuf>,
-        style: &EntryStyle,
-    ) -> iced::Element<'a, crate::launcher::Message, crate::preferences::theme::CustomTheme> {
-        if let Some(iconname) = &path {
-            if let Some(icon_path) = get_icon_path_from_xdgicon(iconname) {
-                match load_icon_with_cache(&icon_path, style.icon_size as u32) {
-                    Some(handle) => image(handle)
-                        .width(style.icon_size)
-                        .height(style.icon_size)
-                        .into(),
-                    None => iced::widget::horizontal_space().width(0).into(),
-                }
-            } else {
-                iced::widget::horizontal_space().width(0).into()
-            }
-        } else {
-            iced::widget::horizontal_space().width(0).into()
-        }
+    fn get_icon(&self, path: &PathBuf, size: u32) -> Option<image::Handle> {
+        let icon_path = get_icon_path_from_xdgicon(path)?;
+        load_icon_with_cache(&icon_path, size)
     }
 }
 
 pub fn get_icon_path_from_xdgicon(iconname: &PathBuf) -> Option<PathBuf> {
-    if iconname.is_absolute() {
+    if iconname.is_absolute() && iconname.exists() {
         return Some(PathBuf::from(iconname));
     }
 
