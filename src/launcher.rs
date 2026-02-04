@@ -62,7 +62,6 @@ pub struct Lucien {
 #[to_layer_message]
 #[derive(Debug, Clone)]
 pub enum Message {
-    ReScan,
     PopulateEntries(Vec<Entry>),
     PromptChange(String),
     DebouncedFilter,
@@ -85,12 +84,12 @@ pub struct BakedIcons {
 impl Lucien {
     pub fn init(preferences: Preferences) -> (Self, Task<Message>) {
         let auto_focus_prompt_task = text_input::focus(TEXT_INPUT_ID.clone());
-        let default_provider = ProviderKind::File(FileProvider);
-
+        let default_provider = ProviderKind::App(AppProvider);
         let scan_task = Task::perform(
             async move { default_provider.handler().scan(&"/home/wachamuli".into()) },
             Message::PopulateEntries,
         );
+        let initial_tasks = Task::batch([auto_focus_prompt_task, scan_task]);
 
         let baked_icons = BakedIcons {
             enter: image::Handle::from_bytes(ENTER),
@@ -98,8 +97,6 @@ impl Lucien {
             star_active: image::Handle::from_bytes(STAR_ACTIVE),
             star_inactive: image::Handle::from_bytes(STAR_INACTIVE),
         };
-
-        let initial_tasks = Task::batch([auto_focus_prompt_task, scan_task]);
 
         let initial_values = Self {
             provider: default_provider,
@@ -257,6 +254,30 @@ impl Lucien {
         )
     }
 
+    fn swtich_provider(&mut self) -> Task<Message> {
+        match self.prompt.as_str() {
+            "@" => {
+                self.prompt = "".to_string();
+                self.provider = ProviderKind::App(AppProvider);
+                let provider_clone = self.provider.clone();
+                Task::perform(
+                    async move { provider_clone.handler().scan(&"/home/wachamuli".into()) },
+                    Message::PopulateEntries,
+                )
+            }
+            "/" => {
+                self.prompt = "".to_string();
+                self.provider = ProviderKind::File(FileProvider);
+                let provider_clone = self.provider.clone();
+                Task::perform(
+                    async move { provider_clone.handler().scan(&"/home/wachamuli".into()) },
+                    Message::PopulateEntries,
+                )
+            }
+            _ => Task::none(),
+        }
+    }
+
     pub fn update(&mut self, message: Message) -> Task<Message> {
         match message {
             Message::PopulateEntries(entries) => {
@@ -299,7 +320,6 @@ impl Lucien {
 
                 self.provider.handler().launch(&entry.id)
             }
-            Message::ReScan => Task::none(),
             Message::PromptChange(prompt) => {
                 if self.keyboard_modifiers.alt() {
                     return Task::none();
@@ -311,11 +331,15 @@ impl Lucien {
                     handle.abort();
                 }
 
+                if self.prompt == "/" || self.prompt == "@" {
+                    return self.swtich_provider();
+                }
+
                 if self.prompt.is_empty() {
                     return Task::done(Message::DebouncedFilter);
                 }
 
-                let (task, handle) = Task::future(async move {
+                let (task, handle) = Task::future(async {
                     tokio::time::sleep(std::time::Duration::from_millis(100)).await;
                     Message::DebouncedFilter
                 })

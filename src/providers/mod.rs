@@ -31,6 +31,7 @@ impl ProviderKind {
 }
 
 pub trait Provider {
+    // Maybe this function should return a Task<Message::PopulateEntries>?
     fn scan(&self, dir: &PathBuf) -> Vec<Entry>;
     // Maybe, launch could consume self? But I have to get rid of dynamic dispatch first.
     // I could avoid couple clones doing this.
@@ -56,6 +57,30 @@ impl Entry {
         }
     }
 }
+
+// fn swtich_provider(prefix: &str, prompt: &mut ) -> Task<Message> {
+//     match prefix {
+//         "@" => {
+//             self.prompt = "".to_string();
+//             self.provider = ProviderKind::App(AppProvider);
+//             let provider_clone = self.provider.clone();
+//             Task::perform(
+//                 async move { provider_clone.handler().scan(&"/home/wachamuli".into()) },
+//                 Message::PopulateEntries,
+//             )
+//         }
+//         "/" => {
+//             self.prompt = "".to_string();
+//             self.provider = ProviderKind::File(FileProvider);
+//             let provider_clone = self.provider.clone();
+//             Task::perform(
+//                 async move { provider_clone.handler().scan(&"/home/wachamuli".into()) },
+//                 Message::PopulateEntries,
+//             )
+//         }
+//         _ => Task::none(),
+//     }
+// }
 
 pub fn display_entry<'a>(
     entry: &'a Entry,
