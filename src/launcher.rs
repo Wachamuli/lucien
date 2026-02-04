@@ -8,7 +8,7 @@ use iced::{
     Alignment, Event, Length, Subscription, Task, event,
     keyboard::{self, Key},
     widget::{
-        Column, Container, container, image,
+        Column, Container, container, image, row,
         scrollable::{self, RelativeOffset, Viewport},
         text, text_input,
     },
@@ -36,12 +36,12 @@ static ENTER: &[u8] = include_bytes!("../assets/enter.png");
 static STAR_ACTIVE: &[u8] = include_bytes!("../assets/star-fill.png");
 static STAR_INACTIVE: &[u8] = include_bytes!("../assets/star-line.png");
 
-// static CUBE_ACTIVE: &[u8] = include_bytes!("../assets/tabler--cube-active.png");
-// static TERMINAL_PROMPT_ACTIVE: &[u8] = include_bytes!("../assets/mynaui--terminal-active.png");
+static CUBE_ACTIVE: &[u8] = include_bytes!("../assets/tabler--cube-active.png");
+static TERMINAL_PROMPT_ACTIVE: &[u8] = include_bytes!("../assets/mynaui--terminal-active.png");
 
 // // #808080
-// static CUBE_INACTIVE: &[u8] = include_bytes!("../assets/tabler--cube.png");
-// static TERMINAL_PROMPT_INACTIVE: &[u8] = include_bytes!("../assets/mynaui--terminal.png");
+static CUBE_INACTIVE: &[u8] = include_bytes!("../assets/tabler--cube.png");
+static TERMINAL_PROMPT_INACTIVE: &[u8] = include_bytes!("../assets/mynaui--terminal.png");
 // static FOLDER_INACTIVE: &[u8] = include_bytes!("../assets/proicons--folder.png");
 // static CLIPBOARD_INACTIVE: &[u8] = include_bytes!("../assets/tabler--clipboard.png");
 
@@ -63,7 +63,7 @@ pub struct Lucien {
 #[derive(Debug, Clone)]
 pub enum Message {
     ReScan,
-    PreloadEntries(Vec<Entry>),
+    PopulateEntries(Vec<Entry>),
     PromptChange(String),
     DebouncedFilter,
     LaunchEntry(usize),
@@ -74,22 +74,31 @@ pub enum Message {
     SaveIntoDisk(Result<PathBuf, Arc<tokio::io::Error>>),
 }
 
-#[derive(Debug, Default, Clone)]
+#[derive(Debug, Clone)]
 pub struct BakedIcons {
-    pub magnifier: Option<image::Handle>,
-    pub star_active: Option<image::Handle>,
-    pub star_inactive: Option<image::Handle>,
-    pub enter: Option<image::Handle>,
+    pub magnifier: image::Handle,
+    pub star_active: image::Handle,
+    pub star_inactive: image::Handle,
+    pub enter: image::Handle,
 }
 
 impl Lucien {
     pub fn init(preferences: Preferences) -> (Self, Task<Message>) {
         let auto_focus_prompt_task = text_input::focus(TEXT_INPUT_ID.clone());
         let default_provider = ProviderKind::File(FileProvider);
+
         let scan_task = Task::perform(
             async move { default_provider.handler().scan(&"/home/wachamuli".into()) },
-            Message::PreloadEntries,
+            Message::PopulateEntries,
         );
+
+        let baked_icons = BakedIcons {
+            enter: image::Handle::from_bytes(ENTER),
+            magnifier: image::Handle::from_bytes(MAGNIFIER),
+            star_active: image::Handle::from_bytes(STAR_ACTIVE),
+            star_inactive: image::Handle::from_bytes(STAR_INACTIVE),
+        };
+
         let initial_tasks = Task::batch([auto_focus_prompt_task, scan_task]);
 
         let initial_values = Self {
@@ -103,7 +112,7 @@ impl Lucien {
             selected_entry: 0,
             last_viewport: None,
             search_handle: None,
-            icons: BakedIcons::default(),
+            icons: baked_icons,
         };
 
         (initial_values, initial_tasks)
@@ -250,16 +259,9 @@ impl Lucien {
 
     pub fn update(&mut self, message: Message) -> Task<Message> {
         match message {
-            Message::PreloadEntries(apps) => {
-                self.cached_entries = apps;
+            Message::PopulateEntries(entries) => {
+                self.cached_entries = entries;
                 self.ranked_entries = (0..self.cached_entries.len()).collect();
-
-                self.icons = BakedIcons {
-                    enter: Some(image::Handle::from_bytes(ENTER)),
-                    magnifier: Some(image::Handle::from_bytes(MAGNIFIER)),
-                    star_active: Some(image::Handle::from_bytes(STAR_ACTIVE)),
-                    star_inactive: Some(image::Handle::from_bytes(STAR_INACTIVE)),
-                };
 
                 if !self.preferences.favorite_apps.is_empty() {
                     self.ranked_entries.sort_by_key(|index| {
@@ -494,7 +496,7 @@ impl Lucien {
             .id(SCROLLABLE_ID.clone());
 
         let prompt = Prompt::new(&self.prompt, &self.preferences.theme)
-            .magnifier(self.icons.magnifier.as_ref())
+            .magnifier(&self.icons.magnifier)
             .id(TEXT_INPUT_ID.clone())
             .on_input(Message::PromptChange)
             .on_submit(Message::LaunchEntry(self.selected_entry))
@@ -508,31 +510,31 @@ impl Lucien {
         .class(ContainerClass::MainContainer)
     }
 
-    // fn status_indicator<'a>(&'a self) -> Container<'a, Message> {
-    //     use iced::widget::image;
+    fn provider_indicator<'a>(&'a self) -> Container<'a, Message> {
+        use iced::widget::image;
 
-    //     let launcher_icon = match self.mode {
-    //         Mode::Launcher => CUBE_ACTIVE,
-    //         _ => CUBE_INACTIVE,
-    //     };
+        let launcher_icon = match self.provider {
+            ProviderKind::App(_) => CUBE_ACTIVE,
+            _ => CUBE_INACTIVE,
+        };
 
-    //     let terminal_icon = match self.mode {
-    //         Mode::Terminal => TERMINAL_PROMPT_ACTIVE,
-    //         _ => TERMINAL_PROMPT_INACTIVE,
-    //     };
+        let terminal_icon = match self.provider {
+            ProviderKind::File(_) => TERMINAL_PROMPT_ACTIVE,
+            _ => TERMINAL_PROMPT_INACTIVE,
+        };
 
-    //     container(
-    //         row![
-    //             image(image::Handle::from_bytes(launcher_icon))
-    //                 .width(18)
-    //                 .height(18),
-    //             image(image::Handle::from_bytes(terminal_icon))
-    //                 .width(18)
-    //                 .height(18),
-    //         ]
-    //         .spacing(10),
-    //     )
-    // }
+        container(
+            row![
+                image(image::Handle::from_bytes(launcher_icon))
+                    .width(18)
+                    .height(18),
+                image(image::Handle::from_bytes(terminal_icon))
+                    .width(18)
+                    .height(18),
+            ]
+            .spacing(10),
+        )
+    }
 }
 
 fn wrapped_index(index: usize, array_len: usize, step: isize) -> usize {

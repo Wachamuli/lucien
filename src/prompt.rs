@@ -44,8 +44,8 @@ where
         self
     }
 
-    pub fn magnifier(mut self, image: Option<&'a image::Handle>) -> Self {
-        self.magnifier = image;
+    pub fn magnifier(mut self, image: &'a image::Handle) -> Self {
+        self.magnifier = Some(image);
         self
     }
 

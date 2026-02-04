@@ -37,7 +37,7 @@ impl Provider for FileProvider {
         if path.is_dir() {
             return Task::perform(
                 async move { provider_clone.scan(&path) },
-                Message::PreloadEntries,
+                Message::PopulateEntries,
             );
         }
 

@@ -66,10 +66,8 @@ pub fn display_entry<'a>(
     is_selected: bool,
     is_favorite: bool,
 ) -> Element<'a, Message, CustomTheme> {
-    let shortcut_widget: Element<'a, Message, CustomTheme> = match &baked_icons.enter {
-        Some(handle) => image(handle).width(18).height(18).into(),
-        None => iced::widget::horizontal_space().width(18).height(18).into(),
-    };
+    let shortcut_widget: Element<'a, Message, CustomTheme> =
+        image(&baked_icons.enter).width(18).height(18).into();
 
     let shortcut_label: Element<'a, Message, CustomTheme> = if is_selected {
         shortcut_widget
@@ -88,13 +86,11 @@ pub fn display_entry<'a>(
         &baked_icons.star_inactive
     };
 
-    let mark_favorite: Element<'a, Message, CustomTheme> = match star_handle {
-        Some(handle) => button(image(handle).width(18).height(18))
+    let mark_favorite: Element<'a, Message, CustomTheme> =
+        button(image(star_handle).width(18).height(18))
             .on_press(Message::MarkFavorite(index))
             .class(ButtonClass::Transparent)
-            .into(),
-        None => iced::widget::horizontal_space().width(18).height(18).into(),
-    };
+            .into();
 
     let actions = row![]
         .push_maybe(is_selected.then_some(mark_favorite))
