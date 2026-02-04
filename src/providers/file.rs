@@ -1,26 +1,42 @@
-use std::{
-    io,
-    os::unix::process::CommandExt,
-    path::PathBuf,
-    process::{self, Command},
-};
+use std::{io, os::unix::process::CommandExt, path::PathBuf, process::Command};
 
-use super::Provider;
+use iced::widget::image;
 
-#[derive(Debug, Clone)]
-pub struct File {
-    pub path: PathBuf,
-    pub is_dir: bool,
-}
+use crate::providers::app::load_icon_with_cache;
 
-impl File {
-    pub fn launch(&self) -> io::Result<process::Child> {
+use super::{Entry, Provider};
+
+pub struct FileProvider;
+
+impl Provider for FileProvider {
+    fn scan(dir: &PathBuf) -> Vec<Entry> {
+        std::fs::read_dir(dir)
+            .unwrap()
+            .map(|entry| {
+                let entry = entry.unwrap();
+                let path = entry.path();
+
+                Entry::new(
+                    path.to_str().unwrap_or_default().to_string(),
+                    path.file_name()
+                        .unwrap_or_default()
+                        .to_str()
+                        .unwrap_or_default()
+                        .to_string(),
+                    Some(path.to_str().unwrap_or_default().to_string()),
+                    Some(path),
+                )
+            })
+            .collect::<Vec<_>>()
+    }
+
+    fn launch(id: &str) -> anyhow::Result<()> {
         let mut shell = Command::new("sh");
 
         unsafe {
             shell
                 .arg("-c")
-                .arg(format!("xdg-open {path} &", path = self.path.display()))
+                .arg(format!("xdg-open {path} &", path = id))
                 .pre_exec(|| {
                     nix::unistd::setsid()
                         .map(|_| ())
@@ -28,36 +44,34 @@ impl File {
                 });
         }
 
-        shell.spawn()
+        shell.spawn();
+        Ok(())
     }
-}
 
-pub struct FileProvider;
+    fn get_icon<'a>(
+        path: Option<PathBuf>,
+        style: &crate::preferences::theme::Entry,
+    ) -> iced::Element<'a, crate::launcher::Message, crate::preferences::theme::CustomTheme> {
+        let dir_icon_path = "/usr/share/icons/Adwaita/scalable/mimetypes/inode-directory.svg";
+        let file_icon_path =
+            "/usr/share/icons/Adwaita/scalable/mimetypes/application-x-generic.svg";
 
-impl Provider for FileProvider {
-    fn scan() -> Vec<super::AnyEntry> {
-        std::fs::read_dir("/home/wachamuli")
-            .unwrap()
-            .map(|entry| {
-                let entry = entry.unwrap();
-                let path = entry.path();
-                let is_dir = path.is_dir();
-
-                super::AnyEntry::FileEntry(File { path, is_dir })
-            })
-            .collect::<Vec<_>>()
+        if path.unwrap().is_dir() {
+            match load_icon_with_cache(&PathBuf::from(dir_icon_path), style.icon_size as u32) {
+                Some(handle) => image(handle)
+                    .width(style.icon_size)
+                    .height(style.icon_size)
+                    .into(),
+                None => iced::widget::horizontal_space().width(0).into(),
+            }
+        } else {
+            match load_icon_with_cache(&PathBuf::from(file_icon_path), style.icon_size as u32) {
+                Some(handle) => image(handle)
+                    .width(style.icon_size)
+                    .height(style.icon_size)
+                    .into(),
+                None => iced::widget::horizontal_space().width(0).into(),
+            }
+        }
     }
-}
-
-pub fn file_scanner(dir: PathBuf) -> Vec<super::AnyEntry> {
-    std::fs::read_dir(dir)
-        .unwrap()
-        .map(|entry| {
-            let entry = entry.unwrap();
-            let path = entry.path();
-            let is_dir = path.is_dir();
-
-            super::AnyEntry::FileEntry(File { path, is_dir })
-        })
-        .collect::<Vec<_>>()
 }

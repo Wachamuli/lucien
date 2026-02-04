@@ -4,15 +4,74 @@ use iced::widget::image;
 use resvg::{tiny_skia, usvg};
 use std::{io, os::unix::process::CommandExt, path::PathBuf, process};
 
-use crate::providers::{AnyEntry, Provider};
+use crate::preferences::theme::Entry as EntryStyle;
 
-#[derive(Debug, Clone)]
-pub struct App {
-    commandline: Option<PathBuf>,
-    pub id: String,
-    pub name: String,
-    pub description: Option<String>,
-    pub icon: Option<PathBuf>,
+use super::{Entry, Provider};
+
+pub struct AppProvider;
+
+impl Provider for AppProvider {
+    fn scan(_dir: &PathBuf) -> Vec<Entry> {
+        gio::AppInfo::all()
+            .iter()
+            .filter_map(|app| {
+                if !app.should_show() {
+                    return None;
+                }
+
+                Some(Entry {
+                    id: app.commandline()?.to_str()?.to_string(),
+                    main: app.name().to_string(),
+                    secondary: app.description().map(String::from),
+                    icon: app.icon().and_then(|p| p.to_string()).map(PathBuf::from),
+                })
+            })
+            .collect()
+    }
+
+    fn launch(id: &str) -> anyhow::Result<()> {
+        let clean_cmd = id
+            .split_whitespace()
+            .filter(|arg| !arg.starts_with('%'))
+            .collect::<Vec<_>>()
+            .join(" ");
+        let mut shell = process::Command::new("sh");
+
+        unsafe {
+            shell
+                .arg("-c")
+                .arg(format!("{} &", clean_cmd))
+                .pre_exec(|| {
+                    nix::unistd::setsid()
+                        .map(|_| ())
+                        .map_err(|e| io::Error::new(io::ErrorKind::PermissionDenied, e))
+                });
+        }
+
+        shell.spawn();
+        Ok(())
+    }
+
+    fn get_icon<'a>(
+        path: Option<PathBuf>,
+        style: &EntryStyle,
+    ) -> iced::Element<'a, crate::launcher::Message, crate::preferences::theme::CustomTheme> {
+        if let Some(iconname) = &path {
+            if let Some(icon_path) = get_icon_path_from_xdgicon(iconname) {
+                match load_icon_with_cache(&icon_path, style.icon_size as u32) {
+                    Some(handle) => image(handle)
+                        .width(style.icon_size)
+                        .height(style.icon_size)
+                        .into(),
+                    None => iced::widget::horizontal_space().width(0).into(),
+                }
+            } else {
+                iced::widget::horizontal_space().width(0).into()
+            }
+        } else {
+            iced::widget::horizontal_space().width(0).into()
+        }
+    }
 }
 
 pub fn get_icon_path_from_xdgicon(iconname: &PathBuf) -> Option<PathBuf> {
@@ -92,56 +151,4 @@ pub fn load_icon_with_cache(path: &PathBuf, size: u32) -> Option<image::Handle> 
     let handle = load_raster_icon(path, size);
     cache.insert(path.clone(), handle.clone());
     handle
-}
-
-impl App {
-    pub fn launch(&self) -> io::Result<process::Child> {
-        let raw_cmd = self.commandline.as_ref().ok_or_else(|| {
-            std::io::Error::new(std::io::ErrorKind::NotFound, "No command line found.")
-        })?;
-        let clean_cmd = raw_cmd
-            .to_str()
-            .unwrap_or("")
-            .split_whitespace()
-            .filter(|arg| !arg.starts_with('%'))
-            .collect::<Vec<_>>()
-            .join(" ");
-        let mut shell = process::Command::new("sh");
-
-        unsafe {
-            shell
-                .arg("-c")
-                .arg(format!("{} &", clean_cmd))
-                .pre_exec(|| {
-                    nix::unistd::setsid()
-                        .map(|_| ())
-                        .map_err(|e| io::Error::new(io::ErrorKind::PermissionDenied, e))
-                });
-        }
-
-        shell.spawn()
-    }
-}
-
-pub struct AppProvider;
-
-impl Provider for AppProvider {
-    fn scan() -> Vec<AnyEntry> {
-        gio::AppInfo::all()
-            .iter()
-            .filter_map(|app| {
-                if !app.should_show() {
-                    return None;
-                }
-
-                Some(AnyEntry::AppEntry(App {
-                    id: app.id().unwrap_or_default().to_string(),
-                    commandline: app.commandline(),
-                    name: app.name().to_string(),
-                    description: app.description().map(String::from),
-                    icon: app.icon().and_then(|p| p.to_string()).map(PathBuf::from),
-                }))
-            })
-            .collect()
-    }
 }

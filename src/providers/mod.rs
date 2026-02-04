@@ -8,139 +8,47 @@ use iced::{
 use crate::{
     launcher::{BakedIcons, Message},
     preferences::theme::{ButtonClass, CustomTheme, Entry as EntryStyle, TextClass},
-    providers::{
-        app::{App, get_icon_path_from_xdgicon},
-        file::File,
-    },
 };
 
 pub mod app;
 pub mod file;
 
 pub trait Provider {
-    fn scan() -> Vec<AnyEntry>;
-}
-
-pub trait Entry {
-    fn id(&self) -> &str;
-    fn main(&self) -> &str;
-    fn secondary(&self) -> Option<&str>;
-    fn launch(&self) -> anyhow::Result<()>;
-    fn icon(&self, style: &EntryStyle) -> Element<'_, Message, CustomTheme>;
+    fn scan(dir: &PathBuf) -> Vec<Entry>;
+    fn launch(id: &str) -> anyhow::Result<()>;
+    fn get_icon<'a>(path: Option<PathBuf>, style: &EntryStyle)
+    -> Element<'a, Message, CustomTheme>;
 }
 
 #[derive(Debug, Clone)]
-pub enum AnyEntry {
-    AppEntry(App),
-    FileEntry(File),
+pub struct Entry {
+    pub id: String,
+    pub main: String,
+    pub secondary: Option<String>,
+    pub icon: Option<PathBuf>,
 }
 
-impl Entry for AnyEntry {
-    fn id(&self) -> &str {
-        match self {
-            AnyEntry::AppEntry(app) => &app.id,
-            AnyEntry::FileEntry(file) => file.path.to_str().unwrap_or_default(),
+impl Entry {
+    fn new(id: String, main: String, secondary: Option<String>, icon: Option<PathBuf>) -> Self {
+        Self {
+            id,
+            main,
+            secondary,
+            icon,
         }
     }
-
-    fn main(&self) -> &str {
-        match self {
-            AnyEntry::AppEntry(app) => &app.name,
-            AnyEntry::FileEntry(file) => file
-                .path
-                .file_name()
-                .unwrap_or_default()
-                .to_str()
-                .unwrap_or_default(),
-        }
-    }
-
-    fn secondary(&self) -> Option<&str> {
-        match self {
-            AnyEntry::AppEntry(app) => app.description.as_deref(),
-            AnyEntry::FileEntry(file) => file.path.to_str(),
-        }
-    }
-
-    fn launch(&self) -> anyhow::Result<()> {
-        match self {
-            AnyEntry::AppEntry(app) => {
-                let _ = app.launch();
-                Ok(())
-            }
-            AnyEntry::FileEntry(file) => {
-                let _ = file.launch();
-                Ok(())
-            }
-        }
-    }
-
-    fn icon(&self, style: &EntryStyle) -> Element<'_, Message, CustomTheme> {
-        match self {
-            AnyEntry::AppEntry(app) => {
-                if let Some(iconname) = &app.icon {
-                    if let Some(icon_path) = get_icon_path_from_xdgicon(iconname) {
-                        match app::load_icon_with_cache(&icon_path, style.icon_size as u32) {
-                            Some(handle) => image(handle)
-                                .width(style.icon_size)
-                                .height(style.icon_size)
-                                .into(),
-                            None => iced::widget::horizontal_space().width(0).into(),
-                        }
-                    } else {
-                        iced::widget::horizontal_space().width(0).into()
-                    }
-                } else {
-                    iced::widget::horizontal_space().width(0).into()
-                }
-            }
-            AnyEntry::FileEntry(file) => {
-                let dir_icon_path =
-                    "/usr/share/icons/Adwaita/scalable/mimetypes/inode-directory.svg";
-                let file_icon_path =
-                    "/usr/share/icons/Adwaita/scalable/mimetypes/application-x-generic.svg";
-
-                if file.is_dir {
-                    match app::load_icon_with_cache(
-                        &PathBuf::from(dir_icon_path),
-                        style.icon_size as u32,
-                    ) {
-                        Some(handle) => image(handle)
-                            .width(style.icon_size)
-                            .height(style.icon_size)
-                            .into(),
-                        None => iced::widget::horizontal_space().width(0).into(),
-                    }
-                } else {
-                    match app::load_icon_with_cache(
-                        &PathBuf::from(file_icon_path),
-                        style.icon_size as u32,
-                    ) {
-                        Some(handle) => image(handle)
-                            .width(style.icon_size)
-                            .height(style.icon_size)
-                            .into(),
-                        None => iced::widget::horizontal_space().width(0).into(),
-                    }
-                }
-            }
-        }
-    }
-}
-
-pub enum ProviderKind {
-    Apps,
 }
 
 pub fn display_entry<'a>(
-    entry: &'a impl Entry,
-    icons: &'a BakedIcons,
+    entry: &'a Entry,
+    icon: Element<'a, Message, CustomTheme>,
+    baked_icons: &'a BakedIcons,
     style: &'a EntryStyle,
     index: usize,
     is_selected: bool,
     is_favorite: bool,
 ) -> Element<'a, Message, CustomTheme> {
-    let shortcut_widget: Element<'a, Message, CustomTheme> = match &icons.enter {
+    let shortcut_widget: Element<'a, Message, CustomTheme> = match &baked_icons.enter {
         Some(handle) => image(handle).width(18).height(18).into(),
         None => iced::widget::horizontal_space().width(18).height(18).into(),
     };
@@ -157,9 +65,9 @@ pub fn display_entry<'a>(
     };
 
     let star_handle = if is_favorite {
-        &icons.star_active
+        &baked_icons.star_active
     } else {
-        &icons.star_inactive
+        &baked_icons.star_inactive
     };
 
     let mark_favorite: Element<'a, Message, CustomTheme> = match star_handle {
@@ -175,7 +83,7 @@ pub fn display_entry<'a>(
         .push(shortcut_label)
         .align_y(Alignment::Center);
 
-    let description = entry.secondary().map(|desc| {
+    let description = entry.secondary.as_ref().map(|desc| {
         text(desc)
             .size(style.secondary_font_size)
             .class(TextClass::SecondaryText)
@@ -183,9 +91,9 @@ pub fn display_entry<'a>(
 
     button(
         row![
-            entry.icon(style),
+            icon,
             iced::widget::column![
-                text(entry.main())
+                text(&entry.main)
                     .size(style.font_size)
                     .width(Length::Fill)
                     .font(iced::Font {

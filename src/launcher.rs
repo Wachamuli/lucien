@@ -22,12 +22,7 @@ use crate::{
         theme::{ContainerClass, CustomTheme, TextClass},
     },
     prompt::Prompt,
-    providers::{
-        AnyEntry, Entry, Provider, ProviderKind,
-        app::AppProvider,
-        display_entry,
-        file::{FileProvider, file_scanner},
-    },
+    providers::{Entry, Provider, app::AppProvider, display_entry, file::FileProvider},
 };
 
 const SECTION_HEIGHT: f32 = 36.0;
@@ -51,11 +46,10 @@ static STAR_INACTIVE: &[u8] = include_bytes!("../assets/star-line.png");
 // static CLIPBOARD_INACTIVE: &[u8] = include_bytes!("../assets/tabler--clipboard.png");
 
 pub struct Lucien {
-    current_provider: ProviderKind,
     prompt: String,
     matcher: SkimMatcherV2,
     keyboard_modifiers: keyboard::Modifiers,
-    cached_entries: Vec<AnyEntry>,
+    cached_entries: Vec<Entry>,
     ranked_entries: Vec<usize>,
     preferences: Preferences,
     selected_entry: usize,
@@ -68,7 +62,7 @@ pub struct Lucien {
 #[derive(Debug, Clone)]
 pub enum Message {
     ReScan,
-    PreloadEntries(Vec<AnyEntry>),
+    PreloadEntries(Vec<Entry>),
     PromptChange(String),
     DebouncedFilter,
     LaunchEntry(usize),
@@ -91,15 +85,14 @@ impl Lucien {
     pub fn init(preferences: Preferences) -> (Self, Task<Message>) {
         let auto_focus_prompt_task = text_input::focus(TEXT_INPUT_ID.clone());
         // file_scanner("/home/wachamuli".into())
-        // let scan_task = Task::perform(async { AppProvider::scan() }, Message::PreloadEntries);
+        // let scan_task = Task::perform(async { FileProvider::scan() }, Message::PreloadEntries);
         let scan_task = Task::perform(
-            async { file_scanner("/home/wachamuli".into()) },
+            async { FileProvider::scan(&"/home/wachamuli".into()) },
             Message::PreloadEntries,
         );
         let initial_tasks = Task::batch([auto_focus_prompt_task, scan_task]);
 
         let initial_values = Self {
-            current_provider: ProviderKind::Apps,
             prompt: String::new(),
             matcher: SkimMatcherV2::default(),
             keyboard_modifiers: keyboard::Modifiers::empty(),
@@ -124,17 +117,17 @@ impl Lucien {
             .cached_entries
             .iter()
             .enumerate()
-            .filter_map(|(index, app)| {
-                let score = self.matcher.fuzzy_match(&app.main(), &self.prompt)?;
+            .filter_map(|(index, entry)| {
+                let score = self.matcher.fuzzy_match(&entry.main, &self.prompt)?;
                 Some((score, index))
             })
             .collect();
 
         ranked.sort_by(|(score_a, index_a), (score_b, index_b)| {
-            let app_a = &self.cached_entries[*index_a];
-            let app_b = &self.cached_entries[*index_b];
-            let a_is_fav = self.preferences.favorite_apps.contains(app_a.id());
-            let b_is_fav = self.preferences.favorite_apps.contains(app_b.id());
+            let entry_a = &self.cached_entries[*index_a];
+            let entry_b = &self.cached_entries[*index_b];
+            let a_is_fav = self.preferences.favorite_apps.contains(&entry_a.id);
+            let b_is_fav = self.preferences.favorite_apps.contains(&entry_b.id);
 
             match (a_is_fav, b_is_fav) {
                 (true, false) => std::cmp::Ordering::Less,
@@ -159,12 +152,12 @@ impl Lucien {
             return Task::none();
         };
 
-        let id = &self.cached_entries[*app].id();
+        let id = &self.cached_entries[*app].id;
         let path = path.clone();
         // Toggle_favorite is a very opaque function. It actually
         // modifies the in-memory favorite_apps variable.
         // Maybe I should expose this assignnment operation at this level.
-        let favorite_apps = self.preferences.toggle_favorite(*id);
+        let favorite_apps = self.preferences.toggle_favorite(id);
         self.update_ranked_apps();
 
         Task::perform(
@@ -205,11 +198,11 @@ impl Lucien {
         };
 
         // 1. Get coordinates from injected layout
-        let app_idx = self.ranked_entries[self.selected_entry];
+        let entry_index = self.ranked_entries[self.selected_entry];
         let is_fav = self
             .preferences
             .favorite_apps
-            .contains(self.cached_entries[app_idx].id());
+            .contains(&self.cached_entries[entry_index].id);
         let selection_top = layout.y_for_index(self.selected_entry, is_fav);
         let selection_bottom = selection_top + layout.item_height;
 
@@ -270,7 +263,7 @@ impl Lucien {
                 if !self.preferences.favorite_apps.is_empty() {
                     self.ranked_entries.sort_by_key(|index| {
                         let app = &self.cached_entries[*index];
-                        !self.preferences.favorite_apps.contains(app.id())
+                        !self.preferences.favorite_apps.contains(&app.id)
                     });
                 }
 
@@ -301,21 +294,21 @@ impl Lucien {
 
                 let entry = &self.cached_entries[*entry_index];
 
-                let path = PathBuf::from(entry.secondary().unwrap());
+                let path = PathBuf::from(entry.secondary.as_ref().unwrap());
                 if (path.is_dir()) {
                     return Task::perform(
                         async move {
                             println!("{}", path.display());
-                            file_scanner(path)
+                            FileProvider::scan(&path)
                         },
                         Message::PreloadEntries,
                     );
                 }
 
-                match entry.launch() {
+                match FileProvider::launch(&entry.id) {
                     Ok(_) => iced::exit(),
                     Err(e) => {
-                        tracing::error!("Failed to launch {}, due to: {}", entry.id(), e);
+                        tracing::error!("Failed to launch {}, due to: {}", entry.id, e);
                         Task::none()
                     }
                 }
@@ -447,14 +440,16 @@ impl Lucien {
 
         for (rank_pos, app_index) in self.ranked_entries.iter().enumerate() {
             let entry = &self.cached_entries[*app_index];
-            let is_favorite = self.preferences.favorite_apps.contains(entry.id());
+            let is_favorite = self.preferences.favorite_apps.contains(&entry.id);
             let is_selected = self.selected_entry == rank_pos;
 
             let item_height = theme.launchpad.entry.height;
             let style = &self.preferences.theme.launchpad.entry;
+            let icon = FileProvider::get_icon(entry.icon.clone(), style);
 
             let element = container(display_entry(
                 entry,
+                icon,
                 &self.icons,
                 style,
                 rank_pos,
