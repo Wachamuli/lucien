@@ -23,8 +23,10 @@ use crate::{
     },
     prompt::Prompt,
     providers::{
-        AnyEntry, Entry, Provider, ProviderKind, app::AppProvider, display_entry,
-        file::FileProvider,
+        AnyEntry, Entry, Provider, ProviderKind,
+        app::AppProvider,
+        display_entry,
+        file::{FileProvider, file_scanner},
     },
 };
 
@@ -65,6 +67,7 @@ pub struct Lucien {
 #[to_layer_message]
 #[derive(Debug, Clone)]
 pub enum Message {
+    ReScan,
     PreloadEntries(Vec<AnyEntry>),
     PromptChange(String),
     DebouncedFilter,
@@ -87,7 +90,12 @@ pub struct BakedIcons {
 impl Lucien {
     pub fn init(preferences: Preferences) -> (Self, Task<Message>) {
         let auto_focus_prompt_task = text_input::focus(TEXT_INPUT_ID.clone());
-        let scan_task = Task::perform(async { FileProvider::scan() }, Message::PreloadEntries);
+        // file_scanner("/home/wachamuli".into())
+        // let scan_task = Task::perform(async { AppProvider::scan() }, Message::PreloadEntries);
+        let scan_task = Task::perform(
+            async { file_scanner("/home/wachamuli".into()) },
+            Message::PreloadEntries,
+        );
         let initial_tasks = Task::batch([auto_focus_prompt_task, scan_task]);
 
         let initial_values = Self {
@@ -293,6 +301,17 @@ impl Lucien {
 
                 let entry = &self.cached_entries[*entry_index];
 
+                let path = PathBuf::from(entry.secondary().unwrap());
+                if (path.is_dir()) {
+                    return Task::perform(
+                        async move {
+                            println!("{}", path.display());
+                            file_scanner(path)
+                        },
+                        Message::PreloadEntries,
+                    );
+                }
+
                 match entry.launch() {
                     Ok(_) => iced::exit(),
                     Err(e) => {
@@ -301,6 +320,7 @@ impl Lucien {
                     }
                 }
             }
+            Message::ReScan => Task::none(),
             Message::PromptChange(prompt) => {
                 if self.keyboard_modifiers.alt() {
                     return Task::none();

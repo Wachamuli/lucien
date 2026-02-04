@@ -112,7 +112,6 @@ impl Entry for AnyEntry {
                         None => iced::widget::horizontal_space().width(0).into(),
                     }
                 } else {
-                    println!("This is a file");
                     match app::load_icon_with_cache(
                         &PathBuf::from(file_icon_path),
                         style.icon_size as u32,

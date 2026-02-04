@@ -48,3 +48,16 @@ impl Provider for FileProvider {
             .collect::<Vec<_>>()
     }
 }
+
+pub fn file_scanner(dir: PathBuf) -> Vec<super::AnyEntry> {
+    std::fs::read_dir(dir)
+        .unwrap()
+        .map(|entry| {
+            let entry = entry.unwrap();
+            let path = entry.path();
+            let is_dir = path.is_dir();
+
+            super::AnyEntry::FileEntry(File { path, is_dir })
+        })
+        .collect::<Vec<_>>()
+}
