@@ -1,14 +1,14 @@
 use std::path::PathBuf;
 
 use iced::{
-    Alignment, Element, Length,
+    Alignment, Element, Length, Task,
     widget::{button, image, row, text},
 };
 
 use crate::{
     launcher::{BakedIcons, Message},
     preferences::theme::{ButtonClass, CustomTheme, Entry as EntryStyle, TextClass},
-    providers::app::AppProvider,
+    providers::{app::AppProvider, file::FileProvider},
 };
 
 pub mod app;
@@ -17,7 +17,7 @@ pub mod file;
 #[derive(Debug, Clone, Copy)]
 pub enum ProviderKind {
     App(AppProvider),
-    // File(FileProvider),
+    File(FileProvider),
 }
 
 impl ProviderKind {
@@ -25,14 +25,16 @@ impl ProviderKind {
     pub fn handler(&self) -> &dyn Provider {
         match self {
             ProviderKind::App(p) => p,
-            // ProviderKind::File(p) => p,
+            ProviderKind::File(p) => p,
         }
     }
 }
 
 pub trait Provider {
     fn scan(&self, dir: &PathBuf) -> Vec<Entry>;
-    fn launch(&self, id: &str) -> anyhow::Result<()>;
+    // Maybe, launch could consume self? But I have to get rid of dynamic dispatch first.
+    // I could avoid couple clones doing this.
+    fn launch(&self, id: &str) -> Task<Message>;
     fn get_icon(&self, path: &PathBuf, size: u32) -> Option<image::Handle>;
 }
 

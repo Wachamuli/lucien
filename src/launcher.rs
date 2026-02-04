@@ -22,7 +22,7 @@ use crate::{
         theme::{ContainerClass, CustomTheme, TextClass},
     },
     prompt::Prompt,
-    providers::{Entry, ProviderKind, app::AppProvider, display_entry},
+    providers::{Entry, ProviderKind, app::AppProvider, display_entry, file::FileProvider},
 };
 
 const SECTION_HEIGHT: f32 = 36.0;
@@ -85,7 +85,7 @@ pub struct BakedIcons {
 impl Lucien {
     pub fn init(preferences: Preferences) -> (Self, Task<Message>) {
         let auto_focus_prompt_task = text_input::focus(TEXT_INPUT_ID.clone());
-        let default_provider = ProviderKind::App(AppProvider);
+        let default_provider = ProviderKind::File(FileProvider);
         let scan_task = Task::perform(
             async move { default_provider.handler().scan(&"/home/wachamuli".into()) },
             Message::PreloadEntries,
@@ -295,26 +295,7 @@ impl Lucien {
 
                 let entry = &self.cached_entries[*entry_index];
 
-                let provider_clone = self.provider.clone();
-
-                let path = PathBuf::from(entry.secondary.as_ref().unwrap());
-                if path.is_dir() {
-                    return Task::perform(
-                        async move {
-                            println!("{}", path.display());
-                            provider_clone.handler().scan(&path)
-                        },
-                        Message::PreloadEntries,
-                    );
-                }
-
-                match self.provider.handler().launch(&entry.id) {
-                    Ok(_) => iced::exit(),
-                    Err(e) => {
-                        tracing::error!("Failed to launch {}, due to: {}", entry.id, e);
-                        Task::none()
-                    }
-                }
+                self.provider.handler().launch(&entry.id)
             }
             Message::ReScan => Task::none(),
             Message::PromptChange(prompt) => {

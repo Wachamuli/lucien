@@ -1,8 +1,10 @@
 use gio::prelude::{AppInfoExt, IconExt};
 
-use iced::widget::image;
+use iced::{Task, widget::image};
 use resvg::{tiny_skia, usvg};
 use std::{io, os::unix::process::CommandExt, path::PathBuf, process};
+
+use crate::launcher::Message;
 
 use super::{Entry, Provider};
 
@@ -28,7 +30,7 @@ impl Provider for AppProvider {
             .collect()
     }
 
-    fn launch(&self, id: &str) -> anyhow::Result<()> {
+    fn launch(&self, id: &str) -> Task<Message> {
         let clean_cmd = id
             .split_whitespace()
             .filter(|arg| !arg.starts_with('%'))
@@ -48,7 +50,8 @@ impl Provider for AppProvider {
         }
 
         shell.spawn();
-        Ok(())
+
+        iced::exit()
     }
 
     fn get_icon(&self, path: &PathBuf, size: u32) -> Option<image::Handle> {
@@ -80,7 +83,7 @@ pub fn get_icon_path_from_xdgicon(iconname: &PathBuf) -> Option<PathBuf> {
         }
     }
 
-    for ext in ["svg", "png", "ico"] {
+    for ext in ["svg", "png"] {
         let pixmap_path = format!("pixmaps/{iconname}.{ext}", iconname = iconname.display());
         if let Some(path) = xdg_dirs.find_data_file(&pixmap_path) {
             return Some(path);

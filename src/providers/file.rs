@@ -1,8 +1,8 @@
 use std::{io, os::unix::process::CommandExt, path::PathBuf, process::Command};
 
-use iced::widget::image;
+use iced::{Task, widget::image};
 
-use crate::providers::app::load_icon_with_cache;
+use crate::{launcher::Message, providers::app::load_icon_with_cache};
 
 use super::{Entry, Provider};
 
@@ -31,7 +31,16 @@ impl Provider for FileProvider {
             .collect::<Vec<_>>()
     }
 
-    fn launch(&self, id: &str) -> anyhow::Result<()> {
+    fn launch(&self, id: &str) -> Task<Message> {
+        let provider_clone = self.clone();
+        let path = PathBuf::from(id);
+        if path.is_dir() {
+            return Task::perform(
+                async move { provider_clone.scan(&path) },
+                Message::PreloadEntries,
+            );
+        }
+
         let mut shell = Command::new("sh");
 
         unsafe {
@@ -46,7 +55,8 @@ impl Provider for FileProvider {
         }
 
         shell.spawn();
-        Ok(())
+
+        iced::exit()
     }
 
     fn get_icon(&self, path: &PathBuf, size: u32) -> Option<image::Handle> {
