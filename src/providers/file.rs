@@ -13,20 +13,16 @@ impl Provider for FileProvider {
     fn scan(&self, dir: &PathBuf) -> Vec<Entry> {
         std::fs::read_dir(dir)
             .unwrap()
-            .map(|entry| {
-                let entry = entry.unwrap();
+            .filter_map(|entry| {
+                let entry = entry.ok()?;
                 let path = entry.path();
 
-                Entry::new(
-                    path.to_str().unwrap_or_default().to_string(),
-                    path.file_name()
-                        .unwrap_or_default()
-                        .to_str()
-                        .unwrap_or_default()
-                        .to_string(),
-                    Some(path.to_str().unwrap_or_default().to_string()),
+                Some(Entry::new(
+                    path.to_str()?.to_string(),
+                    path.file_name()?.to_str()?.to_string(),
+                    Some(path.to_str()?.to_string()),
                     Some(path),
-                )
+                ))
             })
             .collect::<Vec<_>>()
     }

@@ -85,7 +85,11 @@ impl Lucien {
         let auto_focus_prompt_task = text_input::focus(TEXT_INPUT_ID.clone());
         let default_provider = ProviderKind::App(AppProvider);
         let scan_task = Task::perform(
-            async move { default_provider.handler().scan(&"/home/wachamuli".into()) },
+            async move {
+                default_provider
+                    .handler()
+                    .scan(&"This parameter should be optional".into())
+            },
             Message::PopulateEntries,
         );
         let initial_tasks = Task::batch([auto_focus_prompt_task, scan_task]);
@@ -260,7 +264,11 @@ impl Lucien {
                 self.provider = ProviderKind::App(AppProvider);
                 let provider_clone = self.provider.clone();
                 Task::perform(
-                    async move { provider_clone.handler().scan(&"/home/wachamuli".into()) },
+                    async move {
+                        provider_clone
+                            .handler()
+                            .scan(&"This parameter should be optional".into())
+                    },
                     Message::PopulateEntries,
                 )
             }
@@ -268,8 +276,9 @@ impl Lucien {
                 self.prompt = "".to_string();
                 self.provider = ProviderKind::File(FileProvider);
                 let provider_clone = self.provider.clone();
+                let h = env!("HOME");
                 Task::perform(
-                    async move { provider_clone.handler().scan(&"/home/wachamuli".into()) },
+                    async move { provider_clone.handler().scan(&h.into()) },
                     Message::PopulateEntries,
                 )
             }
@@ -280,6 +289,8 @@ impl Lucien {
     pub fn update(&mut self, message: Message) -> Task<Message> {
         match message {
             Message::PopulateEntries(entries) => {
+                self.prompt = "".to_string();
+                self.selected_entry = 0;
                 self.cached_entries = entries;
                 self.ranked_entries = (0..self.cached_entries.len()).collect();
 
@@ -290,7 +301,7 @@ impl Lucien {
                     });
                 }
 
-                Task::none()
+                scrollable::snap_to(SCROLLABLE_ID.clone(), RelativeOffset { x: 0.0, y: 0.0 })
             }
             Message::SaveIntoDisk(result) => {
                 match result {
