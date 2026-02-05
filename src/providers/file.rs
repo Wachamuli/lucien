@@ -11,19 +11,32 @@ pub struct FileProvider;
 
 impl Provider for FileProvider {
     fn scan(&self, dir: &PathBuf) -> Vec<Entry> {
-        std::fs::read_dir(dir)
-            .unwrap()
-            .filter_map(|entry| {
-                let entry = entry.ok()?;
-                let path = entry.path();
+        let child_entries = std::fs::read_dir(dir).unwrap().filter_map(|entry| {
+            let entry = entry.ok()?;
+            let path = entry.path();
 
-                Some(Entry::new(
-                    path.to_str()?.to_string(),
-                    path.file_name()?.to_str()?.to_string(),
-                    Some(path.to_str()?.to_string()),
-                    Some(path),
-                ))
-            })
+            Some(Entry::new(
+                path.to_str()?.to_string(),
+                path.file_name()?.to_str()?.to_string(),
+                Some(path.to_str()?.to_string()),
+                Some(path),
+            ))
+        });
+
+        let parent_dir = dir.parent();
+
+        let parent_dir_entry = parent_dir.map(|p| {
+            Entry::new(
+                p.to_str().unwrap().to_string(),
+                "..".to_string(),
+                Some(p.to_str().unwrap().to_string()),
+                Some(p.to_path_buf()),
+            )
+        });
+
+        parent_dir_entry
+            .into_iter()
+            .chain(child_entries)
             .collect::<Vec<_>>()
     }
 
