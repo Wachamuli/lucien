@@ -1,10 +1,10 @@
-use std::{io, os::unix::process::CommandExt, path::PathBuf, process::Command};
+use std::{path::PathBuf, process};
 
 use iced::{Task, widget::image};
 
-use crate::{launcher::Message, providers::app::load_icon_with_cache};
+use crate::launcher::Message;
 
-use super::{Entry, Provider};
+use super::{Entry, Provider, load_icon_with_cache, spawn_with_new_session};
 
 #[derive(Debug, Clone, Copy)]
 pub struct FileProvider;
@@ -30,6 +30,7 @@ impl Provider for FileProvider {
     fn launch(&self, id: &str) -> Task<Message> {
         let provider_clone = self.clone();
         let path = PathBuf::from(id);
+
         if path.is_dir() {
             return Task::perform(
                 async move { provider_clone.scan(&path) },
@@ -37,20 +38,15 @@ impl Provider for FileProvider {
             );
         }
 
-        let mut shell = Command::new("sh");
+        let mut command = process::Command::new("xdg-open");
+        command.arg(&path);
+        tracing::info!(binary = ?command.get_program(), arg = ?path, "Attempting to launch detached process.");
 
-        unsafe {
-            shell
-                .arg("-c")
-                .arg(format!("xdg-open {path} &", path = id))
-                .pre_exec(|| {
-                    nix::unistd::setsid()
-                        .map(|_| ())
-                        .map_err(|e| io::Error::new(io::ErrorKind::PermissionDenied, e))
-                });
+        if let Err(e) = spawn_with_new_session(&mut command) {
+            tracing::error!(error = %e, binary = ?command.get_program(), "Failed to spawn process.");
+        } else {
+            tracing::info!(binary = ?command.get_program(), "Process launched successfully.");
         }
-
-        shell.spawn();
 
         iced::exit()
     }

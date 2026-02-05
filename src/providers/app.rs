@@ -1,12 +1,15 @@
+use std::{path::PathBuf, process};
+
 use gio::prelude::{AppInfoExt, IconExt};
 
 use iced::{Task, widget::image};
-use resvg::{tiny_skia, usvg};
-use std::{io, os::unix::process::CommandExt, path::PathBuf, process};
 
-use crate::launcher::Message;
+use crate::{
+    launcher::Message,
+    ui::icon::{ICON_EXTENSION, ICON_SIZES},
+};
 
-use super::{Entry, Provider};
+use super::{Entry, Provider, load_icon_with_cache, spawn_with_new_session};
 
 #[derive(Debug, Clone, Copy)]
 pub struct AppProvider;
@@ -31,25 +34,24 @@ impl Provider for AppProvider {
     }
 
     fn launch(&self, id: &str) -> Task<Message> {
-        let clean_cmd = id
+        let raw_command_without_placeholders = id
             .split_whitespace()
             .filter(|arg| !arg.starts_with('%'))
-            .collect::<Vec<_>>()
-            .join(" ");
-        let mut shell = process::Command::new("sh");
+            .collect::<Vec<_>>();
 
-        unsafe {
-            shell
-                .arg("-c")
-                .arg(format!("{} &", clean_cmd))
-                .pre_exec(|| {
-                    nix::unistd::setsid()
-                        .map(|_| ())
-                        .map_err(|e| io::Error::new(io::ErrorKind::PermissionDenied, e))
-                });
+        if let [binary, args @ ..] = raw_command_without_placeholders.as_slice() {
+            let mut command = process::Command::new(binary);
+            command.args(args);
+            tracing::info!(binary = %binary, args = ?args, "Attempting to launch detached process.");
+
+            if let Err(e) = spawn_with_new_session(&mut command) {
+                tracing::error!(error = %e, binary = %binary, "Failed to spawn process.");
+            } else {
+                tracing::info!(binary = %binary, "Process launched successfully.");
+            }
+        } else {
+            tracing::warn!("Launch failed: provided ID resulted in an empty command.");
         }
-
-        shell.spawn();
 
         iced::exit()
     }
@@ -67,11 +69,7 @@ pub fn get_icon_path_from_xdgicon(iconname: &PathBuf) -> Option<PathBuf> {
 
     let xdg_dirs = xdg::BaseDirectories::new();
 
-    let sizes = [
-        "scalable", "512x512", "256x256", "128x128", "96x96", "64x64", "48x48", "32x32",
-    ];
-
-    for size in sizes {
+    for size in ICON_SIZES {
         let extension = if size == "scalable" { "svg" } else { "png" };
         let sub_path = format!(
             "icons/hicolor/{size}/apps/{iconname}.{extension}",
@@ -83,7 +81,7 @@ pub fn get_icon_path_from_xdgicon(iconname: &PathBuf) -> Option<PathBuf> {
         }
     }
 
-    for ext in ["svg", "png"] {
+    for ext in ICON_EXTENSION {
         let pixmap_path = format!("pixmaps/{iconname}.{ext}", iconname = iconname.display());
         if let Some(path) = xdg_dirs.find_data_file(&pixmap_path) {
             return Some(path);
@@ -91,50 +89,4 @@ pub fn get_icon_path_from_xdgicon(iconname: &PathBuf) -> Option<PathBuf> {
     }
 
     None
-}
-
-fn rasterize_svg(path: &PathBuf, size: u32) -> Option<tiny_skia::Pixmap> {
-    let svg_data = std::fs::read(path).ok()?;
-    let tree = usvg::Tree::from_data(&svg_data, &usvg::Options::default()).ok()?;
-
-    let mut pixmap = tiny_skia::Pixmap::new(size, size)?;
-    let transform = tiny_skia::Transform::from_scale(
-        size as f32 / tree.size().width(),
-        size as f32 / tree.size().height(),
-    );
-
-    resvg::render(&tree, transform, &mut pixmap.as_mut());
-    Some(pixmap)
-}
-
-fn load_raster_icon(path: &PathBuf, size: u32) -> Option<image::Handle> {
-    let extension = path.extension()?.to_str()?;
-
-    match extension {
-        "svg" => {
-            let pixmap = rasterize_svg(path, size)?;
-            Some(image::Handle::from_rgba(size, size, pixmap.data().to_vec()))
-        }
-        "png" => Some(image::Handle::from_path(path)),
-        _ => None,
-    }
-}
-
-pub fn load_icon_with_cache(path: &PathBuf, size: u32) -> Option<image::Handle> {
-    use std::collections::HashMap;
-    use std::sync::OnceLock;
-
-    static CACHE: OnceLock<std::sync::Mutex<HashMap<PathBuf, Option<image::Handle>>>> =
-        OnceLock::new();
-    let cache = CACHE.get_or_init(|| std::sync::Mutex::new(HashMap::new()));
-
-    let mut cache = cache.lock().unwrap();
-
-    if let Some(cached) = cache.get(path) {
-        return cached.clone();
-    }
-
-    let handle = load_raster_icon(path, size);
-    cache.insert(path.clone(), handle.clone());
-    handle
 }

@@ -1,5 +1,11 @@
 use iced::widget::image::Handle;
 
+pub const ICON_SIZES: [&str; 8] = [
+    "scalable", "512x512", "256x256", "128x128", "96x96", "64x64", "48x48", "32x32",
+];
+
+pub const ICON_EXTENSION: [&str; 2] = ["svg", "png"];
+
 // #EBECF2
 pub static MAGNIFIER: &[u8] = include_bytes!("../../assets/magnifier.png");
 pub static ENTER: &[u8] = include_bytes!("../../assets/enter.png");
