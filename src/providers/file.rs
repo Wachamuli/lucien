@@ -1,4 +1,7 @@
-use std::{path::PathBuf, process};
+use std::{
+    path::{Path, PathBuf},
+    process,
+};
 
 use iced::{Task, widget::image};
 
@@ -10,7 +13,7 @@ use super::{Entry, Provider, load_icon_with_cache, spawn_with_new_session};
 pub struct FileProvider;
 
 impl Provider for FileProvider {
-    fn scan(&self, dir: &PathBuf) -> Vec<Entry> {
+    fn scan(&self, dir: &Path) -> Vec<Entry> {
         let child_entries = std::fs::read_dir(dir)
             .map(|entries| {
                 entries.filter_map(|entry| {
@@ -85,9 +88,8 @@ impl Provider for FileProvider {
         };
 
         if icon_path.is_dir() {
-            let dir_icon_path = "assets/mimetypes/inode-directory.svg";
-            return load_icon_with_cache(&PathBuf::from(dir_icon_path), size)
-                .unwrap_or_else(default_icon);
+            let dir_icon_path = Path::new("assets/mimetypes/inode-directory.svg");
+            return load_icon_with_cache(&dir_icon_path, size).unwrap_or_else(default_icon);
         }
 
         let file_extension = entry
@@ -97,8 +99,7 @@ impl Provider for FileProvider {
             .unwrap_or_default();
 
         let mimetype = MimeType::get_type_from_extension(&file_extension);
-        let mimetype_icon_path = &mimetype.get_icon_from_type();
-        load_icon_with_cache(mimetype_icon_path, size).unwrap_or_else(default_icon)
+        load_icon_with_cache(&mimetype.get_icon_from_type(), size).unwrap_or_else(default_icon)
     }
 }
 

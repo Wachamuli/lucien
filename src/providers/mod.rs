@@ -1,4 +1,9 @@
-use std::{io, os::unix::process::CommandExt, path::PathBuf, process};
+use std::{
+    io,
+    os::unix::process::CommandExt,
+    path::{Path, PathBuf},
+    process,
+};
 
 use iced::Task;
 use iced::widget::image;
@@ -30,7 +35,7 @@ impl ProviderKind {
 
 pub trait Provider {
     // Maybe this function should return a Task<Message::PopulateEntries>?
-    fn scan(&self, dir: &PathBuf) -> Vec<Entry>;
+    fn scan(&self, dir: &Path) -> Vec<Entry>;
     // Maybe, launch could consume self? But I have to get rid of dynamic dispatch first.
     // I could avoid couple clones doing this.
     fn launch(&self, id: &str) -> Task<Message>;
@@ -80,7 +85,7 @@ fn spawn_with_new_session(command: &mut process::Command) -> io::Result<process:
     command.spawn()
 }
 
-fn rasterize_svg(path: &PathBuf, size: u32) -> Option<tiny_skia::Pixmap> {
+fn rasterize_svg(path: &Path, size: u32) -> Option<tiny_skia::Pixmap> {
     let svg_data = std::fs::read(path).ok()?;
     let tree = usvg::Tree::from_data(&svg_data, &usvg::Options::default()).ok()?;
 
@@ -94,7 +99,7 @@ fn rasterize_svg(path: &PathBuf, size: u32) -> Option<tiny_skia::Pixmap> {
     Some(pixmap)
 }
 
-fn load_raster_icon(path: &PathBuf, size: u32) -> Option<image::Handle> {
+fn load_raster_icon(path: &Path, size: u32) -> Option<image::Handle> {
     let extension = path.extension()?.to_str()?;
 
     match extension {
@@ -107,7 +112,7 @@ fn load_raster_icon(path: &PathBuf, size: u32) -> Option<image::Handle> {
     }
 }
 
-pub fn load_icon_with_cache(path: &PathBuf, size: u32) -> Option<image::Handle> {
+pub fn load_icon_with_cache(path: &Path, size: u32) -> Option<image::Handle> {
     use std::collections::HashMap;
     use std::sync::OnceLock;
 
@@ -122,6 +127,6 @@ pub fn load_icon_with_cache(path: &PathBuf, size: u32) -> Option<image::Handle> 
     }
 
     let handle = load_raster_icon(path, size);
-    cache.insert(path.clone(), handle.clone());
+    cache.insert(path.to_path_buf(), handle.clone());
     handle
 }

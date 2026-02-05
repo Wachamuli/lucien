@@ -22,9 +22,6 @@ pub static FOLDER_INACTIVE: &[u8] =
 pub static STAR_INACTIVE: &[u8] = include_bytes!("../../assets/icons/star-line.png");
 // static CLIPBOARD_INACTIVE: &[u8] = include_bytes!("../assets/icons/tabler--clipboard.png");
 
-pub static DEFAULT_APP_ICON: &[u8] =
-    include_bytes!("../../assets/mimetypes/application-x-executable.svg");
-
 #[derive(Debug, Clone)]
 pub struct BakedIcons {
     pub magnifier: Handle,

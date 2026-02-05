@@ -1,4 +1,7 @@
-use std::{path::PathBuf, process};
+use std::{
+    path::{Path, PathBuf},
+    process,
+};
 
 use gio::prelude::{AppInfoExt, IconExt};
 
@@ -15,7 +18,7 @@ use super::{Entry, Provider, load_icon_with_cache, spawn_with_new_session};
 pub struct AppProvider;
 
 impl Provider for AppProvider {
-    fn scan(&self, _dir: &PathBuf) -> Vec<Entry> {
+    fn scan(&self, _dir: &Path) -> Vec<Entry> {
         gio::AppInfo::all()
             .iter()
             .filter_map(|app| {
@@ -72,9 +75,9 @@ impl Provider for AppProvider {
     }
 }
 
-pub fn get_icon_path_from_xdgicon(iconname: &PathBuf) -> Option<PathBuf> {
+pub fn get_icon_path_from_xdgicon(iconname: &Path) -> Option<PathBuf> {
     if iconname.is_absolute() && iconname.exists() {
-        return Some(PathBuf::from(iconname));
+        return Some(iconname.to_owned());
     }
 
     let xdg_dirs = xdg::BaseDirectories::new();
