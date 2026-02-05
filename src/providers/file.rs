@@ -37,10 +37,11 @@ impl Provider for FileProvider {
         let parent_dir = dir.parent();
 
         let parent_dir_entry = parent_dir.map(|p| {
+            // FIXME: Same problem here.
             Entry::new(
-                p.to_str().unwrap().to_string(),
-                "..".to_string(),
-                Some(p.to_str().unwrap().to_string()),
+                p.to_str().unwrap(),
+                "..",
+                Some(p.to_string_lossy()),
                 Some(p.to_path_buf()),
             )
         });
@@ -76,9 +77,8 @@ impl Provider for FileProvider {
     }
 
     fn get_icon(&self, path: &PathBuf, size: u32) -> Option<image::Handle> {
-        let dir_icon_path = "/usr/share/icons/Adwaita/scalable/mimetypes/inode-directory.svg";
-        let file_icon_path =
-            "/usr/share/icons/Adwaita/scalable/mimetypes/application-x-generic.svg";
+        let dir_icon_path = "assets/mimetypes/inode-directory.svg";
+        let file_icon_path = "assets/mimetypes/application-x-generic.svg";
 
         if path.is_dir() {
             return load_icon_with_cache(&PathBuf::from(dir_icon_path), size);
