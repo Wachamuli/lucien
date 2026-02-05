@@ -1,10 +1,4 @@
-use std::{
-    ffi::OsStr,
-    io,
-    os::unix::process::CommandExt,
-    path::PathBuf,
-    process::{self, Command},
-};
+use std::{io, os::unix::process::CommandExt, path::PathBuf, process};
 
 use iced::Task;
 use iced::widget::image;
@@ -52,11 +46,16 @@ pub struct Entry {
 }
 
 impl Entry {
-    fn new(id: String, main: String, secondary: Option<String>, icon: Option<PathBuf>) -> Self {
+    fn new(
+        id: impl Into<String>,
+        main: impl Into<String>,
+        secondary: Option<impl Into<String>>,
+        icon: Option<PathBuf>,
+    ) -> Self {
         Self {
-            id,
-            main,
-            secondary,
+            id: id.into(),
+            main: main.into(),
+            secondary: secondary.map(Into::into),
             icon,
         }
     }

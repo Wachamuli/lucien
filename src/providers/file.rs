@@ -11,17 +11,28 @@ pub struct FileProvider;
 
 impl Provider for FileProvider {
     fn scan(&self, dir: &PathBuf) -> Vec<Entry> {
-        let child_entries = std::fs::read_dir(dir).unwrap().filter_map(|entry| {
-            let entry = entry.ok()?;
-            let path = entry.path();
+        let child_entries = std::fs::read_dir(dir)
+            .map(|entries| {
+                entries.filter_map(|entry| {
+                    let entry = entry.ok()?;
+                    let path = entry.path();
 
-            Some(Entry::new(
-                path.to_str()?.to_string(),
-                path.file_name()?.to_str()?.to_string(),
-                Some(path.to_str()?.to_string()),
-                Some(path),
-            ))
-        });
+                    // FIXME: Unix-like systems accept non-UTF-8 valid sequences
+                    // as valid file names. Right now, these entries are being skip.
+                    // In order to fix this, id should be a PathBuf or similar.
+                    let id_str = path.to_str()?.to_owned();
+                    let main_display = path.file_name()?.to_string_lossy().into_owned();
+
+                    Some(Entry::new(
+                        id_str.clone(),
+                        main_display,
+                        Some(id_str),
+                        Some(path),
+                    ))
+                })
+            })
+            .into_iter()
+            .flatten();
 
         let parent_dir = dir.parent();
 
