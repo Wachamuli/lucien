@@ -1,35 +1,61 @@
-use std::{io, os::unix::process::CommandExt, path::PathBuf, process::Command};
+use std::{path::PathBuf, process};
 
 use iced::{Task, widget::image};
 
-use crate::{launcher::Message, providers::app::load_icon_with_cache};
+use crate::launcher::Message;
 
-use super::{Entry, Provider};
+use super::{Entry, Provider, load_icon_with_cache, spawn_with_new_session};
 
 #[derive(Debug, Clone, Copy)]
 pub struct FileProvider;
 
 impl Provider for FileProvider {
     fn scan(&self, dir: &PathBuf) -> Vec<Entry> {
-        std::fs::read_dir(dir)
-            .unwrap()
-            .filter_map(|entry| {
-                let entry = entry.ok()?;
-                let path = entry.path();
+        let child_entries = std::fs::read_dir(dir)
+            .map(|entries| {
+                entries.filter_map(|entry| {
+                    let entry = entry.ok()?;
+                    let path = entry.path();
 
-                Some(Entry::new(
-                    path.to_str()?.to_string(),
-                    path.file_name()?.to_str()?.to_string(),
-                    Some(path.to_str()?.to_string()),
-                    Some(path),
-                ))
+                    // FIXME: Unix-like systems accept non-UTF-8 valid sequences
+                    // as valid file names. Right now, these entries are being skip.
+                    // In order to fix this, id should be a PathBuf or similar.
+                    let id_str = path.to_str()?.to_owned();
+                    let main_display = path.file_name()?.to_string_lossy().into_owned();
+
+                    Some(Entry::new(
+                        id_str.clone(),
+                        main_display,
+                        Some(id_str),
+                        Some(path),
+                    ))
+                })
             })
+            .into_iter()
+            .flatten();
+
+        let parent_dir = dir.parent();
+
+        let parent_dir_entry = parent_dir.map(|p| {
+            // FIXME: Same problem here.
+            Entry::new(
+                p.to_str().unwrap(),
+                "..",
+                Some(p.to_string_lossy()),
+                Some(p.to_path_buf()),
+            )
+        });
+
+        parent_dir_entry
+            .into_iter()
+            .chain(child_entries)
             .collect::<Vec<_>>()
     }
 
     fn launch(&self, id: &str) -> Task<Message> {
         let provider_clone = self.clone();
         let path = PathBuf::from(id);
+
         if path.is_dir() {
             return Task::perform(
                 async move { provider_clone.scan(&path) },
@@ -37,28 +63,22 @@ impl Provider for FileProvider {
             );
         }
 
-        let mut shell = Command::new("sh");
+        let mut command = process::Command::new("xdg-open");
+        command.arg(&path);
+        tracing::info!(binary = ?command.get_program(), arg = ?path, "Attempting to launch detached process.");
 
-        unsafe {
-            shell
-                .arg("-c")
-                .arg(format!("xdg-open {path} &", path = id))
-                .pre_exec(|| {
-                    nix::unistd::setsid()
-                        .map(|_| ())
-                        .map_err(|e| io::Error::new(io::ErrorKind::PermissionDenied, e))
-                });
+        if let Err(e) = spawn_with_new_session(&mut command) {
+            tracing::error!(error = %e, binary = ?command.get_program(), "Failed to spawn process.");
+        } else {
+            tracing::info!(binary = ?command.get_program(), "Process launched successfully.");
         }
-
-        shell.spawn();
 
         iced::exit()
     }
 
     fn get_icon(&self, path: &PathBuf, size: u32) -> Option<image::Handle> {
-        let dir_icon_path = "/usr/share/icons/Adwaita/scalable/mimetypes/inode-directory.svg";
-        let file_icon_path =
-            "/usr/share/icons/Adwaita/scalable/mimetypes/application-x-generic.svg";
+        let dir_icon_path = "assets/mimetypes/inode-directory.svg";
+        let file_icon_path = "assets/mimetypes/application-x-generic.svg";
 
         if path.is_dir() {
             return load_icon_with_cache(&PathBuf::from(dir_icon_path), size);
