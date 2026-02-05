@@ -5,10 +5,10 @@ use std::{
 
 use fuzzy_matcher::{FuzzyMatcher, skim::SkimMatcherV2};
 use iced::{
-    Alignment, Element, Event, Length, Subscription, Task, event,
+    Alignment, Event, Length, Subscription, Task, event,
     keyboard::{self, Key},
     widget::{
-        Column, Container, container, image,
+        Column, Container, container, image, row,
         scrollable::{self, RelativeOffset, Viewport},
         text, text_input,
     },
@@ -16,43 +16,41 @@ use iced::{
 use iced_layershell::to_layer_message;
 
 use crate::{
-    app::{App, all_apps},
     preferences::{
         self, Preferences,
         keybindings::Action,
         theme::{ContainerClass, CustomTheme, TextClass},
     },
     prompt::Prompt,
+    providers::{Entry, ProviderKind, app::AppProvider, display_entry, file::FileProvider},
 };
 
 const SECTION_HEIGHT: f32 = 36.0;
 
 static TEXT_INPUT_ID: LazyLock<text_input::Id> = std::sync::LazyLock::new(text_input::Id::unique);
 static SCROLLABLE_ID: LazyLock<scrollable::Id> = std::sync::LazyLock::new(scrollable::Id::unique);
-// static DEBOUNCER_ID: LazyLock<task::Id> = std::sync::LazyLock::new(scrollable::Id::unique);
 
 // #EBECF2
 static MAGNIFIER: &[u8] = include_bytes!("../assets/magnifier.png");
 static ENTER: &[u8] = include_bytes!("../assets/enter.png");
-static STAR_ACTIVE: &[u8] = include_bytes!("../assets/star-fill.png");
-static STAR_INACTIVE: &[u8] = include_bytes!("../assets/star-line.png");
 
-// static CUBE_ACTIVE: &[u8] = include_bytes!("../assets/tabler--cube-active.png");
-// static TERMINAL_PROMPT_ACTIVE: &[u8] = include_bytes!("../assets/mynaui--terminal-active.png");
+static STAR_ACTIVE: &[u8] = include_bytes!("../assets/star-fill.png");
+static CUBE_ACTIVE: &[u8] = include_bytes!("../assets/tabler--cube-active.png");
+static FOLDER_ACTIVE: &[u8] = include_bytes!("../assets/proicons--folder.png");
 
 // // #808080
-// static CUBE_INACTIVE: &[u8] = include_bytes!("../assets/tabler--cube.png");
-// static TERMINAL_PROMPT_INACTIVE: &[u8] = include_bytes!("../assets/mynaui--terminal.png");
-// static FOLDER_INACTIVE: &[u8] = include_bytes!("../assets/proicons--folder.png");
+static CUBE_INACTIVE: &[u8] = include_bytes!("../assets/tabler--cube.png");
+static FOLDER_INACTIVE: &[u8] = include_bytes!("../assets/proicons--folder-inactive.png");
+static STAR_INACTIVE: &[u8] = include_bytes!("../assets/star-line.png");
 // static CLIPBOARD_INACTIVE: &[u8] = include_bytes!("../assets/tabler--clipboard.png");
 
-// #[derive(Debug)]
 pub struct Lucien {
+    provider: ProviderKind,
     prompt: String,
     matcher: SkimMatcherV2,
     keyboard_modifiers: keyboard::Modifiers,
-    cached_apps: Vec<App>,
-    ranked_apps: Vec<usize>,
+    cached_entries: Vec<Entry>,
+    ranked_entries: Vec<usize>,
     preferences: Preferences,
     selected_entry: usize,
     last_viewport: Option<Viewport>,
@@ -63,45 +61,58 @@ pub struct Lucien {
 #[to_layer_message]
 #[derive(Debug, Clone)]
 pub enum Message {
-    AppsLoaded(Vec<App>),
+    PopulateEntries(Vec<Entry>),
     PromptChange(String),
     DebouncedFilter,
-    LaunchApp(usize),
+    LaunchEntry(usize),
     MarkFavorite(usize),
-
     Keybinding(keyboard::Key, keyboard::Modifiers),
-
     ScrollableViewport(Viewport),
     SystemEvent(iced::Event),
     SaveIntoDisk(Result<PathBuf, Arc<tokio::io::Error>>),
 }
 
-#[derive(Debug, Default, Clone)]
+#[derive(Debug, Clone)]
 pub struct BakedIcons {
-    pub magnifier: Option<image::Handle>,
-    pub star_active: Option<image::Handle>,
-    pub star_inactive: Option<image::Handle>,
-    pub enter: Option<image::Handle>,
+    pub magnifier: image::Handle,
+    pub star_active: image::Handle,
+    pub star_inactive: image::Handle,
+    pub enter: image::Handle,
 }
 
 impl Lucien {
     pub fn init(preferences: Preferences) -> (Self, Task<Message>) {
         let auto_focus_prompt_task = text_input::focus(TEXT_INPUT_ID.clone());
-        let scan_apps_task = Task::perform(async { all_apps() }, Message::AppsLoaded);
-        let initial_tasks = Task::batch([auto_focus_prompt_task, scan_apps_task]);
+        let default_provider = ProviderKind::App(AppProvider);
+        let scan_task = Task::perform(
+            async move {
+                default_provider
+                    .handler()
+                    .scan(&"This parameter should be optional".into())
+            },
+            Message::PopulateEntries,
+        );
+        let initial_tasks = Task::batch([auto_focus_prompt_task, scan_task]);
+
+        let baked_icons = BakedIcons {
+            enter: image::Handle::from_bytes(ENTER),
+            magnifier: image::Handle::from_bytes(MAGNIFIER),
+            star_active: image::Handle::from_bytes(STAR_ACTIVE),
+            star_inactive: image::Handle::from_bytes(STAR_INACTIVE),
+        };
 
         let initial_values = Self {
-            // mode: Mode::Launcher,
+            provider: default_provider,
             prompt: String::new(),
             matcher: SkimMatcherV2::default(),
             keyboard_modifiers: keyboard::Modifiers::empty(),
-            cached_apps: Vec::new(),
-            ranked_apps: Vec::new(),
+            cached_entries: Vec::new(),
+            ranked_entries: Vec::new(),
             preferences,
             selected_entry: 0,
             last_viewport: None,
             search_handle: None,
-            icons: BakedIcons::default(),
+            icons: baked_icons,
         };
 
         (initial_values, initial_tasks)
@@ -113,20 +124,20 @@ impl Lucien {
 
     fn update_ranked_apps(&mut self) {
         let mut ranked: Vec<(i64, usize)> = self
-            .cached_apps
+            .cached_entries
             .iter()
             .enumerate()
-            .filter_map(|(index, app)| {
-                let score = self.matcher.fuzzy_match(&app.name, &self.prompt)?;
+            .filter_map(|(index, entry)| {
+                let score = self.matcher.fuzzy_match(&entry.main, &self.prompt)?;
                 Some((score, index))
             })
             .collect();
 
         ranked.sort_by(|(score_a, index_a), (score_b, index_b)| {
-            let app_a = &self.cached_apps[*index_a];
-            let app_b = &self.cached_apps[*index_b];
-            let a_is_fav = self.preferences.favorite_apps.contains(&app_a.id);
-            let b_is_fav = self.preferences.favorite_apps.contains(&app_b.id);
+            let entry_a = &self.cached_entries[*index_a];
+            let entry_b = &self.cached_entries[*index_b];
+            let a_is_fav = self.preferences.favorite_apps.contains(&entry_a.id);
+            let b_is_fav = self.preferences.favorite_apps.contains(&entry_b.id);
 
             match (a_is_fav, b_is_fav) {
                 (true, false) => std::cmp::Ordering::Less,
@@ -135,14 +146,14 @@ impl Lucien {
             }
         });
 
-        self.ranked_apps = ranked
+        self.ranked_entries = ranked
             .into_iter()
             .map(|(_score, app_index)| app_index)
             .collect();
     }
 
     fn mark_favorite(&mut self, index: usize) -> Task<Message> {
-        let Some(app) = self.ranked_apps.get(index) else {
+        let Some(app) = self.ranked_entries.get(index) else {
             return Task::none();
         };
 
@@ -151,7 +162,7 @@ impl Lucien {
             return Task::none();
         };
 
-        let id = &self.cached_apps[*app].id;
+        let id = &self.cached_entries[*app].id;
         let path = path.clone();
         // Toggle_favorite is a very opaque function. It actually
         // modifies the in-memory favorite_apps variable.
@@ -166,7 +177,7 @@ impl Lucien {
     }
 
     fn go_to_entry(&mut self, step: isize) -> Task<Message> {
-        let total = self.ranked_apps.len();
+        let total = self.ranked_entries.len();
         if total == 0 {
             return Task::none();
         }
@@ -197,11 +208,11 @@ impl Lucien {
         };
 
         // 1. Get coordinates from injected layout
-        let app_idx = self.ranked_apps[self.selected_entry];
+        let entry_index = self.ranked_entries[self.selected_entry];
         let is_fav = self
             .preferences
             .favorite_apps
-            .contains(&self.cached_apps[app_idx].id);
+            .contains(&self.cached_entries[entry_index].id);
         let selection_top = layout.y_for_index(self.selected_entry, is_fav);
         let selection_bottom = selection_top + layout.item_height;
 
@@ -246,27 +257,51 @@ impl Lucien {
         )
     }
 
+    fn swtich_provider(&mut self) -> Task<Message> {
+        match self.prompt.as_str() {
+            "@" => {
+                self.prompt = "".to_string();
+                self.provider = ProviderKind::App(AppProvider);
+                let provider_clone = self.provider.clone();
+                Task::perform(
+                    async move {
+                        provider_clone
+                            .handler()
+                            .scan(&"This parameter should be optional".into())
+                    },
+                    Message::PopulateEntries,
+                )
+            }
+            "/" => {
+                self.prompt = "".to_string();
+                self.provider = ProviderKind::File(FileProvider);
+                let provider_clone = self.provider.clone();
+                let h = env!("HOME");
+                Task::perform(
+                    async move { provider_clone.handler().scan(&h.into()) },
+                    Message::PopulateEntries,
+                )
+            }
+            _ => Task::none(),
+        }
+    }
+
     pub fn update(&mut self, message: Message) -> Task<Message> {
         match message {
-            Message::AppsLoaded(apps) => {
-                self.cached_apps = apps;
-                self.ranked_apps = (0..self.cached_apps.len()).collect();
-
-                self.icons = BakedIcons {
-                    enter: Some(image::Handle::from_bytes(ENTER)),
-                    magnifier: Some(image::Handle::from_bytes(MAGNIFIER)),
-                    star_active: Some(image::Handle::from_bytes(STAR_ACTIVE)),
-                    star_inactive: Some(image::Handle::from_bytes(STAR_INACTIVE)),
-                };
+            Message::PopulateEntries(entries) => {
+                self.prompt = "".to_string();
+                self.selected_entry = 0;
+                self.cached_entries = entries;
+                self.ranked_entries = (0..self.cached_entries.len()).collect();
 
                 if !self.preferences.favorite_apps.is_empty() {
-                    self.ranked_apps.sort_by_key(|index| {
-                        let app = &self.cached_apps[*index];
+                    self.ranked_entries.sort_by_key(|index| {
+                        let app = &self.cached_entries[*index];
                         !self.preferences.favorite_apps.contains(&app.id)
                     });
                 }
 
-                Task::none()
+                scrollable::snap_to(SCROLLABLE_ID.clone(), RelativeOffset { x: 0.0, y: 0.0 })
             }
             Message::SaveIntoDisk(result) => {
                 match result {
@@ -286,20 +321,14 @@ impl Lucien {
 
                 Task::none()
             }
-            Message::LaunchApp(index) => {
-                let Some(app_index) = self.ranked_apps.get(index) else {
+            Message::LaunchEntry(index) => {
+                let Some(entry_index) = self.ranked_entries.get(index) else {
                     return Task::none();
                 };
 
-                let app = &self.cached_apps[*app_index];
+                let entry = &self.cached_entries[*entry_index];
 
-                match app.launch() {
-                    Ok(_) => iced::exit(),
-                    Err(e) => {
-                        tracing::error!("Failed to launch {}, due to: {}", app.id, e);
-                        Task::none()
-                    }
-                }
+                self.provider.handler().launch(&entry.id)
             }
             Message::PromptChange(prompt) => {
                 if self.keyboard_modifiers.alt() {
@@ -312,11 +341,15 @@ impl Lucien {
                     handle.abort();
                 }
 
+                if self.prompt == "/" || self.prompt == "@" {
+                    return self.swtich_provider();
+                }
+
                 if self.prompt.is_empty() {
                     return Task::done(Message::DebouncedFilter);
                 }
 
-                let (task, handle) = Task::future(async move {
+                let (task, handle) = Task::future(async {
                     tokio::time::sleep(std::time::Duration::from_millis(100)).await;
                     Message::DebouncedFilter
                 })
@@ -376,11 +409,11 @@ impl Lucien {
                     }),
                     _,
                 ) if modifiers.alt() => match physical_key_pressed {
-                    keyboard::key::Code::Digit1 => Some(Message::LaunchApp(0)),
-                    keyboard::key::Code::Digit2 => Some(Message::LaunchApp(1)),
-                    keyboard::key::Code::Digit3 => Some(Message::LaunchApp(2)),
-                    keyboard::key::Code::Digit4 => Some(Message::LaunchApp(3)),
-                    keyboard::key::Code::Digit5 => Some(Message::LaunchApp(4)),
+                    keyboard::key::Code::Digit1 => Some(Message::LaunchEntry(0)),
+                    keyboard::key::Code::Digit2 => Some(Message::LaunchEntry(1)),
+                    keyboard::key::Code::Digit3 => Some(Message::LaunchEntry(2)),
+                    keyboard::key::Code::Digit4 => Some(Message::LaunchEntry(3)),
+                    keyboard::key::Code::Digit5 => Some(Message::LaunchEntry(4)),
                     _ => None,
                 },
                 (Event::Keyboard(keyboard::Event::KeyPressed { key, modifiers, .. }), _) => {
@@ -425,22 +458,46 @@ impl Lucien {
             general_column = Column::new();
         }
 
-        for (rank_pos, app_index) in self.ranked_apps.iter().enumerate() {
-            let app = &self.cached_apps[*app_index];
-            let is_favorite = self.preferences.favorite_apps.contains(&app.id);
+        for (rank_pos, app_index) in self.ranked_entries.iter().enumerate() {
+            let entry = &self.cached_entries[*app_index];
+            let is_favorite = self.preferences.favorite_apps.contains(&entry.id);
             let is_selected = self.selected_entry == rank_pos;
 
             let item_height = theme.launchpad.entry.height;
             let style = &self.preferences.theme.launchpad.entry;
-            let icons = &self.icons;
+            let icon_handle = entry
+                .icon
+                .as_ref()
+                .and_then(|e| self.provider.handler().get_icon(&e, style.icon_size as u32));
 
-            let element: Element<Message, CustomTheme> = container(iced::widget::lazy(
-                (*app_index, is_selected, is_favorite),
-                move |_| app.entry(icons, style, rank_pos, self.selected_entry, is_favorite),
+            let element = container(display_entry(
+                entry,
+                icon_handle,
+                &self.icons,
+                style,
+                rank_pos,
+                is_selected,
+                is_favorite,
             ))
             .height(item_height)
-            .width(Length::Fill)
-            .into();
+            .width(Length::Fill);
+
+            // let element: Element<Message, CustomTheme> = container(iced::widget::lazy(
+            //     (*app_index, is_selected, is_favorite),
+            //     move |_| {
+            //         display_entry(
+            //             entry,
+            //             &self.icons,
+            //             style,
+            //             rank_pos,
+            //             is_selected,
+            //             is_favorite,
+            //         )
+            //     },
+            // ))
+            // .height(item_height)
+            // .width(Length::Fill)
+            // .into();
 
             if is_favorite && self.prompt.is_empty() {
                 starred_column = starred_column.push(element);
@@ -465,7 +522,7 @@ impl Lucien {
         let content = Column::new()
             .push(starred_column)
             .push(general_column)
-            .push_maybe(self.ranked_apps.is_empty().then_some(results_not_found))
+            .push_maybe(self.ranked_entries.is_empty().then_some(results_not_found))
             .padding(theme.launchpad.padding)
             .width(Length::Fill);
         let results = iced::widget::scrollable(content)
@@ -473,10 +530,11 @@ impl Lucien {
             .id(SCROLLABLE_ID.clone());
 
         let prompt = Prompt::new(&self.prompt, &self.preferences.theme)
-            .magnifier(self.icons.magnifier.as_ref())
+            .indicator(self.provider_indicator())
+            .magnifier(&self.icons.magnifier)
             .id(TEXT_INPUT_ID.clone())
             .on_input(Message::PromptChange)
-            .on_submit(Message::LaunchApp(self.selected_entry))
+            .on_submit(Message::LaunchEntry(self.selected_entry))
             .view();
 
         container(iced::widget::column![
@@ -487,31 +545,31 @@ impl Lucien {
         .class(ContainerClass::MainContainer)
     }
 
-    // fn status_indicator<'a>(&'a self) -> Container<'a, Message> {
-    //     use iced::widget::image;
+    fn provider_indicator<'a>(&'a self) -> Container<'a, Message, CustomTheme> {
+        use iced::widget::image;
 
-    //     let launcher_icon = match self.mode {
-    //         Mode::Launcher => CUBE_ACTIVE,
-    //         _ => CUBE_INACTIVE,
-    //     };
+        let launcher_icon = match self.provider {
+            ProviderKind::App(_) => CUBE_ACTIVE,
+            _ => CUBE_INACTIVE,
+        };
 
-    //     let terminal_icon = match self.mode {
-    //         Mode::Terminal => TERMINAL_PROMPT_ACTIVE,
-    //         _ => TERMINAL_PROMPT_INACTIVE,
-    //     };
+        let terminal_icon = match self.provider {
+            ProviderKind::File(_) => FOLDER_ACTIVE,
+            _ => FOLDER_INACTIVE,
+        };
 
-    //     container(
-    //         row![
-    //             image(image::Handle::from_bytes(launcher_icon))
-    //                 .width(18)
-    //                 .height(18),
-    //             image(image::Handle::from_bytes(terminal_icon))
-    //                 .width(18)
-    //                 .height(18),
-    //         ]
-    //         .spacing(10),
-    //     )
-    // }
+        container(
+            row![
+                image(image::Handle::from_bytes(launcher_icon))
+                    .width(18)
+                    .height(18),
+                image(image::Handle::from_bytes(terminal_icon))
+                    .width(18)
+                    .height(18),
+            ]
+            .spacing(10),
+        )
+    }
 }
 
 fn wrapped_index(index: usize, array_len: usize, step: isize) -> usize {
