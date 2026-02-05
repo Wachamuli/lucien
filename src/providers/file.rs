@@ -76,14 +76,73 @@ impl Provider for FileProvider {
         iced::exit()
     }
 
-    fn get_icon(&self, path: &PathBuf, size: u32) -> Option<image::Handle> {
-        let dir_icon_path = "assets/mimetypes/inode-directory.svg";
-        let file_icon_path = "assets/mimetypes/application-x-generic.svg";
+    fn get_icon(&self, entry: &Entry, size: u32) -> image::Handle {
+        let default_icon =
+            || image::Handle::from_path("assets/mimetypes/application-x-generic.png");
 
-        if path.is_dir() {
-            return load_icon_with_cache(&PathBuf::from(dir_icon_path), size);
+        let Some(icon_path) = &entry.icon else {
+            return default_icon();
+        };
+
+        if icon_path.is_dir() {
+            let dir_icon_path = "assets/mimetypes/inode-directory.svg";
+            return load_icon_with_cache(&PathBuf::from(dir_icon_path), size)
+                .unwrap_or_else(default_icon);
         }
 
-        load_icon_with_cache(&PathBuf::from(file_icon_path), size)
+        let file_extension = entry
+            .main
+            .rsplit_once('.')
+            .map(|(_, ext)| ext.to_lowercase())
+            .unwrap_or_default();
+
+        let mimetype = MimeType::get_type_from_extension(&file_extension);
+        let mimetype_icon_path = &mimetype.get_icon_from_type();
+        load_icon_with_cache(mimetype_icon_path, size).unwrap_or_else(default_icon)
+    }
+}
+
+#[derive(Debug)]
+pub enum MimeType {
+    Text,
+    Application,
+    Image,
+    Audio,
+    Video,
+    Font,
+    Multipart,
+    Model,
+    Unknown,
+}
+
+impl MimeType {
+    fn get_type_from_extension(ext: &str) -> MimeType {
+        match ext {
+            "txt" | "md" | "html" | "css" | "csv" => MimeType::Text,
+            "json" | "pdf" | "zip" | "wasm" | "xml" => MimeType::Application,
+            "jpg" | "jpeg" | "png" | "gif" | "webp" | "svg" => MimeType::Image,
+            "mp3" | "wav" | "ogg" | "m4a" => MimeType::Audio,
+            "mp4" | "webm" | "avi" | "mov" => MimeType::Video,
+            "ttf" | "otf" | "woff" | "woff2" => MimeType::Font,
+            "mime" | "mhtml" => MimeType::Multipart,
+            "obj" | "stl" | "glb" | "gltf" | "3ds" => MimeType::Model,
+            _ => MimeType::Unknown,
+        }
+    }
+
+    fn get_icon_from_type(&self) -> PathBuf {
+        let icon_name = match self {
+            MimeType::Text => "text-x-generic.svg",
+            MimeType::Application => "application-x-executable.svg",
+            MimeType::Image => "image-x-generic.svg",
+            MimeType::Audio => "audio-x-generic.svg",
+            MimeType::Video => "video-x-generic.svg",
+            MimeType::Font => "font-x-generic.svg",
+            MimeType::Multipart => "package-x-generic.svg",
+            MimeType::Model => "model.svg",
+            MimeType::Unknown => "application-x-generic.svg",
+        };
+
+        PathBuf::from(format!("assets/mimetypes/{}", icon_name))
     }
 }

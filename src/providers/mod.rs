@@ -34,7 +34,7 @@ pub trait Provider {
     // Maybe, launch could consume self? But I have to get rid of dynamic dispatch first.
     // I could avoid couple clones doing this.
     fn launch(&self, id: &str) -> Task<Message>;
-    fn get_icon(&self, path: &PathBuf, size: u32) -> Option<image::Handle>;
+    fn get_icon(&self, entry: &Entry, size: u32) -> image::Handle;
 }
 
 #[derive(Debug, Clone)]

@@ -56,9 +56,19 @@ impl Provider for AppProvider {
         iced::exit()
     }
 
-    fn get_icon(&self, path: &PathBuf, size: u32) -> Option<image::Handle> {
-        let icon_path = get_icon_path_from_xdgicon(path)?;
-        load_icon_with_cache(&icon_path, size)
+    fn get_icon(&self, entry: &Entry, size: u32) -> image::Handle {
+        let default_icon =
+            || image::Handle::from_path("assets/mimetypes/application-x-executable.png");
+
+        let Some(icon_path) = &entry.icon else {
+            return default_icon();
+        };
+
+        if let Some(xdg_icon_path) = get_icon_path_from_xdgicon(icon_path) {
+            load_icon_with_cache(&xdg_icon_path, size).unwrap_or_else(default_icon)
+        } else {
+            default_icon()
+        }
     }
 }
 

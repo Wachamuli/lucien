@@ -12,7 +12,7 @@ use crate::{
 
 pub fn display_entry<'a>(
     entry: &'a Entry,
-    icon: Option<image::Handle>,
+    icon: image::Handle,
     baked_icons: &'a BakedIcons,
     style: &'a EntryStyle,
     index: usize,
@@ -56,13 +56,10 @@ pub fn display_entry<'a>(
             .class(TextClass::SecondaryText)
     });
 
-    let icon_view: Element<'a, Message, CustomTheme> = match icon {
-        Some(handle) => image(handle)
-            .width(style.icon_size)
-            .height(style.icon_size)
-            .into(),
-        None => iced::widget::horizontal_space().width(0).into(),
-    };
+    let icon_view: Element<'a, Message, CustomTheme> = image(icon)
+        .width(style.icon_size)
+        .height(style.icon_size)
+        .into();
 
     button(
         row![
