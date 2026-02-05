@@ -7,8 +7,8 @@ use crate::{launcher::Lucien, preferences::Preferences};
 
 mod launcher;
 mod preferences;
-mod prompt;
 mod providers;
+mod ui;
 
 use anyhow::Context;
 use iced_layershell::{

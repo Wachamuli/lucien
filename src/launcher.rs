@@ -21,28 +21,21 @@ use crate::{
         keybindings::Action,
         theme::{ContainerClass, CustomTheme, TextClass},
     },
-    prompt::Prompt,
-    providers::{Entry, ProviderKind, app::AppProvider, display_entry, file::FileProvider},
+    providers::{Entry, ProviderKind, app::AppProvider, file::FileProvider},
+    ui::prompt::Prompt,
+    ui::{
+        entry,
+        icon::{
+            BakedIcons, CUBE_ACTIVE, CUBE_INACTIVE, ENTER, FOLDER_ACTIVE, FOLDER_INACTIVE,
+            MAGNIFIER, STAR_ACTIVE, STAR_INACTIVE,
+        },
+    },
 };
 
 const SECTION_HEIGHT: f32 = 36.0;
 
 static TEXT_INPUT_ID: LazyLock<text_input::Id> = std::sync::LazyLock::new(text_input::Id::unique);
 static SCROLLABLE_ID: LazyLock<scrollable::Id> = std::sync::LazyLock::new(scrollable::Id::unique);
-
-// #EBECF2
-static MAGNIFIER: &[u8] = include_bytes!("../assets/magnifier.png");
-static ENTER: &[u8] = include_bytes!("../assets/enter.png");
-
-static STAR_ACTIVE: &[u8] = include_bytes!("../assets/star-fill.png");
-static CUBE_ACTIVE: &[u8] = include_bytes!("../assets/tabler--cube-active.png");
-static FOLDER_ACTIVE: &[u8] = include_bytes!("../assets/proicons--folder.png");
-
-// // #808080
-static CUBE_INACTIVE: &[u8] = include_bytes!("../assets/tabler--cube.png");
-static FOLDER_INACTIVE: &[u8] = include_bytes!("../assets/proicons--folder-inactive.png");
-static STAR_INACTIVE: &[u8] = include_bytes!("../assets/star-line.png");
-// static CLIPBOARD_INACTIVE: &[u8] = include_bytes!("../assets/tabler--clipboard.png");
 
 pub struct Lucien {
     provider: ProviderKind,
@@ -70,14 +63,6 @@ pub enum Message {
     ScrollableViewport(Viewport),
     SystemEvent(iced::Event),
     SaveIntoDisk(Result<PathBuf, Arc<tokio::io::Error>>),
-}
-
-#[derive(Debug, Clone)]
-pub struct BakedIcons {
-    pub magnifier: image::Handle,
-    pub star_active: image::Handle,
-    pub star_inactive: image::Handle,
-    pub enter: image::Handle,
 }
 
 impl Lucien {
@@ -470,7 +455,7 @@ impl Lucien {
                 .as_ref()
                 .and_then(|e| self.provider.handler().get_icon(&e, style.icon_size as u32));
 
-            let element = container(display_entry(
+            let element = container(entry::display_entry(
                 entry,
                 icon_handle,
                 &self.icons,
