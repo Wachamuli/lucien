@@ -1,10 +1,10 @@
 use iced::widget::image::Handle;
 
-pub const ICON_SIZES: [&str; 8] = [
-    "scalable", "512x512", "256x256", "128x128", "96x96", "64x64", "48x48", "32x32",
+pub const ICON_SIZES: [&str; 7] = [
+    "512x512", "256x256", "128x128", "96x96", "64x64", "48x48", "32x32",
 ];
 
-pub const ICON_EXTENSION: [&str; 2] = ["svg", "png"];
+pub const ICON_EXTENSIONS: [&str; 2] = ["svg", "png"];
 
 // #EBECF2
 //

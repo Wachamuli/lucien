@@ -1,4 +1,5 @@
 use std::{
+    fmt::Write,
     path::{Path, PathBuf},
     process,
 };
@@ -9,7 +10,7 @@ use iced::{Task, widget::image};
 
 use crate::{
     launcher::Message,
-    ui::icon::{ICON_EXTENSION, ICON_SIZES},
+    ui::icon::{ICON_EXTENSIONS, ICON_SIZES},
 };
 
 use super::{Entry, Provider, load_icon_with_cache, spawn_with_new_session};
@@ -81,22 +82,26 @@ pub fn get_icon_path_from_xdgicon(iconname: &Path) -> Option<PathBuf> {
     }
 
     let xdg_dirs = xdg::BaseDirectories::new();
+    let iconname_str = iconname.to_str()?;
+    let mut path_str = String::with_capacity(128);
+
+    write!(path_str, "icons/hicolor/scalable/apps/{}.svg", iconname_str).ok()?;
+    if let Some(path) = xdg_dirs.find_data_file(&path_str) {
+        return Some(path);
+    }
 
     for size in ICON_SIZES {
-        let extension = if size == "scalable" { "svg" } else { "png" };
-        let sub_path = format!(
-            "icons/hicolor/{size}/apps/{iconname}.{extension}",
-            iconname = iconname.display()
-        );
-
-        if let Some(path) = xdg_dirs.find_data_file(&sub_path) {
+        path_str.clear();
+        write!(path_str, "icons/hicolor/{}/apps/{}.png", size, iconname_str).ok()?;
+        if let Some(path) = xdg_dirs.find_data_file(&path_str) {
             return Some(path);
         }
     }
 
-    for ext in ICON_EXTENSION {
-        let pixmap_path = format!("pixmaps/{iconname}.{ext}", iconname = iconname.display());
-        if let Some(path) = xdg_dirs.find_data_file(&pixmap_path) {
+    for ext in ICON_EXTENSIONS {
+        path_str.clear();
+        write!(path_str, "pixmaps/{}.{}", iconname_str, ext).ok()?;
+        if let Some(path) = xdg_dirs.find_data_file(&path_str) {
             return Some(path);
         }
     }
