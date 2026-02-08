@@ -5,9 +5,9 @@ use std::{
 
 use iced::{Task, widget::image};
 
-use crate::launcher::Message;
+use crate::{launcher::Message, providers::load_raster_icon};
 
-use super::{Entry, Provider, load_icon_with_cache, spawn_with_new_session};
+use super::{Entry, Provider, spawn_with_new_session};
 
 #[derive(Debug, Clone, Copy)]
 pub struct FileProvider;
@@ -30,7 +30,7 @@ impl Provider for FileProvider {
                         id_str.clone(),
                         main_display,
                         Some(id_str),
-                        Some(path),
+                        get_icon_from_mimetype(&path, 28),
                     ))
                 })
             })
@@ -45,7 +45,7 @@ impl Provider for FileProvider {
                 p.to_str().unwrap(),
                 "..",
                 Some(p.to_string_lossy()),
-                Some(p.to_path_buf()),
+                get_icon_from_mimetype(&p, 28),
             )
         });
 
@@ -78,29 +78,29 @@ impl Provider for FileProvider {
 
         iced::exit()
     }
+}
 
-    fn get_icon(&self, entry: &Entry, size: u32) -> image::Handle {
-        let default_icon =
-            || image::Handle::from_path("assets/mimetypes/application-x-generic.png");
+fn get_icon_from_mimetype(path: &Path, size: u32) -> image::Handle {
+    let default_icon = || {
+        image::Handle::from_path(
+            "/home/wachamuli/Projects/lucien/assets/mimetypes/application-x-generic.png",
+        )
+    };
 
-        let Some(icon_path) = &entry.icon else {
-            return default_icon();
-        };
-
-        if icon_path.is_dir() {
-            let dir_icon_path = Path::new("assets/mimetypes/inode-directory.svg");
-            return load_icon_with_cache(&dir_icon_path, size).unwrap_or_else(default_icon);
-        }
-
-        let file_extension = entry
-            .main
-            .rsplit_once('.')
-            .map(|(_, ext)| ext.to_lowercase())
-            .unwrap_or_default();
-
-        let mimetype = MimeType::get_type_from_extension(&file_extension);
-        load_icon_with_cache(&mimetype.get_icon_from_type(), size).unwrap_or_else(default_icon)
+    if path.is_dir() {
+        let dir_icon_path =
+            Path::new("/home/wachamuli/Projects/lucien/assets/mimetypes/inode-directory.svg");
+        return load_raster_icon(&dir_icon_path, size).unwrap_or_else(default_icon);
     }
+
+    let file_extension = path
+        .to_string_lossy()
+        .rsplit_once('.')
+        .map(|(_, ext)| ext.to_lowercase())
+        .unwrap_or_default();
+
+    let mimetype = MimeType::get_type_from_extension(&file_extension);
+    load_raster_icon(&mimetype.get_icon_from_type(), size).unwrap_or_else(default_icon)
 }
 
 #[derive(Debug)]
@@ -144,6 +144,9 @@ impl MimeType {
             MimeType::Unknown => "application-x-generic.svg",
         };
 
-        PathBuf::from(format!("assets/mimetypes/{}", icon_name))
+        PathBuf::from(format!(
+            "/home/wachamuli/Projects/lucien/assets/mimetypes/{}",
+            icon_name
+        ))
     }
 }

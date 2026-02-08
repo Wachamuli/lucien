@@ -39,7 +39,7 @@ pub trait Provider {
     // Maybe, launch could consume self? But I have to get rid of dynamic dispatch first.
     // I could avoid couple clones doing this.
     fn launch(&self, id: &str) -> Task<Message>;
-    fn get_icon(&self, entry: &Entry, size: u32) -> image::Handle;
+    // fn get_icon(&self, entry: &Entry, size: u32) -> image::Handle;
 }
 
 #[derive(Debug, Clone)]
@@ -47,7 +47,7 @@ pub struct Entry {
     pub id: String,
     pub main: String,
     pub secondary: Option<String>,
-    pub icon: Option<PathBuf>,
+    pub icon: iced::widget::image::Handle,
 }
 
 impl Entry {
@@ -55,7 +55,7 @@ impl Entry {
         id: impl Into<String>,
         main: impl Into<String>,
         secondary: Option<impl Into<String>>,
-        icon: Option<PathBuf>,
+        icon: iced::widget::image::Handle,
     ) -> Self {
         Self {
             id: id.into(),

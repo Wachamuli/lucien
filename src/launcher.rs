@@ -450,14 +450,9 @@ impl Lucien {
 
             let item_height = theme.launchpad.entry.height;
             let style = &self.preferences.theme.launchpad.entry;
-            let icon_handle = self
-                .provider
-                .handler()
-                .get_icon(&entry, style.icon_size as u32);
 
             let element = container(entry::display_entry(
                 entry,
-                icon_handle,
                 &self.icons,
                 style,
                 rank_pos,

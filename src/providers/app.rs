@@ -10,10 +10,11 @@ use iced::{Task, widget::image};
 
 use crate::{
     launcher::Message,
+    providers::load_raster_icon,
     ui::icon::{ICON_EXTENSIONS, ICON_SIZES},
 };
 
-use super::{Entry, Provider, load_icon_with_cache, spawn_with_new_session};
+use super::{Entry, Provider, spawn_with_new_session};
 
 #[derive(Debug, Clone, Copy)]
 pub struct AppProvider;
@@ -27,11 +28,23 @@ impl Provider for AppProvider {
                     return None;
                 }
 
+                let icon = app
+                    .icon()
+                    .and_then(|p| p.to_string())
+                    .map(PathBuf::from)
+                    .and_then(|p| get_icon_path_from_xdgicon(&p))
+                    .and_then(|p| load_raster_icon(&p, 64))
+                    .unwrap_or_else(|| {
+                        image::Handle::from_path(
+                            "/home/wachamuli/Projects/lucien/assets/mimetypes/application-x-executable.png",
+                        )
+                    });
+
                 Some(Entry {
                     id: app.commandline()?.to_str()?.to_string(),
                     main: app.name().to_string(),
                     secondary: app.description().map(String::from),
-                    icon: app.icon().and_then(|p| p.to_string()).map(PathBuf::from),
+                    icon,
                 })
             })
             .collect()
@@ -59,26 +72,26 @@ impl Provider for AppProvider {
 
         iced::exit()
     }
-
-    fn get_icon(&self, entry: &Entry, size: u32) -> image::Handle {
-        let default_icon =
-            || image::Handle::from_path("assets/mimetypes/application-x-executable.png");
-
-        let Some(icon_path) = &entry.icon else {
-            return default_icon();
-        };
-
-        if let Some(xdg_icon_path) = get_icon_path_from_xdgicon(icon_path) {
-            load_icon_with_cache(&xdg_icon_path, size).unwrap_or_else(default_icon)
-        } else {
-            default_icon()
-        }
-    }
 }
+
+// pub fn get_icon(iconname: &gio::Icon) -> PathBuf {
+//     let icon_path = iconname.to_string().map(PathBuf::from);
+
+//     let default_icon = || image::Handle::from_path("assets/mimetypes/application-x-executable.png");
+
+//     let Some(path) = icon_path else {
+//         return default_icon();
+//     };
+
+//     // .map(PathBuf::from)
+//     // .and_then(|path| get_icon_path_from_xdgicon(&path).unwrap_or_else(default_icon));
+
+//     todo!()
+// }
 
 pub fn get_icon_path_from_xdgicon(iconname: &Path) -> Option<PathBuf> {
     if iconname.is_absolute() && iconname.exists() {
-        return Some(iconname.to_owned());
+        return Some(iconname.to_path_buf());
     }
 
     let xdg_dirs = xdg::BaseDirectories::new();
@@ -86,8 +99,8 @@ pub fn get_icon_path_from_xdgicon(iconname: &Path) -> Option<PathBuf> {
     let mut path_str = String::with_capacity(128);
 
     write!(path_str, "icons/hicolor/scalable/apps/{}.svg", iconname_str).ok()?;
-    if let Some(path) = xdg_dirs.find_data_file(&path_str) {
-        return Some(path);
+    if let Some(found_path) = xdg_dirs.find_data_file(&path_str) {
+        return Some(found_path);
     }
 
     for size in ICON_SIZES {
