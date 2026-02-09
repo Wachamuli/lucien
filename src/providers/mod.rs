@@ -5,8 +5,8 @@ use std::{
     process,
 };
 
-use iced::Task;
 use iced::widget::image;
+use iced::{Subscription, Task};
 use resvg::{tiny_skia, usvg};
 
 use crate::{
@@ -34,8 +34,9 @@ impl ProviderKind {
 }
 
 pub trait Provider {
-    // Maybe this function should return a Task<Message::PopulateEntries>?
-    fn scan(&self, dir: &Path) -> Vec<Entry>;
+    // Maybe I should just return the stream, and make the subscription
+    // logic in the subscripiton function
+    fn scan(&self, dir: &Path) -> Subscription<Message>;
     // Maybe, launch could consume self? But I have to get rid of dynamic dispatch first.
     // I could avoid couple clones doing this.
     fn launch(&self, id: &str) -> Task<Message>;

@@ -1,9 +1,10 @@
+use iced::futures::SinkExt;
 use std::{
     path::{Path, PathBuf},
     process,
 };
 
-use iced::{Task, widget::image};
+use iced::{Subscription, Task, widget::image};
 
 use crate::{
     launcher::Message,
@@ -20,58 +21,70 @@ use super::{Entry, Provider, spawn_with_new_session};
 pub struct FileProvider;
 
 impl Provider for FileProvider {
-    fn scan(&self, dir: &Path) -> Vec<Entry> {
-        let child_entries = std::fs::read_dir(dir)
-            .map(|entries| {
-                entries.filter_map(|entry| {
-                    let entry = entry.ok()?;
-                    let path = entry.path();
+    fn scan(&self, dir: &Path) -> Subscription<Message> {
+        let owned_dir = dir.to_path_buf();
 
-                    // FIXME: Unix-like systems accept non-UTF-8 valid sequences
-                    // as valid file names. Right now, these entries are being skip.
-                    // In order to fix this, id should be a PathBuf or similar.
-                    let id_str = path.to_str()?.to_owned();
-                    let main_display = path.file_name()?.to_string_lossy().into_owned();
+        let stream = iced::stream::channel(100, |mut tx| async move {
+            let child_entries = std::fs::read_dir(&owned_dir)
+                .map(|entries| {
+                    entries.filter_map(|entry| {
+                        let entry = entry.ok()?;
+                        let path = entry.path();
 
-                    Some(Entry::new(
-                        id_str.clone(),
-                        main_display,
-                        Some(id_str),
-                        get_icon_from_mimetype(&path, 28),
-                    ))
+                        // FIXME: Unix-like systems accept non-UTF-8 valid sequences
+                        // as valid file names. Right now, these entries are being skip.
+                        // In order to fix this, id should be a PathBuf or similar.
+                        let id_str = path.to_str()?.to_owned();
+                        let main_display = path.file_name()?.to_string_lossy().into_owned();
+
+                        Some(Entry::new(
+                            id_str.clone(),
+                            main_display,
+                            Some(id_str),
+                            get_icon_from_mimetype(&path, 28),
+                        ))
+                    })
                 })
-            })
-            .into_iter()
-            .flatten();
+                .into_iter()
+                .flatten();
 
-        let parent_dir = dir.parent();
+            let parent_dir = &owned_dir.parent();
 
-        let parent_dir_entry = parent_dir.map(|p| {
-            // FIXME: Same problem here.
-            Entry::new(
-                p.to_str().unwrap(),
-                "..",
-                Some(p.to_string_lossy()),
-                get_icon_from_mimetype(&p, 28),
-            )
+            let parent_dir_entry = parent_dir.map(|p| {
+                // FIXME: Same problem here.
+                Entry::new(
+                    p.to_str().unwrap(),
+                    "..",
+                    Some(p.to_string_lossy()),
+                    get_icon_from_mimetype(&p, 28),
+                )
+            });
+
+            let dirs = parent_dir_entry
+                .into_iter()
+                .chain(child_entries)
+                .collect::<Vec<_>>();
+
+            for dir in dirs {
+                let _ = tx.send(Message::PopulateEntries(dir)).await;
+            }
+
+            iced::futures::pending!()
         });
 
-        parent_dir_entry
-            .into_iter()
-            .chain(child_entries)
-            .collect::<Vec<_>>()
+        iced::Subscription::run_with_id("file-provider-scan", stream)
     }
 
     fn launch(&self, id: &str) -> Task<Message> {
         let provider_clone = self.clone();
         let path = PathBuf::from(id);
 
-        if path.is_dir() {
-            return Task::perform(
-                async move { provider_clone.scan(&path) },
-                Message::PopulateEntries,
-            );
-        }
+        // if path.is_dir() {
+        //     return Task::perform(
+        //         async move { provider_clone.scan(&path) },
+        //         Message::PopulateEntries,
+        //     );
+        // }
 
         let mut command = process::Command::new("xdg-open");
         command.arg(&path);

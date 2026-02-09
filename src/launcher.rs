@@ -22,20 +22,20 @@ use crate::{
         theme::{ContainerClass, CustomTheme, TextClass},
     },
     providers::{Entry, ProviderKind, app::AppProvider, file::FileProvider},
-    ui::prompt::Prompt,
     ui::{
         entry,
         icon::{
             BakedIcons, CUBE_ACTIVE, CUBE_INACTIVE, ENTER, FOLDER_ACTIVE, FOLDER_INACTIVE,
             MAGNIFIER, STAR_ACTIVE, STAR_INACTIVE,
         },
+        prompt::Prompt,
     },
 };
 
 const SECTION_HEIGHT: f32 = 36.0;
 
-static TEXT_INPUT_ID: LazyLock<text_input::Id> = std::sync::LazyLock::new(text_input::Id::unique);
-static SCROLLABLE_ID: LazyLock<scrollable::Id> = std::sync::LazyLock::new(scrollable::Id::unique);
+static TEXT_INPUT_ID: LazyLock<text_input::Id> = LazyLock::new(text_input::Id::unique);
+static SCROLLABLE_ID: LazyLock<scrollable::Id> = LazyLock::new(scrollable::Id::unique);
 
 pub struct Lucien {
     provider: ProviderKind,
@@ -54,7 +54,7 @@ pub struct Lucien {
 #[to_layer_message]
 #[derive(Debug, Clone)]
 pub enum Message {
-    PopulateEntries(Vec<Entry>),
+    PopulateEntries(Entry),
     PromptChange(String),
     DebouncedFilter,
     LaunchEntry(usize),
@@ -69,15 +69,6 @@ impl Lucien {
     pub fn init(preferences: Preferences) -> (Self, Task<Message>) {
         let auto_focus_prompt_task = text_input::focus(TEXT_INPUT_ID.clone());
         let default_provider = ProviderKind::App(AppProvider);
-        let scan_task = Task::perform(
-            async move {
-                default_provider
-                    .handler()
-                    .scan(Path::new("This parameter should be optional"))
-            },
-            Message::PopulateEntries,
-        );
-        let initial_tasks = Task::batch([auto_focus_prompt_task, scan_task]);
 
         let baked_icons = BakedIcons {
             enter: image::Handle::from_bytes(ENTER),
@@ -100,7 +91,7 @@ impl Lucien {
             icons: baked_icons,
         };
 
-        (initial_values, initial_tasks)
+        (initial_values, auto_focus_prompt_task)
     }
 
     pub fn theme(&self) -> CustomTheme {
@@ -243,41 +234,40 @@ impl Lucien {
     }
 
     fn swtich_provider(&mut self) -> Task<Message> {
-        match self.prompt.as_str() {
-            "@" => {
-                self.prompt = "".to_string();
-                self.provider = ProviderKind::App(AppProvider);
-                let provider_clone = self.provider.clone();
-                Task::perform(
-                    async move {
-                        provider_clone
-                            .handler()
-                            .scan(Path::new("This parameter should be optional"))
-                    },
-                    Message::PopulateEntries,
-                )
+        let provider_matcher = match self.prompt.as_str() {
+            "@" => Some(ProviderKind::App(AppProvider)),
+            "/" => Some(ProviderKind::File(FileProvider)),
+            _ => None,
+        };
+
+        if let Some(new_provider) = provider_matcher {
+            use std::mem::discriminant;
+            if discriminant(&self.provider) != discriminant(&new_provider) {
+                self.cached_entries.clear();
+                self.ranked_entries.clear();
+                self.prompt = String::new();
+                self.provider = new_provider;
+                return scrollable::snap_to(
+                    SCROLLABLE_ID.clone(),
+                    RelativeOffset { x: 0.0, y: 0.0 },
+                );
             }
-            "/" => {
-                self.prompt = "".to_string();
-                self.provider = ProviderKind::File(FileProvider);
-                let provider_clone = self.provider.clone();
-                let h = env!("HOME");
-                Task::perform(
-                    async move { provider_clone.handler().scan(Path::new(h)) },
-                    Message::PopulateEntries,
-                )
-            }
-            _ => Task::none(),
-        }
+        };
+
+        Task::none()
     }
 
     pub fn update(&mut self, message: Message) -> Task<Message> {
         match message {
+            // Message::SwitchProvider(provider) => {
+            //     self.provider = provider;
+            //     self.cached_entries.clear();
+            //     self.ranked_entries.clear();
+            //     Task::none()
+            // }
             Message::PopulateEntries(entries) => {
-                self.prompt = "".to_string();
-                self.selected_entry = 0;
-                self.cached_entries = entries;
-                self.ranked_entries = (0..self.cached_entries.len()).collect();
+                self.cached_entries.push(entries);
+                self.ranked_entries.push(self.cached_entries.len() - 1);
 
                 if !self.preferences.favorite_apps.is_empty() {
                     self.ranked_entries.sort_by_key(|index| {
@@ -286,7 +276,7 @@ impl Lucien {
                     });
                 }
 
-                scrollable::snap_to(SCROLLABLE_ID.clone(), RelativeOffset { x: 0.0, y: 0.0 })
+                Task::none()
             }
             Message::SaveIntoDisk(result) => {
                 match result {
@@ -326,9 +316,7 @@ impl Lucien {
                     handle.abort();
                 }
 
-                if self.prompt == "/" || self.prompt == "@" {
-                    return self.swtich_provider();
-                }
+                self.swtich_provider();
 
                 if self.prompt.is_empty() {
                     return Task::done(Message::DebouncedFilter);
@@ -384,6 +372,7 @@ impl Lucien {
 
     pub fn subscription(&self) -> Subscription<Message> {
         Subscription::batch([
+            self.provider.handler().scan(&Path::new(env!("HOME"))),
             event::listen().map(Message::SystemEvent),
             event::listen_with(move |event, status, _id| match (event, status) {
                 (
@@ -486,6 +475,8 @@ impl Lucien {
             }
         }
 
+        // Lazy evaluate this element
+        // TODO: Only show this element when the scanning is done.
         let results_not_found: Container<Message, CustomTheme> = container(
             text("No Results Found")
                 .size(14)
@@ -508,7 +499,6 @@ impl Lucien {
         let results = iced::widget::scrollable(content)
             .on_scroll(Message::ScrollableViewport)
             .id(SCROLLABLE_ID.clone());
-
         let prompt = Prompt::new(&self.prompt, &self.preferences.theme)
             .indicator(self.provider_indicator())
             .magnifier(&self.icons.magnifier)
@@ -526,13 +516,10 @@ impl Lucien {
     }
 
     fn provider_indicator<'a>(&'a self) -> Container<'a, Message, CustomTheme> {
-        use iced::widget::image;
-
         let launcher_icon = match self.provider {
             ProviderKind::App(_) => CUBE_ACTIVE,
             _ => CUBE_INACTIVE,
         };
-
         let terminal_icon = match self.provider {
             ProviderKind::File(_) => FOLDER_ACTIVE,
             _ => FOLDER_INACTIVE,
