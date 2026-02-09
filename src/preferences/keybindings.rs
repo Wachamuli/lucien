@@ -1,4 +1,4 @@
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 
 use serde::{self, Deserialize, Serialize};
 
@@ -11,7 +11,18 @@ pub enum Modifier {
     Super,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+impl std::fmt::Display for Modifier {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Modifier::Alt => write!(f, "alt"),
+            Modifier::Shift => write!(f, "shift"),
+            Modifier::Control => write!(f, "control"),
+            Modifier::Super => write!(f, "super"),
+        }
+    }
+}
+
+#[derive(Debug, Serialize, Deserialize, Hash, PartialEq, Eq)]
 #[serde(rename_all = "lowercase")]
 pub enum Key {
     Tab,
@@ -20,11 +31,43 @@ pub enum Key {
     Char(char),
 }
 
-#[derive(Debug, Serialize, Deserialize)]
-pub struct Keystrokes {
+impl std::fmt::Display for Key {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Key::Tab => write!(f, "tab"),
+            Key::Escape => write!(f, "escape"),
+            Key::Char(c) => write!(f, "{c}"),
+        }
+    }
+}
+
+#[derive(Debug, Serialize, Deserialize, Hash, PartialEq, Eq)]
+pub struct KeyStroke {
     pub key: Key,
     #[serde(default)]
-    pub modifiers: HashSet<Modifier>,
+    pub modifiers: Vec<Modifier>,
+}
+
+impl std::fmt::Display for KeyStroke {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let mut parts = Vec::new();
+
+        if self.modifiers.contains(&Modifier::Control) {
+            parts.push(Modifier::Control.to_string());
+        }
+        if self.modifiers.contains(&Modifier::Super) {
+            parts.push(Modifier::Super.to_string());
+        }
+        if self.modifiers.contains(&Modifier::Alt) {
+            parts.push(Modifier::Alt.to_string());
+        }
+        if self.modifiers.contains(&Modifier::Shift) {
+            parts.push(Modifier::Shift.to_string());
+        }
+
+        parts.push(self.key.to_string());
+        write!(f, "{}", parts.join("-"))
+    }
 }
 
 #[derive(Debug, Serialize, Deserialize, Hash, Eq, PartialEq, Copy, Clone)]
@@ -36,72 +79,66 @@ pub enum Action {
     GoPreviousEntry,
 }
 
-impl Keystrokes {
-    pub fn matches(
-        &self,
-        iced_key: &iced::keyboard::Key,
-        iced_modifiers: iced::keyboard::Modifiers,
-    ) -> bool {
-        let alt = iced_modifiers.alt() == self.modifiers.contains(&Modifier::Alt);
-        let shift = iced_modifiers.shift() == self.modifiers.contains(&Modifier::Shift);
-        let control = iced_modifiers.control() == self.modifiers.contains(&Modifier::Control);
-        let logo = iced_modifiers.logo() == self.modifiers.contains(&Modifier::Super);
+impl KeyStroke {
+    pub fn new(iced_key: iced::keyboard::Key, iced_modifiers: iced::keyboard::Modifiers) -> Self {
+        let mut modifiers = Vec::new();
 
-        if !(alt && shift && control && logo) {
-            return false;
+        if iced_modifiers.control() {
+            modifiers.push(Modifier::Control)
+        };
+        if iced_modifiers.logo() {
+            modifiers.push(Modifier::Super);
+        }
+        if iced_modifiers.alt() {
+            modifiers.push(Modifier::Alt)
+        };
+        if iced_modifiers.shift() {
+            modifiers.push(Modifier::Shift);
         }
 
-        match iced_key {
-            iced::keyboard::Key::Named(iced::keyboard::key::Named::Tab) => {
-                matches!(&self.key, Key::Tab)
-            }
-            iced::keyboard::Key::Named(iced::keyboard::key::Named::Escape) => {
-                matches!(&self.key, Key::Escape)
-            }
-            iced::keyboard::Key::Character(c) => {
-                if let Key::Char(d) = &self.key {
-                    return c.to_string() == d.to_string();
-                }
+        let key = match iced_key {
+            iced::keyboard::Key::Named(iced::keyboard::key::Named::Tab) => Key::Tab,
+            iced::keyboard::Key::Named(iced::keyboard::key::Named::Escape) => Key::Escape,
+            iced::keyboard::Key::Character(c) => Key::Char(c.chars().next().unwrap_or(' ')),
+            _ => Key::Char(' '),
+        };
 
-                false
-            }
-            _ => false,
-        }
+        KeyStroke { key, modifiers }
     }
 }
 
-pub type Keybindings = HashMap<Action, Keystrokes>;
+pub type Keybindings = HashMap<KeyStroke, Action>;
 
 pub fn default_keybindings() -> Keybindings {
     let mut kb = HashMap::new();
 
     kb.insert(
-        Action::Exit,
-        Keystrokes {
+        KeyStroke {
             key: Key::Escape,
             modifiers: [].into(),
         },
+        Action::Exit,
     );
     kb.insert(
-        Action::Mark,
-        Keystrokes {
+        KeyStroke {
             key: Key::Char('f'),
             modifiers: [Modifier::Control].into(),
         },
+        Action::Mark,
     );
     kb.insert(
-        Action::GoNextEntry,
-        Keystrokes {
+        KeyStroke {
             key: Key::Tab,
             modifiers: [].into(),
         },
+        Action::GoNextEntry,
     );
     kb.insert(
-        Action::GoPreviousEntry,
-        Keystrokes {
+        KeyStroke {
             key: Key::Tab,
             modifiers: [Modifier::Shift].into(),
         },
+        Action::GoPreviousEntry,
     );
 
     kb

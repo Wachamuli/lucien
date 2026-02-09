@@ -18,17 +18,17 @@ use iced_layershell::to_layer_message;
 use crate::{
     preferences::{
         self, Preferences,
-        keybindings::Action,
+        keybindings::{Action, KeyStroke},
         theme::{ContainerClass, CustomTheme, TextClass},
     },
     providers::{Entry, ProviderKind, app::AppProvider, file::FileProvider},
-    ui::prompt::Prompt,
     ui::{
         entry,
         icon::{
             BakedIcons, CUBE_ACTIVE, CUBE_INACTIVE, ENTER, FOLDER_ACTIVE, FOLDER_INACTIVE,
             MAGNIFIER, STAR_ACTIVE, STAR_INACTIVE,
         },
+        prompt::Prompt,
     },
 };
 
@@ -298,10 +298,9 @@ impl Lucien {
             }
             Message::Keybinding(current_key_pressed, current_modifiers) => {
                 self.keyboard_modifiers = current_modifiers;
-                for (action, keystroke) in &self.preferences.keybindings {
-                    if keystroke.matches(&current_key_pressed, current_modifiers) {
-                        return self.handle_action(*action);
-                    }
+                let keystroke = KeyStroke::new(current_key_pressed, current_modifiers);
+                if let Some(action) = self.preferences.keybindings.get(&keystroke) {
+                    return self.handle_action(*action);
                 }
 
                 Task::none()
