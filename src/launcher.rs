@@ -21,7 +21,7 @@ use crate::{
         keybindings::Action,
         theme::{ContainerClass, CustomTheme, TextClass},
     },
-    providers::{Entry, ProviderKind, app::AppProvider, file::FileProvider},
+    providers::{Entry, ProviderKind, ScanState, app::AppProvider, file::FileProvider},
     ui::{
         entry::{self, FONT_ITALIC, section},
         icon::{
@@ -56,9 +56,7 @@ pub struct Lucien {
 #[to_layer_message]
 #[derive(Debug, Clone)]
 pub enum Message {
-    Scan(Entry),
-    ScanStarted,
-    ScanCompleted,
+    ScanEvent(ScanState),
     PromptChange(String),
     DebouncedFilter,
     LaunchEntry(usize),
@@ -240,28 +238,30 @@ impl Lucien {
 
     pub fn update(&mut self, message: Message) -> Task<Message> {
         match message {
-            Message::ScanStarted => {
-                self.prompt.clear();
-                self.cached_entries.clear();
-                self.ranked_entries.clear();
-                self.is_scan_completed = false;
-                Task::none()
-            }
-            Message::Scan(entries) => {
-                self.cached_entries.push(entries);
-                self.ranked_entries.push(self.cached_entries.len() - 1);
+            Message::ScanEvent(scan_event) => {
+                match scan_event {
+                    ScanState::Start => {
+                        self.prompt.clear();
+                        self.cached_entries.clear();
+                        self.ranked_entries.clear();
+                        self.is_scan_completed = false;
+                    }
+                    ScanState::Load(entry) => {
+                        self.cached_entries.push(entry);
+                        self.ranked_entries.push(self.cached_entries.len() - 1);
 
-                if !self.preferences.favorite_apps.is_empty() {
-                    self.ranked_entries.sort_by_key(|index| {
-                        let app = &self.cached_entries[*index];
-                        !self.preferences.favorite_apps.contains(&app.id)
-                    });
+                        if !self.preferences.favorite_apps.is_empty() {
+                            self.ranked_entries.sort_by_key(|index| {
+                                let app = &self.cached_entries[*index];
+                                !self.preferences.favorite_apps.contains(&app.id)
+                            });
+                        }
+                    }
+                    ScanState::Finish => {
+                        self.is_scan_completed = true;
+                    }
                 }
 
-                Task::none()
-            }
-            Message::ScanCompleted => {
-                self.is_scan_completed = true;
                 Task::none()
             }
             Message::SaveIntoDisk(result) => {

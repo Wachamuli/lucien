@@ -29,6 +29,13 @@ impl ProviderKind {
     }
 }
 
+#[derive(Debug, Clone)]
+pub enum ScanState {
+    Start,
+    Load(Entry),
+    Finish,
+}
+
 pub trait Provider {
     // TODO: Maybe I should just return the stream, and make the subscription
     // logic in the subscripiton function

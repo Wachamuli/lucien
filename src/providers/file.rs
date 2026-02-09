@@ -15,7 +15,7 @@ use crate::{
     },
 };
 
-use super::{Entry, Provider, spawn_with_new_session};
+use super::{Entry, Provider, ScanState, spawn_with_new_session};
 
 #[derive(Debug, Clone, Copy)]
 pub struct FileProvider;
@@ -27,7 +27,7 @@ impl Provider for FileProvider {
     // This funcion call is the culprit: Path::to_str() -> Option<&str>
     fn scan(&self, dir: PathBuf) -> Subscription<Message> {
         let stream = iced::stream::channel(100, |mut output| async move {
-            let _ = output.send(Message::ScanStarted).await;
+            let _ = output.send(Message::ScanEvent(ScanState::Start)).await;
             if let Some(parent_directory) = dir.parent() {
                 let parent_entry = Entry::new(
                     parent_directory.to_str().unwrap(),
@@ -36,7 +36,9 @@ impl Provider for FileProvider {
                     get_icon_from_mimetype(&parent_directory, 28),
                 );
 
-                let _ = output.send(Message::Scan(parent_entry)).await;
+                let _ = output
+                    .send(Message::ScanEvent(ScanState::Load(parent_entry)))
+                    .await;
             }
 
             let mut child_directories = tokio::fs::read_dir(dir).await.unwrap();
@@ -54,10 +56,12 @@ impl Provider for FileProvider {
                     get_icon_from_mimetype(&path, 28),
                 );
 
-                let _ = output.send(Message::Scan(child_entry)).await;
+                let _ = output
+                    .send(Message::ScanEvent(ScanState::Load(child_entry)))
+                    .await;
             }
 
-            let _ = output.send(Message::ScanCompleted).await;
+            let _ = output.send(Message::ScanEvent(ScanState::Finish)).await;
         });
 
         iced::Subscription::run_with_id("file-provider-scan", stream)

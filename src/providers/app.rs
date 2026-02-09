@@ -14,7 +14,7 @@ use crate::{
     ui::icon::{APPLICATION_DEFAULT, ICON_EXTENSIONS, ICON_SIZES},
 };
 
-use super::{Entry, Provider, spawn_with_new_session};
+use super::{Entry, Provider, ScanState, spawn_with_new_session};
 
 #[derive(Debug, Clone, Copy)]
 pub struct AppProvider;
@@ -26,7 +26,7 @@ impl Provider for AppProvider {
             tokio::task::spawn_blocking(move || {
                 let xdg_dirs = xdg::BaseDirectories::new();
                 let apps = gio::AppInfo::all();
-                let _ = sync_sender.blocking_send(Message::ScanStarted);
+                let _ = sync_sender.blocking_send(Message::ScanEvent(ScanState::Start));
 
                 for app in apps {
                     if !app.should_show() {
@@ -48,7 +48,10 @@ impl Provider for AppProvider {
 
                     let entry = Entry::new(cmd, name, description, icon);
 
-                    if sync_sender.blocking_send(Message::Scan(entry)).is_err() {
+                    if sync_sender
+                        .blocking_send(Message::ScanEvent(ScanState::Load(entry)))
+                        .is_err()
+                    {
                         break;
                     };
                 }
@@ -58,7 +61,7 @@ impl Provider for AppProvider {
                 let _ = output.send(entry).await;
             }
 
-            let _ = output.send(Message::ScanCompleted).await;
+            let _ = output.send(Message::ScanEvent(ScanState::Finish)).await;
         });
 
         iced::Subscription::run_with_id("app-provider-scan", stream)
