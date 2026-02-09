@@ -26,7 +26,7 @@ impl Provider for AppProvider {
             tokio::task::spawn_blocking(move || {
                 let xdg_dirs = xdg::BaseDirectories::new();
                 let apps = gio::AppInfo::all();
-                let _ = sync_sender.blocking_send(Message::ScanEvent(ScanState::Start));
+                let _ = sync_sender.blocking_send(Message::ScanEvent(ScanState::Started));
 
                 for app in apps {
                     if !app.should_show() {
@@ -47,13 +47,7 @@ impl Provider for AppProvider {
                         .unwrap_or_else(|| image::Handle::from_bytes(APPLICATION_DEFAULT));
 
                     let entry = Entry::new(cmd, name, description, icon);
-
-                    if sync_sender
-                        .blocking_send(Message::ScanEvent(ScanState::Load(entry)))
-                        .is_err()
-                    {
-                        break;
-                    };
+                    let _ = sync_sender.blocking_send(Message::ScanEvent(ScanState::Found(entry)));
                 }
             });
 
@@ -61,10 +55,10 @@ impl Provider for AppProvider {
                 let _ = output.send(entry).await;
             }
 
-            let _ = output.send(Message::ScanEvent(ScanState::Finish)).await;
+            let _ = output.send(Message::ScanEvent(ScanState::Finished)).await;
         });
 
-        iced::Subscription::run_with_id("app-provider-scan", stream)
+        iced::Subscription::run_with_id("provider-scan", stream)
     }
 
     fn launch(&self, id: &str) -> Task<Message> {

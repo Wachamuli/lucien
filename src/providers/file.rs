@@ -8,7 +8,6 @@ use iced::{Subscription, Task, widget::image};
 
 use crate::{
     launcher::Message,
-    providers::load_raster_icon,
     ui::icon::{
         APPLICATION_DEFAULT, AUDIO_GENERIC, FOLDER_DEFAULT, FONT_GENERIC, IMAGE_GENERIC,
         MODEL_GENERIC, MULTIPART_GENERIC, TEXT_GENERIC, VIDEO_GENERIC,
@@ -27,7 +26,7 @@ impl Provider for FileProvider {
     // This funcion call is the culprit: Path::to_str() -> Option<&str>
     fn scan(&self, dir: PathBuf) -> Subscription<Message> {
         let stream = iced::stream::channel(100, |mut output| async move {
-            let _ = output.send(Message::ScanEvent(ScanState::Start)).await;
+            let _ = output.send(Message::ScanEvent(ScanState::Started)).await;
             if let Some(parent_directory) = dir.parent() {
                 let parent_entry = Entry::new(
                     parent_directory.to_str().unwrap(),
@@ -37,7 +36,7 @@ impl Provider for FileProvider {
                 );
 
                 let _ = output
-                    .send(Message::ScanEvent(ScanState::Load(parent_entry)))
+                    .send(Message::ScanEvent(ScanState::Found(parent_entry)))
                     .await;
             }
 
@@ -57,14 +56,14 @@ impl Provider for FileProvider {
                 );
 
                 let _ = output
-                    .send(Message::ScanEvent(ScanState::Load(child_entry)))
+                    .send(Message::ScanEvent(ScanState::Found(child_entry)))
                     .await;
             }
 
-            let _ = output.send(Message::ScanEvent(ScanState::Finish)).await;
+            let _ = output.send(Message::ScanEvent(ScanState::Finished)).await;
         });
 
-        iced::Subscription::run_with_id("file-provider-scan", stream)
+        iced::Subscription::run_with_id("provider-scan", stream)
     }
 
     fn launch(&self, id: &str) -> Task<Message> {

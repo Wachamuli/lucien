@@ -29,11 +29,15 @@ impl ProviderKind {
     }
 }
 
+// TODO: A more robust Id type
+type Id = String;
+
 #[derive(Debug, Clone)]
 pub enum ScanState {
-    Start,
-    Load(Entry),
-    Finish,
+    Started,
+    Found(Entry),
+    Finished,
+    Errored(Id, String),
 }
 
 pub trait Provider {
@@ -49,7 +53,7 @@ pub trait Provider {
 
 #[derive(Debug, Clone)]
 pub struct Entry {
-    pub id: String,
+    pub id: Id,
     pub main: String,
     pub secondary: Option<String>,
     pub icon: iced::widget::image::Handle,

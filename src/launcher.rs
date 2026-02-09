@@ -240,13 +240,13 @@ impl Lucien {
         match message {
             Message::ScanEvent(scan_event) => {
                 match scan_event {
-                    ScanState::Start => {
+                    ScanState::Started => {
                         self.prompt.clear();
                         self.cached_entries.clear();
                         self.ranked_entries.clear();
                         self.is_scan_completed = false;
                     }
-                    ScanState::Load(entry) => {
+                    ScanState::Found(entry) => {
                         self.cached_entries.push(entry);
                         self.ranked_entries.push(self.cached_entries.len() - 1);
 
@@ -257,8 +257,11 @@ impl Lucien {
                             });
                         }
                     }
-                    ScanState::Finish => {
+                    ScanState::Finished => {
                         self.is_scan_completed = true;
+                    }
+                    ScanState::Errored(id, error) => {
+                        tracing::error!(error = error, "An error ocurred while scanning {id}");
                     }
                 }
 
