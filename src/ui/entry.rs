@@ -1,5 +1,5 @@
 use iced::{
-    Alignment, Element, Length,
+    Alignment, Element, Font, Length, font,
     widget::{Container, button, container, image, row, text},
 };
 
@@ -10,6 +10,15 @@ use crate::{
     ui::icon::BakedIcons,
 };
 
+const ALT_SHORTCUTS: [&str; 5] = ["Alt+1", "Alt+2", "Alt+3", "Alt+4", "Alt+5"];
+
+const FONT_BOLD: Font = Font {
+    weight: font::Weight::Bold,
+    family: font::Family::SansSerif,
+    style: font::Style::Normal,
+    stretch: font::Stretch::Normal,
+};
+
 pub fn display_entry<'a>(
     entry: &'a Entry,
     baked_icons: &'a BakedIcons,
@@ -18,14 +27,10 @@ pub fn display_entry<'a>(
     is_selected: bool,
     is_favorite: bool,
 ) -> Element<'a, Message, CustomTheme> {
-    let shortcut_widget: Element<'a, Message, CustomTheme> =
-        image(&baked_icons.enter).width(18).height(18).into();
-
     let shortcut_label: Element<'a, Message, CustomTheme> = if is_selected {
-        shortcut_widget
-        // TODO: Fix this allocations related format!
-    } else if index < 5 {
-        text(format!("Alt+{}", index + 1))
+        image(&baked_icons.enter).width(18).height(18).into()
+    } else if index < ALT_SHORTCUTS.len() {
+        text(ALT_SHORTCUTS[index])
             .size(12)
             .class(TextClass::TextDim)
             .into()
@@ -39,18 +44,22 @@ pub fn display_entry<'a>(
         &baked_icons.star_inactive
     };
 
-    let mark_favorite: Element<'a, Message, CustomTheme> =
+    let mark_favorite: Option<Element<'a, Message, CustomTheme>> = is_selected.then(|| {
         button(image(star_handle).width(18).height(18))
             .on_press(Message::MarkFavorite(index))
             .class(ButtonClass::Transparent)
-            .into();
+            .into()
+    });
 
     let actions = row![]
-        .push_maybe(is_selected.then_some(mark_favorite))
+        .push_maybe(mark_favorite)
         .push(shortcut_label)
         .align_y(Alignment::Center);
-
-    let description = entry.secondary.as_ref().map(|desc| {
+    let main = text(&entry.main)
+        .size(style.font_size)
+        .width(Length::Fill)
+        .font(FONT_BOLD);
+    let secondary = entry.secondary.as_ref().map(|desc| {
         text(desc)
             .size(style.secondary_font_size)
             .class(TextClass::SecondaryText)
@@ -64,23 +73,15 @@ pub fn display_entry<'a>(
     button(
         row![
             icon_view,
-            iced::widget::column![
-                text(&entry.main)
-                    .size(style.font_size)
-                    .width(Length::Fill)
-                    .font(iced::Font {
-                        weight: iced::font::Weight::Bold,
-                        ..Default::default()
-                    }),
-            ]
-            .push_maybe(description)
-            .spacing(2),
+            iced::widget::column![main].push_maybe(secondary).spacing(2),
             actions
         ]
         .spacing(12)
         .align_y(iced::Alignment::Center),
     )
     .on_press(Message::LaunchEntry(index))
+    // TODO: the padding is the same for every entry
+    // I should call this function once
     .padding(iced::Padding::from(&style.padding))
     .height(style.height)
     .width(Length::Fill)
@@ -98,7 +99,7 @@ pub fn section(name: &str) -> Container<'_, Message, CustomTheme> {
             .size(14)
             .class(TextClass::TextDim)
             .width(Length::Fill)
-            .font(iced::Font {
+            .font(Font {
                 weight: iced::font::Weight::Bold,
                 ..Default::default()
             }),

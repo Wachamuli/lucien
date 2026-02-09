@@ -62,44 +62,6 @@ impl Provider for AppProvider {
 
         iced::Subscription::run_with_id("app-provider-scan", stream)
     }
-    // fn scan(&self, _dir: &Path) -> Subscription<Message> {
-    //     let stream = iced::stream::channel(100, |mut tx| async move {
-    //         let xdg_dirs = xdg::BaseDirectories::new();
-
-    //         let entries = tokio::task::spawn_blocking(move || {
-    //             gio::AppInfo::all()
-    //                 .iter()
-    //                 .filter_map(|app| {
-    //                     if !app.should_show() {
-    //                         return None;
-    //                     }
-
-    //                     let icon = app
-    //                         .icon()
-    //                         .and_then(|icon| icon.to_string())
-    //                         .and_then(|icon_name| get_icon_path_from_xdgicon(&icon_name, &xdg_dirs))
-    //                         .and_then(|path| load_raster_icon(&path, 64))
-    //                         .unwrap_or_else(|| image::Handle::from_bytes(APPLICATION_DEFAULT));
-
-    //                     Some(Entry::new(
-    //                         app.commandline()?.to_str()?,
-    //                         app.name().to_string(),
-    //                         app.description(),
-    //                         icon,
-    //                     ))
-    //                 })
-    //                 .collect::<Vec<Entry>>()
-    //         });
-
-    //         for entry in entries {
-    //             let _ = tx.send(Message::PopulateEntries(entry)).await;
-    //         }
-
-    //         iced::futures::pending!()
-    //     });
-
-    //     iced::Subscription::run_with_id("app-provider-scan", stream)
-    // }
 
     fn launch(&self, id: &str) -> Task<Message> {
         let raw_command_without_placeholders = id
@@ -129,11 +91,9 @@ pub fn get_icon_path_from_xdgicon(
     icon_name: &str,
     xdg_dirs: &xdg::BaseDirectories,
 ) -> Option<PathBuf> {
-    // TODO: Maybe change it for Path instead, and then convert it to
-    // PathBuf if necessary.
-    let path_iconname = PathBuf::from(icon_name);
+    let path_iconname = Path::new(icon_name);
     if path_iconname.is_absolute() && path_iconname.exists() {
-        return Some(path_iconname);
+        return Some(path_iconname.to_path_buf());
     }
 
     let mut path_str = String::with_capacity(128);
