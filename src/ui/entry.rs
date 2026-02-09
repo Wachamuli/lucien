@@ -20,6 +20,13 @@ const FONT_BOLD: Font = Font {
     stretch: font::Stretch::Normal,
 };
 
+pub const FONT_ITALIC: Font = Font {
+    weight: font::Weight::Normal,
+    family: font::Family::SansSerif,
+    style: font::Style::Italic,
+    stretch: font::Stretch::Normal,
+};
+
 pub fn display_entry<'a>(
     entry: &'a Entry,
     baked_icons: &'a BakedIcons,

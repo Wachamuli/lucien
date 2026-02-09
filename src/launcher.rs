@@ -23,7 +23,7 @@ use crate::{
     },
     providers::{Entry, ProviderKind, app::AppProvider, file::FileProvider},
     ui::{
-        entry::{self, section},
+        entry::{self, FONT_ITALIC, section},
         icon::{
             BakedIcons, CUBE_ACTIVE, CUBE_INACTIVE, ENTER, FOLDER_ACTIVE, FOLDER_INACTIVE,
             MAGNIFIER, STAR_ACTIVE, STAR_INACTIVE,
@@ -237,7 +237,7 @@ impl Lucien {
         )
     }
 
-    fn swtich_provider(&mut self) -> Task<Message> {
+    fn swtich_provider(&mut self) {
         let provider_matcher = match self.prompt.as_str() {
             "@" => Some(ProviderKind::App(AppProvider)),
             "/" => Some(ProviderKind::File(FileProvider)),
@@ -252,14 +252,8 @@ impl Lucien {
                 self.prompt = String::new();
                 self.provider = new_provider;
                 self.scan_completed = false;
-                return scrollable::snap_to(
-                    SCROLLABLE_ID.clone(),
-                    RelativeOffset { x: 0.0, y: 0.0 },
-                );
             }
         };
-
-        Task::none()
     }
 
     pub fn update(&mut self, message: Message) -> Task<Message> {
@@ -285,7 +279,6 @@ impl Lucien {
             }
             Message::ScanCompleted => {
                 self.scan_completed = true;
-                println!("Scan is completed");
                 Task::none()
             }
             Message::SaveIntoDisk(result) => {
@@ -474,22 +467,28 @@ impl Lucien {
                         .width(Length::Fill)
                         .align_x(Alignment::Center)
                         .align_y(Alignment::Center)
-                        .font(iced::Font {
-                            style: iced::font::Style::Italic,
-                            ..Default::default()
-                        }),
+                        .font(FONT_ITALIC),
                 )
                 .padding(19.8)
             });
+
+        let show_results = !self.ranked_entries.is_empty() || self.scan_completed;
+
         let content = Column::new()
             .push(starred_column)
             .push(general_column)
             .push_maybe(results_not_found)
             .padding(theme.launchpad.padding)
             .width(Length::Fill);
-        let results = iced::widget::scrollable(content)
-            .on_scroll(Message::ScrollableViewport)
-            .id(SCROLLABLE_ID.clone());
+
+        let results = show_results.then(|| {
+            iced::widget::scrollable(content)
+                .on_scroll(Message::ScrollableViewport)
+                .id(SCROLLABLE_ID.clone())
+        });
+
+        let horizontal_rule = show_results.then(|| iced::widget::horizontal_rule(1));
+
         let prompt = Prompt::new(&self.prompt, &self.preferences.theme)
             .indicator(self.provider_indicator())
             .magnifier(&self.icons.magnifier)
@@ -498,11 +497,11 @@ impl Lucien {
             .on_submit(Message::LaunchEntry(self.selected_entry))
             .view();
 
-        container(iced::widget::column![
-            prompt,
-            iced::widget::horizontal_rule(1),
-            container(results),
-        ])
+        container(
+            iced::widget::column![prompt]
+                .push_maybe(horizontal_rule)
+                .push_maybe(results),
+        )
         .class(ContainerClass::MainContainer)
     }
 
