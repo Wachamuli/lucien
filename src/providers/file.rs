@@ -1,16 +1,26 @@
-use std::{path::PathBuf, process};
+use std::{
+    path::{Path, PathBuf},
+    process,
+};
 
 use iced::{Task, widget::image};
 
-use crate::launcher::Message;
+use crate::{
+    launcher::Message,
+    providers::load_raster_icon,
+    ui::icon::{
+        APPLICATION_DEFAULT, AUDIO_GENERIC, FOLDER_DEFAULT, FONT_GENERIC, IMAGE_GENERIC,
+        MODEL_GENERIC, MULTIPART_GENERIC, TEXT_GENERIC, VIDEO_GENERIC,
+    },
+};
 
-use super::{Entry, Provider, load_icon_with_cache, spawn_with_new_session};
+use super::{Entry, Provider, spawn_with_new_session};
 
 #[derive(Debug, Clone, Copy)]
 pub struct FileProvider;
 
 impl Provider for FileProvider {
-    fn scan(&self, dir: &PathBuf) -> Vec<Entry> {
+    fn scan(&self, dir: &Path) -> Vec<Entry> {
         let child_entries = std::fs::read_dir(dir)
             .map(|entries| {
                 entries.filter_map(|entry| {
@@ -27,7 +37,7 @@ impl Provider for FileProvider {
                         id_str.clone(),
                         main_display,
                         Some(id_str),
-                        Some(path),
+                        get_icon_from_mimetype(&path, 28),
                     ))
                 })
             })
@@ -42,7 +52,7 @@ impl Provider for FileProvider {
                 p.to_str().unwrap(),
                 "..",
                 Some(p.to_string_lossy()),
-                Some(p.to_path_buf()),
+                get_icon_from_mimetype(&p, 28),
             )
         });
 
@@ -75,15 +85,67 @@ impl Provider for FileProvider {
 
         iced::exit()
     }
+}
 
-    fn get_icon(&self, path: &PathBuf, size: u32) -> Option<image::Handle> {
-        let dir_icon_path = "assets/mimetypes/inode-directory.svg";
-        let file_icon_path = "assets/mimetypes/application-x-generic.svg";
+fn get_icon_from_mimetype(path: &Path, size: u32) -> image::Handle {
+    if path.is_dir() {
+        return image::Handle::from_bytes(FOLDER_DEFAULT);
+    }
 
-        if path.is_dir() {
-            return load_icon_with_cache(&PathBuf::from(dir_icon_path), size);
+    let file_extension = path
+        .to_string_lossy()
+        .rsplit_once('.')
+        .map(|(_, ext)| ext.to_lowercase())
+        .unwrap_or_default();
+
+    let mimetype = MimeType::get_type_from_extension(&file_extension);
+
+    // TODO: Feature to override or add new mimetype icons.
+    // load_raster_icon(&mimetype.get_icon_from_type(), size).unwrap_or_else(default_icon)
+    mimetype.get_icon_from_type()
+}
+
+#[derive(Debug)]
+pub enum MimeType {
+    Text,
+    Application,
+    Image,
+    Audio,
+    Video,
+    Font,
+    Multipart,
+    Model,
+    Unknown,
+}
+
+impl MimeType {
+    fn get_type_from_extension(ext: &str) -> MimeType {
+        match ext {
+            "txt" | "md" | "html" | "css" | "csv" => MimeType::Text,
+            "json" | "pdf" | "zip" | "wasm" | "xml" => MimeType::Application,
+            "jpg" | "jpeg" | "png" | "gif" | "webp" | "svg" => MimeType::Image,
+            "mp3" | "wav" | "ogg" | "m4a" => MimeType::Audio,
+            "mp4" | "webm" | "avi" | "mov" => MimeType::Video,
+            "ttf" | "otf" | "woff" | "woff2" => MimeType::Font,
+            "mime" | "mhtml" => MimeType::Multipart,
+            "obj" | "stl" | "glb" | "gltf" | "3ds" => MimeType::Model,
+            _ => MimeType::Unknown,
         }
+    }
 
-        load_icon_with_cache(&PathBuf::from(file_icon_path), size)
+    fn get_icon_from_type(&self) -> image::Handle {
+        let icon_bytes = match self {
+            MimeType::Text => TEXT_GENERIC,
+            MimeType::Application => APPLICATION_DEFAULT,
+            MimeType::Image => IMAGE_GENERIC,
+            MimeType::Audio => AUDIO_GENERIC,
+            MimeType::Video => VIDEO_GENERIC,
+            MimeType::Font => FONT_GENERIC,
+            MimeType::Multipart => MULTIPART_GENERIC,
+            MimeType::Model => MODEL_GENERIC,
+            MimeType::Unknown => TEXT_GENERIC,
+        };
+
+        image::Handle::from_bytes(icon_bytes)
     }
 }

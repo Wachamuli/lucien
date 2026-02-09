@@ -1,5 +1,5 @@
 use std::{
-    path::PathBuf,
+    path::{Path, PathBuf},
     sync::{Arc, LazyLock},
 };
 
@@ -73,7 +73,7 @@ impl Lucien {
             async move {
                 default_provider
                     .handler()
-                    .scan(&"This parameter should be optional".into())
+                    .scan(Path::new("This parameter should be optional"))
             },
             Message::PopulateEntries,
         );
@@ -252,7 +252,7 @@ impl Lucien {
                     async move {
                         provider_clone
                             .handler()
-                            .scan(&"This parameter should be optional".into())
+                            .scan(Path::new("This parameter should be optional"))
                     },
                     Message::PopulateEntries,
                 )
@@ -263,7 +263,7 @@ impl Lucien {
                 let provider_clone = self.provider.clone();
                 let h = env!("HOME");
                 Task::perform(
-                    async move { provider_clone.handler().scan(&h.into()) },
+                    async move { provider_clone.handler().scan(Path::new(h)) },
                     Message::PopulateEntries,
                 )
             }
@@ -450,14 +450,9 @@ impl Lucien {
 
             let item_height = theme.launchpad.entry.height;
             let style = &self.preferences.theme.launchpad.entry;
-            let icon_handle = entry
-                .icon
-                .as_ref()
-                .and_then(|e| self.provider.handler().get_icon(&e, style.icon_size as u32));
 
             let element = container(entry::display_entry(
                 entry,
-                icon_handle,
                 &self.icons,
                 style,
                 rank_pos,

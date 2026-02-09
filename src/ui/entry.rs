@@ -12,7 +12,6 @@ use crate::{
 
 pub fn display_entry<'a>(
     entry: &'a Entry,
-    icon: Option<image::Handle>,
     baked_icons: &'a BakedIcons,
     style: &'a EntryStyle,
     index: usize,
@@ -24,6 +23,7 @@ pub fn display_entry<'a>(
 
     let shortcut_label: Element<'a, Message, CustomTheme> = if is_selected {
         shortcut_widget
+        // TODO: Fix this allocations related format!
     } else if index < 5 {
         text(format!("Alt+{}", index + 1))
             .size(12)
@@ -56,13 +56,10 @@ pub fn display_entry<'a>(
             .class(TextClass::SecondaryText)
     });
 
-    let icon_view: Element<'a, Message, CustomTheme> = match icon {
-        Some(handle) => image(handle)
-            .width(style.icon_size)
-            .height(style.icon_size)
-            .into(),
-        None => iced::widget::horizontal_space().width(0).into(),
-    };
+    let icon_view: Element<'a, Message, CustomTheme> = image(&entry.icon)
+        .width(style.icon_size)
+        .height(style.icon_size)
+        .into();
 
     button(
         row![

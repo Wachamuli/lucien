@@ -1,4 +1,8 @@
-use std::{path::PathBuf, process};
+use std::{
+    fmt::Write,
+    path::{Path, PathBuf},
+    process,
+};
 
 use gio::prelude::{AppInfoExt, IconExt};
 
@@ -6,16 +10,19 @@ use iced::{Task, widget::image};
 
 use crate::{
     launcher::Message,
-    ui::icon::{ICON_EXTENSION, ICON_SIZES},
+    providers::load_raster_icon,
+    ui::icon::{APPLICATION_DEFAULT, ICON_EXTENSIONS, ICON_SIZES},
 };
 
-use super::{Entry, Provider, load_icon_with_cache, spawn_with_new_session};
+use super::{Entry, Provider, spawn_with_new_session};
 
 #[derive(Debug, Clone, Copy)]
 pub struct AppProvider;
 
 impl Provider for AppProvider {
-    fn scan(&self, _dir: &PathBuf) -> Vec<Entry> {
+    fn scan(&self, _dir: &Path) -> Vec<Entry> {
+        let xdg_dirs = xdg::BaseDirectories::new();
+
         gio::AppInfo::all()
             .iter()
             .filter_map(|app| {
@@ -23,12 +30,19 @@ impl Provider for AppProvider {
                     return None;
                 }
 
-                Some(Entry {
-                    id: app.commandline()?.to_str()?.to_string(),
-                    main: app.name().to_string(),
-                    secondary: app.description().map(String::from),
-                    icon: app.icon().and_then(|p| p.to_string()).map(PathBuf::from),
-                })
+                let icon = app
+                    .icon()
+                    .and_then(|icon| icon.to_string())
+                    .and_then(|icon_name| get_icon_path_from_xdgicon(&icon_name, &xdg_dirs))
+                    .and_then(|path| load_raster_icon(&path, 64))
+                    .unwrap_or_else(|| image::Handle::from_bytes(APPLICATION_DEFAULT));
+
+                Some(Entry::new(
+                    app.commandline()?.to_str()?,
+                    app.name().to_string(),
+                    app.description(),
+                    icon,
+                ))
             })
             .collect()
     }
@@ -55,35 +69,36 @@ impl Provider for AppProvider {
 
         iced::exit()
     }
-
-    fn get_icon(&self, path: &PathBuf, size: u32) -> Option<image::Handle> {
-        let icon_path = get_icon_path_from_xdgicon(path)?;
-        load_icon_with_cache(&icon_path, size)
-    }
 }
 
-pub fn get_icon_path_from_xdgicon(iconname: &PathBuf) -> Option<PathBuf> {
-    if iconname.is_absolute() && iconname.exists() {
-        return Some(PathBuf::from(iconname));
+pub fn get_icon_path_from_xdgicon(
+    icon_name: &str,
+    xdg_dirs: &xdg::BaseDirectories,
+) -> Option<PathBuf> {
+    let path_iconname = PathBuf::from(icon_name);
+    if path_iconname.is_absolute() && path_iconname.exists() {
+        return Some(path_iconname);
     }
 
-    let xdg_dirs = xdg::BaseDirectories::new();
+    let mut path_str = String::with_capacity(128);
+
+    write!(path_str, "icons/hicolor/scalable/apps/{}.svg", icon_name).ok()?;
+    if let Some(found_path) = xdg_dirs.find_data_file(&path_str) {
+        return Some(found_path);
+    }
 
     for size in ICON_SIZES {
-        let extension = if size == "scalable" { "svg" } else { "png" };
-        let sub_path = format!(
-            "icons/hicolor/{size}/apps/{iconname}.{extension}",
-            iconname = iconname.display()
-        );
-
-        if let Some(path) = xdg_dirs.find_data_file(&sub_path) {
+        path_str.clear();
+        write!(path_str, "icons/hicolor/{}/apps/{}.png", size, icon_name).ok()?;
+        if let Some(path) = xdg_dirs.find_data_file(&path_str) {
             return Some(path);
         }
     }
 
-    for ext in ICON_EXTENSION {
-        let pixmap_path = format!("pixmaps/{iconname}.{ext}", iconname = iconname.display());
-        if let Some(path) = xdg_dirs.find_data_file(&pixmap_path) {
+    for ext in ICON_EXTENSIONS {
+        path_str.clear();
+        write!(path_str, "pixmaps/{}.{}", icon_name, ext).ok()?;
+        if let Some(path) = xdg_dirs.find_data_file(&path_str) {
             return Some(path);
         }
     }
