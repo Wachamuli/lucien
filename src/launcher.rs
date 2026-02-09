@@ -251,6 +251,7 @@ impl Lucien {
                 self.ranked_entries.clear();
                 self.prompt = String::new();
                 self.provider = new_provider;
+                self.scan_completed = false;
                 return scrollable::snap_to(
                     SCROLLABLE_ID.clone(),
                     RelativeOffset { x: 0.0, y: 0.0 },
@@ -381,28 +382,33 @@ impl Lucien {
 
     pub fn subscription(&self) -> Subscription<Message> {
         Subscription::batch([
-            self.provider.handler().scan(&Path::new(env!("HOME"))),
+            // TODO: Maybe this PathBuf is doing allocations every render.
+            self.provider.handler().scan(PathBuf::from(env!("HOME"))),
             event::listen().map(Message::SystemEvent),
-            event::listen_with(move |event, status, _id| match (event, status) {
-                (
+            event::listen_with(move |event, _status, _id| {
+                let message = match event {
                     Event::Keyboard(keyboard::Event::KeyPressed {
                         physical_key: keyboard::key::Physical::Code(physical_key_pressed),
                         modifiers,
                         ..
-                    }),
-                    _,
-                ) if modifiers.alt() => match physical_key_pressed {
-                    keyboard::key::Code::Digit1 => Some(Message::LaunchEntry(0)),
-                    keyboard::key::Code::Digit2 => Some(Message::LaunchEntry(1)),
-                    keyboard::key::Code::Digit3 => Some(Message::LaunchEntry(2)),
-                    keyboard::key::Code::Digit4 => Some(Message::LaunchEntry(3)),
-                    keyboard::key::Code::Digit5 => Some(Message::LaunchEntry(4)),
+                    }) if modifiers.alt() => {
+                        use keyboard::key::Code as key_code;
+                        match physical_key_pressed {
+                            key_code::Digit1 => Some(Message::LaunchEntry(0)),
+                            key_code::Digit2 => Some(Message::LaunchEntry(1)),
+                            key_code::Digit3 => Some(Message::LaunchEntry(2)),
+                            key_code::Digit4 => Some(Message::LaunchEntry(3)),
+                            key_code::Digit5 => Some(Message::LaunchEntry(4)),
+                            _ => None,
+                        }
+                    }
+                    Event::Keyboard(keyboard::Event::KeyPressed { key, modifiers, .. }) => {
+                        Some(Message::Keybinding(key, modifiers))
+                    }
                     _ => None,
-                },
-                (Event::Keyboard(keyboard::Event::KeyPressed { key, modifiers, .. }), _) => {
-                    Some(Message::Keybinding(key, modifiers))
-                }
-                _ => None,
+                };
+
+                message
             }),
         ])
     }

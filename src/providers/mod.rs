@@ -1,9 +1,5 @@
-use std::{
-    io,
-    os::unix::process::CommandExt,
-    path::{Path, PathBuf},
-    process,
-};
+use std::path::PathBuf;
+use std::{io, os::unix::process::CommandExt, path::Path, process};
 
 use iced::widget::image;
 use iced::{Subscription, Task};
@@ -38,11 +34,10 @@ pub trait Provider {
     // logic in the subscripiton function
     // Also, Scan can have many states. Scanning, Completed, and Error
     // I can create an enum to handle each case
-    fn scan(&self, dir: &Path) -> Subscription<Message>;
+    fn scan(&self, dir: PathBuf) -> Subscription<Message>;
     // Maybe, launch could consume self? But I have to get rid of dynamic dispatch first.
     // I could avoid couple clones doing this.
     fn launch(&self, id: &str) -> Task<Message>;
-    // fn get_icon(&self, entry: &Entry, size: u32) -> image::Handle;
 }
 
 #[derive(Debug, Clone)]
@@ -102,6 +97,9 @@ fn rasterize_svg(path: &Path, size: u32) -> Option<tiny_skia::Pixmap> {
     Some(pixmap)
 }
 
+// TODO: Maybe I should create my own IconType to distinguish
+// between  default and custom icons. I don't want to perform
+// any of this logic if the Icon Is a default one.
 fn load_raster_icon(path: &Path, size: u32) -> Option<image::Handle> {
     let extension = path.extension()?.to_str()?;
 
@@ -113,23 +111,4 @@ fn load_raster_icon(path: &Path, size: u32) -> Option<image::Handle> {
         "png" => Some(image::Handle::from_path(path)),
         _ => None,
     }
-}
-
-pub fn load_icon_with_cache(path: &Path, size: u32) -> Option<image::Handle> {
-    use std::collections::HashMap;
-    use std::sync::OnceLock;
-
-    static CACHE: OnceLock<std::sync::Mutex<HashMap<PathBuf, Option<image::Handle>>>> =
-        OnceLock::new();
-    let cache = CACHE.get_or_init(|| std::sync::Mutex::new(HashMap::new()));
-
-    let mut cache = cache.lock().unwrap();
-
-    if let Some(cached) = cache.get(path) {
-        return cached.clone();
-    }
-
-    let handle = load_raster_icon(path, size);
-    cache.insert(path.to_path_buf(), handle.clone());
-    handle
 }

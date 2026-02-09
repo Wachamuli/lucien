@@ -12,6 +12,7 @@ use crate::{
 
 const ALT_SHORTCUTS: [&str; 5] = ["Alt+1", "Alt+2", "Alt+3", "Alt+4", "Alt+5"];
 
+// Maybe unnecesarry constant, this is stack based. (but nice to have ergonomic?)
 const FONT_BOLD: Font = Font {
     weight: font::Weight::Bold,
     family: font::Family::SansSerif,
@@ -50,7 +51,6 @@ pub fn display_entry<'a>(
             .class(ButtonClass::Transparent)
             .into()
     });
-
     let actions = row![]
         .push_maybe(mark_favorite)
         .push(shortcut_label)

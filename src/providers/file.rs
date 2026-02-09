@@ -21,55 +21,42 @@ use super::{Entry, Provider, spawn_with_new_session};
 pub struct FileProvider;
 
 impl Provider for FileProvider {
-    fn scan(&self, dir: &Path) -> Subscription<Message> {
-        let owned_dir = dir.to_path_buf();
-
-        let stream = iced::stream::channel(100, |mut tx| async move {
-            let child_entries = std::fs::read_dir(&owned_dir)
-                .map(|entries| {
-                    entries.filter_map(|entry| {
-                        let entry = entry.ok()?;
-                        let path = entry.path();
-
-                        // FIXME: Unix-like systems accept non-UTF-8 valid sequences
-                        // as valid file names. Right now, these entries are being skip.
-                        // In order to fix this, id should be a PathBuf or similar.
-                        let id_str = path.to_str()?.to_owned();
-                        let main_display = path.file_name()?.to_string_lossy().into_owned();
-
-                        Some(Entry::new(
-                            id_str.clone(),
-                            main_display,
-                            Some(id_str),
-                            get_icon_from_mimetype(&path, 28),
-                        ))
-                    })
-                })
-                .into_iter()
-                .flatten();
-
-            let parent_dir = &owned_dir.parent();
-
-            let parent_dir_entry = parent_dir.map(|p| {
-                // FIXME: Same problem here.
-                Entry::new(
-                    p.to_str().unwrap(),
+    // FIXME: Unix-like systems accept non-UTF-8 valid sequences
+    // as valid file names. Right now, these entries are being skip.
+    // In order to fix this, id should be a PathBuf or similar.
+    // This funcion call is the culprit: Path::to_str() -> Option<&str>
+    fn scan(&self, dir: PathBuf) -> Subscription<Message> {
+        let stream = iced::stream::channel(100, |mut output| async move {
+            if let Some(parent_directory) = dir.parent() {
+                let parent_entry = Entry::new(
+                    parent_directory.to_str().unwrap(),
                     "..",
-                    Some(p.to_string_lossy()),
-                    get_icon_from_mimetype(&p, 28),
-                )
-            });
+                    Some(parent_directory.to_string_lossy()),
+                    get_icon_from_mimetype(&parent_directory, 28),
+                );
 
-            let dirs = parent_dir_entry
-                .into_iter()
-                .chain(child_entries)
-                .collect::<Vec<_>>();
-
-            for dir in dirs {
-                let _ = tx.send(Message::Scan(dir)).await;
+                let _ = output.send(Message::Scan(parent_entry)).await;
             }
 
-            iced::futures::pending!()
+            let mut child_directories = tokio::fs::read_dir(dir).await.unwrap();
+
+            while let Some(child_dir) = child_directories.next_entry().await.unwrap() {
+                let path = child_dir.path();
+
+                let id_str = path.to_string_lossy();
+                let main_display = path.file_name().unwrap().to_string_lossy();
+
+                let child_entry = Entry::new(
+                    id_str.clone(),
+                    main_display,
+                    Some(id_str),
+                    get_icon_from_mimetype(&path, 28),
+                );
+
+                let _ = output.send(Message::Scan(child_entry)).await;
+            }
+
+            let _ = output.send(Message::ScanCompleted).await;
         });
 
         iced::Subscription::run_with_id("file-provider-scan", stream)
@@ -82,7 +69,7 @@ impl Provider for FileProvider {
         // if path.is_dir() {
         //     return Task::perform(
         //         async move { provider_clone.scan(&path) },
-        //         Message::PopulateEntries,
+        //         Message::Scan,
         //     );
         // }
 

@@ -20,7 +20,7 @@ use super::{Entry, Provider, spawn_with_new_session};
 pub struct AppProvider;
 
 impl Provider for AppProvider {
-    fn scan(&self, _dir: &Path) -> Subscription<Message> {
+    fn scan(&self, _dir: PathBuf) -> Subscription<Message> {
         let stream = iced::stream::channel(100, |mut output| async move {
             let (sync_sender, mut sync_receiver) = tokio::sync::mpsc::channel::<Entry>(100);
             tokio::task::spawn_blocking(move || {
