@@ -22,10 +22,11 @@ pub struct AppProvider;
 impl Provider for AppProvider {
     fn scan(&self, _dir: PathBuf) -> Subscription<Message> {
         let stream = iced::stream::channel(100, |mut output| async move {
-            let (sync_sender, mut sync_receiver) = tokio::sync::mpsc::channel::<Entry>(100);
+            let (sync_sender, mut sync_receiver) = tokio::sync::mpsc::channel::<Message>(100);
             tokio::task::spawn_blocking(move || {
                 let xdg_dirs = xdg::BaseDirectories::new();
                 let apps = gio::AppInfo::all();
+                let _ = sync_sender.blocking_send(Message::ScanStarted);
 
                 for app in apps {
                     if !app.should_show() {
@@ -47,14 +48,14 @@ impl Provider for AppProvider {
 
                     let entry = Entry::new(cmd, name, description, icon);
 
-                    if sync_sender.blocking_send(entry).is_err() {
+                    if sync_sender.blocking_send(Message::Scan(entry)).is_err() {
                         break;
                     };
                 }
             });
 
             while let Some(entry) = sync_receiver.recv().await {
-                let _ = output.send(Message::Scan(entry)).await;
+                let _ = output.send(entry).await;
             }
 
             let _ = output.send(Message::ScanCompleted).await;

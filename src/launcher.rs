@@ -39,7 +39,7 @@ static TEXT_INPUT_ID: LazyLock<text_input::Id> = LazyLock::new(text_input::Id::u
 static SCROLLABLE_ID: LazyLock<scrollable::Id> = LazyLock::new(scrollable::Id::unique);
 
 pub struct Lucien {
-    scan_completed: bool,
+    is_scan_completed: bool,
     provider: ProviderKind,
     prompt: String,
     matcher: SkimMatcherV2,
@@ -57,6 +57,7 @@ pub struct Lucien {
 #[derive(Debug, Clone)]
 pub enum Message {
     Scan(Entry),
+    ScanStarted,
     ScanCompleted,
     PromptChange(String),
     DebouncedFilter,
@@ -81,7 +82,7 @@ impl Lucien {
         };
 
         let initial_values = Self {
-            scan_completed: false,
+            is_scan_completed: false,
             provider: default_provider,
             prompt: String::new(),
             matcher: SkimMatcherV2::default(),
@@ -237,33 +238,15 @@ impl Lucien {
         )
     }
 
-    fn swtich_provider(&mut self) {
-        let provider_matcher = match self.prompt.as_str() {
-            "@" => Some(ProviderKind::App(AppProvider)),
-            "/" => Some(ProviderKind::File(FileProvider)),
-            _ => None,
-        };
-
-        if let Some(new_provider) = provider_matcher {
-            use std::mem::discriminant;
-            if discriminant(&self.provider) != discriminant(&new_provider) {
-                self.cached_entries.clear();
-                self.ranked_entries.clear();
-                self.prompt = String::new();
-                self.provider = new_provider;
-                self.scan_completed = false;
-            }
-        };
-    }
-
     pub fn update(&mut self, message: Message) -> Task<Message> {
         match message {
-            // Message::SwitchProvider(provider) => {
-            //     self.provider = provider;
-            //     self.cached_entries.clear();
-            //     self.ranked_entries.clear();
-            //     Task::none()
-            // }
+            Message::ScanStarted => {
+                self.prompt.clear();
+                self.cached_entries.clear();
+                self.ranked_entries.clear();
+                self.is_scan_completed = false;
+                Task::none()
+            }
             Message::Scan(entries) => {
                 self.cached_entries.push(entries);
                 self.ranked_entries.push(self.cached_entries.len() - 1);
@@ -278,7 +261,7 @@ impl Lucien {
                 Task::none()
             }
             Message::ScanCompleted => {
-                self.scan_completed = true;
+                self.is_scan_completed = true;
                 Task::none()
             }
             Message::SaveIntoDisk(result) => {
@@ -319,11 +302,21 @@ impl Lucien {
                     handle.abort();
                 }
 
-                self.swtich_provider();
-
                 if self.prompt.is_empty() {
                     return Task::done(Message::DebouncedFilter);
                 }
+
+                match self.prompt.as_str() {
+                    "@" => {
+                        self.prompt.clear();
+                        self.provider = ProviderKind::App(AppProvider)
+                    }
+                    "/" => {
+                        self.prompt.clear();
+                        self.provider = ProviderKind::File(FileProvider)
+                    }
+                    _ => (),
+                };
 
                 let (task, handle) = Task::future(async {
                     tokio::time::sleep(std::time::Duration::from_millis(100)).await;
@@ -459,7 +452,7 @@ impl Lucien {
         }
 
         let results_not_found: Option<Container<Message, CustomTheme>> =
-            (self.ranked_entries.is_empty() && self.scan_completed).then(|| {
+            (self.ranked_entries.is_empty() && self.is_scan_completed).then(|| {
                 container(
                     text("No Results Found")
                         .size(14)
@@ -472,7 +465,7 @@ impl Lucien {
                 .padding(19.8)
             });
 
-        let show_results = !self.ranked_entries.is_empty() || self.scan_completed;
+        let show_results = !self.ranked_entries.is_empty() || self.is_scan_completed;
 
         let content = Column::new()
             .push(starred_column)

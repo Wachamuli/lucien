@@ -27,6 +27,7 @@ impl Provider for FileProvider {
     // This funcion call is the culprit: Path::to_str() -> Option<&str>
     fn scan(&self, dir: PathBuf) -> Subscription<Message> {
         let stream = iced::stream::channel(100, |mut output| async move {
+            let _ = output.send(Message::ScanStarted).await;
             if let Some(parent_directory) = dir.parent() {
                 let parent_entry = Entry::new(
                     parent_directory.to_str().unwrap(),
