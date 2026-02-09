@@ -66,7 +66,7 @@ impl Provider for FileProvider {
                 .collect::<Vec<_>>();
 
             for dir in dirs {
-                let _ = tx.send(Message::PopulateEntries(dir)).await;
+                let _ = tx.send(Message::Scan(dir)).await;
             }
 
             iced::futures::pending!()

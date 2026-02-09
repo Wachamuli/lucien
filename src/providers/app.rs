@@ -21,9 +21,9 @@ pub struct AppProvider;
 
 impl Provider for AppProvider {
     fn scan(&self, _dir: &Path) -> Subscription<Message> {
-        let stream = iced::stream::channel(100, |mut tx| async move {
-            let (sync_sender, sync_receiver) = std::sync::mpsc::channel::<Entry>();
-            let _join_handle = tokio::task::spawn_blocking(move || {
+        let stream = iced::stream::channel(100, |mut output| async move {
+            let (sync_sender, mut sync_receiver) = tokio::sync::mpsc::channel::<Entry>(100);
+            tokio::task::spawn_blocking(move || {
                 let xdg_dirs = xdg::BaseDirectories::new();
                 let apps = gio::AppInfo::all();
 
@@ -32,6 +32,12 @@ impl Provider for AppProvider {
                         continue;
                     }
 
+                    let cmd = app
+                        .commandline()
+                        .map(|c| c.to_string_lossy().into_owned())
+                        .unwrap_or_default();
+                    let name = app.name().to_string();
+                    let description = app.description().map(|d| d.to_string());
                     let icon = app
                         .icon()
                         .and_then(|i| i.to_string())
@@ -39,47 +45,19 @@ impl Provider for AppProvider {
                         .and_then(|path| load_raster_icon(&path, 64))
                         .unwrap_or_else(|| image::Handle::from_bytes(APPLICATION_DEFAULT));
 
-                    let cmd = app
-                        .commandline()
-                        .map(|c| c.to_string_lossy().into_owned())
-                        .unwrap_or_default();
+                    let entry = Entry::new(cmd, name, description, icon);
 
-                    let entry = Entry::new(
-                        cmd,
-                        app.name().to_string(),
-                        app.description().map(|d| d.to_string()),
-                        icon,
-                    );
-
-                    // Send the entry into the bridge
-                    if sync_sender.send(entry).is_err() {
-                        break; // Receiver hung up (UI closed)
-                    }
+                    if sync_sender.blocking_send(entry).is_err() {
+                        break;
+                    };
                 }
             });
 
-            // 3. The "Pumping" Loop
-            // We convert the synchronous receiver into an async-friendly loop
-            loop {
-                // Try to fetch an item from the bridge without blocking the async thread
-                match sync_receiver.try_recv() {
-                    Ok(entry) => {
-                        let _ = tx.send(Message::PopulateEntries(entry)).await;
-                        // Optional throttle for visual effect
-                        // tokio::time::sleep(std::time::Duration::from_millis(1000)).await;
-                    }
-                    Err(std::sync::mpsc::TryRecvError::Empty) => {
-                        // No items yet, yield back to the executor so the UI stays smooth
-                        tokio::task::yield_now().await;
-                    }
-                    Err(std::sync::mpsc::TryRecvError::Disconnected) => {
-                        // Scanning thread finished and dropped the sender
-                        break;
-                    }
-                }
+            while let Some(entry) = sync_receiver.recv().await {
+                let _ = output.send(Message::Scan(entry)).await;
             }
 
-            iced::futures::pending!()
+            let _ = output.send(Message::ScanCompleted).await;
         });
 
         iced::Subscription::run_with_id("app-provider-scan", stream)

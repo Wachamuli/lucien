@@ -1,10 +1,10 @@
 use iced::{
     Alignment, Element, Length,
-    widget::{button, image, row, text},
+    widget::{Container, button, container, image, row, text},
 };
 
 use crate::{
-    launcher::Message,
+    launcher::{Message, SECTION_HEIGHT},
     preferences::theme::{ButtonClass, CustomTheme, Entry as EntryStyle, TextClass},
     providers::Entry,
     ui::icon::BakedIcons,
@@ -90,4 +90,24 @@ pub fn display_entry<'a>(
         ButtonClass::Itemlist
     })
     .into()
+}
+
+pub fn section(name: &str) -> Container<'_, Message, CustomTheme> {
+    container(
+        text(name)
+            .size(14)
+            .class(TextClass::TextDim)
+            .width(Length::Fill)
+            .font(iced::Font {
+                weight: iced::font::Weight::Bold,
+                ..Default::default()
+            }),
+    )
+    .height(SECTION_HEIGHT)
+    .padding(iced::Padding {
+        top: 10.,
+        right: 0.,
+        bottom: 5.,
+        left: 10.,
+    })
 }

@@ -23,7 +23,7 @@ use crate::{
     },
     providers::{Entry, ProviderKind, app::AppProvider, file::FileProvider},
     ui::{
-        entry,
+        entry::{self, section},
         icon::{
             BakedIcons, CUBE_ACTIVE, CUBE_INACTIVE, ENTER, FOLDER_ACTIVE, FOLDER_INACTIVE,
             MAGNIFIER, STAR_ACTIVE, STAR_INACTIVE,
@@ -32,12 +32,14 @@ use crate::{
     },
 };
 
-const SECTION_HEIGHT: f32 = 36.0;
+// TODO: Remove this constant
+pub const SECTION_HEIGHT: f32 = 36.0;
 
 static TEXT_INPUT_ID: LazyLock<text_input::Id> = LazyLock::new(text_input::Id::unique);
 static SCROLLABLE_ID: LazyLock<scrollable::Id> = LazyLock::new(scrollable::Id::unique);
 
 pub struct Lucien {
+    scan_completed: bool,
     provider: ProviderKind,
     prompt: String,
     matcher: SkimMatcherV2,
@@ -54,7 +56,8 @@ pub struct Lucien {
 #[to_layer_message]
 #[derive(Debug, Clone)]
 pub enum Message {
-    PopulateEntries(Entry),
+    Scan(Entry),
+    ScanCompleted,
     PromptChange(String),
     DebouncedFilter,
     LaunchEntry(usize),
@@ -78,6 +81,7 @@ impl Lucien {
         };
 
         let initial_values = Self {
+            scan_completed: false,
             provider: default_provider,
             prompt: String::new(),
             matcher: SkimMatcherV2::default(),
@@ -265,7 +269,7 @@ impl Lucien {
             //     self.ranked_entries.clear();
             //     Task::none()
             // }
-            Message::PopulateEntries(entries) => {
+            Message::Scan(entries) => {
                 self.cached_entries.push(entries);
                 self.ranked_entries.push(self.cached_entries.len() - 1);
 
@@ -276,6 +280,11 @@ impl Lucien {
                     });
                 }
 
+                Task::none()
+            }
+            Message::ScanCompleted => {
+                self.scan_completed = true;
+                println!("Scan is completed");
                 Task::none()
             }
             Message::SaveIntoDisk(result) => {
@@ -400,37 +409,12 @@ impl Lucien {
 
     pub fn view(&self) -> Container<'_, Message, CustomTheme> {
         let theme = &self.preferences.theme;
+        let show_sections = self.prompt.is_empty() && !self.preferences.favorite_apps.is_empty();
 
-        fn section(name: &str) -> Container<'_, Message, CustomTheme> {
-            container(
-                text(name)
-                    .size(14)
-                    .class(TextClass::TextDim)
-                    .width(Length::Fill)
-                    .font(iced::Font {
-                        weight: iced::font::Weight::Bold,
-                        ..Default::default()
-                    }),
-            )
-            .height(SECTION_HEIGHT)
-            .padding(iced::Padding {
-                top: 10.,
-                right: 0.,
-                bottom: 5.,
-                left: 10.,
-            })
-        }
-
-        let mut starred_column;
-        let mut general_column;
-
-        if self.prompt.is_empty() && !self.preferences.favorite_apps.is_empty() {
-            starred_column = Column::new().push(section("Starred"));
-            general_column = Column::new().push(section("General"));
-        } else {
-            starred_column = Column::new();
-            general_column = Column::new();
-        }
+        let mut starred_column =
+            Column::new().push_maybe(show_sections.then(|| section("Starred")));
+        let mut general_column =
+            Column::new().push_maybe(show_sections.then(|| section("General")));
 
         for (rank_pos, app_index) in self.ranked_entries.iter().enumerate() {
             let entry = &self.cached_entries[*app_index];
@@ -475,25 +459,26 @@ impl Lucien {
             }
         }
 
-        // Lazy evaluate this element
-        // TODO: Only show this element when the scanning is done.
-        let results_not_found: Container<Message, CustomTheme> = container(
-            text("No Results Found")
-                .size(14)
-                .class(TextClass::TextDim)
-                .width(Length::Fill)
-                .align_x(Alignment::Center)
-                .align_y(Alignment::Center)
-                .font(iced::Font {
-                    style: iced::font::Style::Italic,
-                    ..Default::default()
-                }),
-        )
-        .padding(19.8);
+        let results_not_found: Option<Container<Message, CustomTheme>> =
+            (self.ranked_entries.is_empty() && self.scan_completed).then(|| {
+                container(
+                    text("No Results Found")
+                        .size(14)
+                        .class(TextClass::TextDim)
+                        .width(Length::Fill)
+                        .align_x(Alignment::Center)
+                        .align_y(Alignment::Center)
+                        .font(iced::Font {
+                            style: iced::font::Style::Italic,
+                            ..Default::default()
+                        }),
+                )
+                .padding(19.8)
+            });
         let content = Column::new()
             .push(starred_column)
             .push(general_column)
-            .push_maybe(self.ranked_entries.is_empty().then_some(results_not_found))
+            .push_maybe(results_not_found)
             .padding(theme.launchpad.padding)
             .width(Length::Fill);
         let results = iced::widget::scrollable(content)
