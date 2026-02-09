@@ -5,7 +5,14 @@ use std::{
 
 use iced::{Task, widget::image};
 
-use crate::{launcher::Message, providers::load_raster_icon};
+use crate::{
+    launcher::Message,
+    providers::load_raster_icon,
+    ui::icon::{
+        APPLICATION_DEFAULT, AUDIO_GENERIC, FOLDER_DEFAULT, FONT_GENERIC, IMAGE_GENERIC,
+        MODEL_GENERIC, MULTIPART_GENERIC, TEXT_GENERIC, VIDEO_GENERIC,
+    },
+};
 
 use super::{Entry, Provider, spawn_with_new_session};
 
@@ -81,16 +88,8 @@ impl Provider for FileProvider {
 }
 
 fn get_icon_from_mimetype(path: &Path, size: u32) -> image::Handle {
-    let default_icon = || {
-        image::Handle::from_path(
-            "/home/wachamuli/Projects/lucien/assets/mimetypes/application-x-generic.png",
-        )
-    };
-
     if path.is_dir() {
-        let dir_icon_path =
-            Path::new("/home/wachamuli/Projects/lucien/assets/mimetypes/inode-directory.svg");
-        return load_raster_icon(&dir_icon_path, size).unwrap_or_else(default_icon);
+        return image::Handle::from_bytes(FOLDER_DEFAULT);
     }
 
     let file_extension = path
@@ -100,7 +99,10 @@ fn get_icon_from_mimetype(path: &Path, size: u32) -> image::Handle {
         .unwrap_or_default();
 
     let mimetype = MimeType::get_type_from_extension(&file_extension);
-    load_raster_icon(&mimetype.get_icon_from_type(), size).unwrap_or_else(default_icon)
+
+    // TODO: Feature to override or add new mimetype icons.
+    // load_raster_icon(&mimetype.get_icon_from_type(), size).unwrap_or_else(default_icon)
+    mimetype.get_icon_from_type()
 }
 
 #[derive(Debug)]
@@ -131,22 +133,19 @@ impl MimeType {
         }
     }
 
-    fn get_icon_from_type(&self) -> PathBuf {
-        let icon_name = match self {
-            MimeType::Text => "text-x-generic.svg",
-            MimeType::Application => "application-x-executable.svg",
-            MimeType::Image => "image-x-generic.svg",
-            MimeType::Audio => "audio-x-generic.svg",
-            MimeType::Video => "video-x-generic.svg",
-            MimeType::Font => "font-x-generic.svg",
-            MimeType::Multipart => "package-x-generic.svg",
-            MimeType::Model => "model.svg",
-            MimeType::Unknown => "application-x-generic.svg",
+    fn get_icon_from_type(&self) -> image::Handle {
+        let icon_bytes = match self {
+            MimeType::Text => TEXT_GENERIC,
+            MimeType::Application => APPLICATION_DEFAULT,
+            MimeType::Image => IMAGE_GENERIC,
+            MimeType::Audio => AUDIO_GENERIC,
+            MimeType::Video => VIDEO_GENERIC,
+            MimeType::Font => FONT_GENERIC,
+            MimeType::Multipart => MULTIPART_GENERIC,
+            MimeType::Model => MODEL_GENERIC,
+            MimeType::Unknown => TEXT_GENERIC,
         };
 
-        PathBuf::from(format!(
-            "/home/wachamuli/Projects/lucien/assets/mimetypes/{}",
-            icon_name
-        ))
+        image::Handle::from_bytes(icon_bytes)
     }
 }
