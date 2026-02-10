@@ -18,7 +18,7 @@ use iced_layershell::to_layer_message;
 use crate::{
     preferences::{
         self, Preferences,
-        keybindings::Action,
+        keybindings::{Action, KeyStroke},
         theme::{ContainerClass, CustomTheme, TextClass},
     },
     providers::{Entry, ProviderKind, ScanState, app::AppProvider, file::FileProvider},
@@ -131,7 +131,7 @@ impl Lucien {
             .collect();
     }
 
-    fn mark_favorite(&mut self, index: usize) -> Task<Message> {
+    fn toggle_favorite(&mut self, index: usize) -> Task<Message> {
         let Some(app) = self.ranked_entries.get(index) else {
             return Task::none();
         };
@@ -174,10 +174,10 @@ impl Lucien {
 
     fn handle_action(&mut self, action: Action) -> Task<Message> {
         match action {
-            Action::Mark => self.mark_favorite(self.selected_entry),
-            Action::Exit => iced::exit(),
-            Action::GoNextEntry => self.go_to_entry(1),
-            Action::GoPreviousEntry => self.go_to_entry(-1),
+            Action::ToggleFavorite => self.toggle_favorite(self.selected_entry),
+            Action::Close => iced::exit(),
+            Action::NextEntry => self.go_to_entry(1),
+            Action::PreviousEntry => self.go_to_entry(-1),
         }
     }
 
@@ -275,12 +275,12 @@ impl Lucien {
 
                 Task::none()
             }
-            Message::Keybinding(current_key_pressed, current_modifiers) => {
-                self.keyboard_modifiers = current_modifiers;
-                for (action, keystroke) in &self.preferences.keybindings {
-                    if keystroke.matches(&current_key_pressed, current_modifiers) {
-                        return self.handle_action(*action);
-                    }
+            Message::Keybinding(input_keystroke, input_modifiers) => {
+                self.keyboard_modifiers = input_modifiers;
+                let keystroke = KeyStroke::from_iced_keyboard(input_keystroke, input_modifiers);
+                if let Some(action) = self.preferences.keybindings.get(&keystroke) {
+                    tracing::debug!(?action, %keystroke, "Action triggered");
+                    return self.handle_action(*action);
                 }
 
                 Task::none()
@@ -336,7 +336,7 @@ impl Lucien {
 
                 scrollable::snap_to(SCROLLABLE_ID.clone(), RelativeOffset { x: 0.0, y: 0.0 })
             }
-            Message::MarkFavorite(index) => self.mark_favorite(index),
+            Message::MarkFavorite(index) => self.toggle_favorite(index),
             Message::ScrollableViewport(viewport) => {
                 self.last_viewport = Some(viewport);
                 Task::none()
