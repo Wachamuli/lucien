@@ -18,17 +18,17 @@ use iced_layershell::to_layer_message;
 use crate::{
     preferences::{
         self, Preferences,
-        keybindings::Action,
+        keybindings::{Action, KeyStroke},
         theme::{ContainerClass, CustomTheme, TextClass},
     },
     providers::{Entry, ProviderKind, app::AppProvider, file::FileProvider},
-    ui::prompt::Prompt,
     ui::{
         entry,
         icon::{
             BakedIcons, CUBE_ACTIVE, CUBE_INACTIVE, ENTER, FOLDER_ACTIVE, FOLDER_INACTIVE,
             MAGNIFIER, STAR_ACTIVE, STAR_INACTIVE,
         },
+        prompt::Prompt,
     },
 };
 
@@ -180,10 +180,10 @@ impl Lucien {
 
     fn handle_action(&mut self, action: Action) -> Task<Message> {
         match action {
-            Action::Mark => self.mark_favorite(self.selected_entry),
-            Action::Exit => iced::exit(),
-            Action::GoNextEntry => self.go_to_entry(1),
-            Action::GoPreviousEntry => self.go_to_entry(-1),
+            Action::ToggleFavorite => self.mark_favorite(self.selected_entry),
+            Action::Close => iced::exit(),
+            Action::NextEntry => self.go_to_entry(1),
+            Action::PreviousEntry => self.go_to_entry(-1),
         }
     }
 
@@ -296,12 +296,12 @@ impl Lucien {
 
                 Task::none()
             }
-            Message::Keybinding(current_key_pressed, current_modifiers) => {
-                self.keyboard_modifiers = current_modifiers;
-                for (action, keystroke) in &self.preferences.keybindings {
-                    if keystroke.matches(&current_key_pressed, current_modifiers) {
-                        return self.handle_action(*action);
-                    }
+            Message::Keybinding(input_keystroke, input_modifiers) => {
+                self.keyboard_modifiers = input_modifiers;
+                let keystroke = KeyStroke::from_iced_keyboard(input_keystroke, input_modifiers);
+                if let Some(action) = self.preferences.keybindings.get(&keystroke) {
+                    tracing::debug!(?action, %keystroke, "Action triggered");
+                    return self.handle_action(*action);
                 }
 
                 Task::none()

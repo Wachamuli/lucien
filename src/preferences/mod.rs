@@ -7,7 +7,7 @@ use toml_edit::DocumentMut;
 pub mod keybindings;
 pub mod theme;
 
-use keybindings::{Keybindings, default_keybindings};
+use keybindings::{Keybindings, default_keybindings, extend_keybindings};
 use theme::CustomTheme;
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -41,15 +41,12 @@ impl Preferences {
         let settings_file_path = xdg_dirs.place_config_file(settings_file_name)?;
 
         let settings_file_string = std::fs::read_to_string(&settings_file_path).unwrap_or_default();
-
         let mut preferences = toml::from_str::<Preferences>(&settings_file_string)
             .map_err(|e| io::Error::new(io::ErrorKind::InvalidInput, e))?;
 
-        let mut extended_keybindings = default_keybindings();
-        extended_keybindings.extend(preferences.keybindings);
-
         preferences.path = Some(settings_file_path);
-        preferences.keybindings = extended_keybindings;
+        preferences.keybindings = extend_keybindings(preferences.keybindings);
+
         Ok(preferences)
     }
 
