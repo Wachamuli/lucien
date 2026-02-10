@@ -85,10 +85,10 @@ impl FromStr for Key {
 #[derive(Debug, Serialize, Deserialize, Hash, Eq, PartialEq, Copy, Clone)]
 #[serde(rename_all = "snake_case")]
 pub enum Action {
-    Mark,
-    Exit,
-    GoNextEntry,
-    GoPreviousEntry,
+    ToggleFavorite,
+    Close,
+    NextEntry,
+    PreviousEntry,
 }
 
 #[derive(Debug, Hash, PartialEq, Eq)]
@@ -190,15 +190,15 @@ pub type Keybindings = HashMap<KeyStroke, Action>;
 
 pub fn default_keybindings() -> HashMap<KeyStroke, Action> {
     HashMap::from([
-        (KeyStroke::new(Key::Escape, []), Action::Exit),
+        (KeyStroke::new(Key::Escape, []), Action::Close),
         (
             KeyStroke::new(Key::Char('f'), [Modifier::Control]),
-            Action::Mark,
+            Action::ToggleFavorite,
         ),
-        (KeyStroke::new(Key::Tab, []), Action::GoNextEntry),
+        (KeyStroke::new(Key::Tab, []), Action::NextEntry),
         (
             KeyStroke::new(Key::Tab, [Modifier::Shift]),
-            Action::GoPreviousEntry,
+            Action::PreviousEntry,
         ),
     ])
 }

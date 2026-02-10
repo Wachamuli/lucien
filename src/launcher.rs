@@ -180,10 +180,10 @@ impl Lucien {
 
     fn handle_action(&mut self, action: Action) -> Task<Message> {
         match action {
-            Action::Mark => self.mark_favorite(self.selected_entry),
-            Action::Exit => iced::exit(),
-            Action::GoNextEntry => self.go_to_entry(1),
-            Action::GoPreviousEntry => self.go_to_entry(-1),
+            Action::ToggleFavorite => self.mark_favorite(self.selected_entry),
+            Action::Close => iced::exit(),
+            Action::NextEntry => self.go_to_entry(1),
+            Action::PreviousEntry => self.go_to_entry(-1),
         }
     }
 
