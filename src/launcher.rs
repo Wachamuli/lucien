@@ -296,10 +296,11 @@ impl Lucien {
 
                 Task::none()
             }
-            Message::Keybinding(current_key_pressed, current_modifiers) => {
-                self.keyboard_modifiers = current_modifiers;
-                let keystroke = KeyStroke::new(current_key_pressed, current_modifiers);
+            Message::Keybinding(input_keystroke, input_modifiers) => {
+                self.keyboard_modifiers = input_modifiers;
+                let keystroke = KeyStroke::from_iced_keyboard(input_keystroke, input_modifiers);
                 if let Some(action) = self.preferences.keybindings.get(&keystroke) {
+                    tracing::debug!(?action, %keystroke, "Action triggered");
                     return self.handle_action(*action);
                 }
 
