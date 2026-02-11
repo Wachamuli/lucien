@@ -10,7 +10,7 @@ Lucien is a refined, lightweight application launcher built with Rust with Wayla
 
 - **Favorites**: Mark your most-used apps for instant access.
 
-- **Minimalist Design**: Built with the *Iced GUI* library for a modern look-and-feel and snappiness.
+- **Minimalist Design**: Built with the _Iced GUI_ library for a modern look-and-feel and snappiness.
 
 ## System Requirements
 
@@ -18,7 +18,7 @@ To run Lucien, your environment must meet the following criteria:
 
 - **Display Server**: Wayland.
 
-- **Protocol Support**: Your compositor must support the *wlr-layer-shell* protocol (common in *Sway*, *Hyprland*, *Niri*, etc.).
+- **Protocol Support**: Your compositor must support the _wlr-layer-shell_ protocol (common in _Sway_, _Hyprland_, _Niri_, etc.).
 
 - **Build Dependencies**: Compiling from source requires the [Rust toolchain](https://rust-lang.org/tools/install/).
 
@@ -30,20 +30,20 @@ Lucien looks for settings in the following location: `$XDG_CONFIG_HOME/lucien/pr
 
 ## Keyboard Shortcuts
 
-| Shortcut	       |Action                                        |
--------------------|----------------------------------------------|
-|Enter	           |Launch the first entry in the list            |
-|Tab     	         |Select next entry                             |
-|Shift + Tab     	 |Select previous entry                         |
-|Alt + 1-5	       |Launch the specific entry (1 through 5)       |
-|Ctrl + f	         |Toggle favorite status for the selected entry |
+| Shortcut    | Action                                        |
+| ----------- | --------------------------------------------- |
+| Enter       | Launch the first entry in the list            |
+| Tab         | Select next entry                             |
+| Shift + Tab | Select previous entry                         |
+| Ctrl + 1-5  | Launch the specific entry (1 through 5)       |
+| Ctrl + f    | Toggle favorite status for the selected entry |
 
 You can redefine any of the default keyboard shortcuts within the [keybindings] section of your preferences.toml. For example:
 
 ```toml
 [keybindings]
-go_previous_entry = { key = "k", modifiers = ["control"] }
-go_next_entry = {key = "j", modifiers = ["control"]}
+control-k = "previous_entry"
+control-j = "next_entry"
 ```
 
 ## Installation

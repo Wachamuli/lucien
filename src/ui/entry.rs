@@ -5,7 +5,10 @@ use iced::{
 
 use crate::{
     launcher::{Message, SECTION_HEIGHT},
-    preferences::theme::{ButtonClass, CustomTheme, Entry as EntryStyle, TextClass},
+    preferences::{
+        keybindings::Action,
+        theme::{ButtonClass, CustomTheme, Entry as EntryStyle, TextClass},
+    },
     providers::Entry,
     ui::icon::BakedIcons,
 };
@@ -54,7 +57,7 @@ pub fn display_entry<'a>(
 
     let mark_favorite: Option<Element<'a, Message, CustomTheme>> = is_selected.then(|| {
         button(image(star_handle).width(18).height(18))
-            .on_press(Message::MarkFavorite(index))
+            .on_press(Message::TriggerAction(Action::ToggleFavorite))
             .class(ButtonClass::Transparent)
             .into()
     });
@@ -86,9 +89,7 @@ pub fn display_entry<'a>(
         .spacing(12)
         .align_y(iced::Alignment::Center),
     )
-    .on_press(Message::LaunchEntry(index))
-    // TODO: the padding is the same for every entry
-    // I should call this function once
+    .on_press(Message::TriggerAction(Action::LaunchEntry(index)))
     .padding(iced::Padding::from(&style.padding))
     .height(style.height)
     .width(Length::Fill)
