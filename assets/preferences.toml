@@ -4,12 +4,11 @@ leading_icon_count = 10
 favorite_apps = []
 
 # Available modifiers: , `alt`, `shift`, and `control`.
-# Available keys: `any character`, `tab`, and `escape`.
+# Available keys: `any character`, `tab`, `escape`, and `arrow buttons`.
+# Available actions: `toggle_favorite`, `previous_entry`, `next_entry`, launch_entry(int), and `close`.
 [keybindings]
-exit = {key = "escape"}
-mark = {key = "f", modifiers = ["control"]}
-go_next_entry = {key = "tab"}
-go_previous_entry = { key = "tab", modifiers = ["shift"] }
+control-k = "previous_entry"
+control-j = "next_entry"
 
 # KDE-Style Theme
 [theme]
