@@ -5,7 +5,7 @@ use std::{
 
 use fuzzy_matcher::{FuzzyMatcher, skim::SkimMatcherV2};
 use iced::{
-    Alignment, Event, Length, Subscription, Task, event, keyboard, mouse,
+    Alignment, Length, Subscription, Task,
     widget::{
         Column, Container, container, image, row,
         scrollable::{self, RelativeOffset, Viewport},
@@ -56,7 +56,7 @@ pub enum Message {
     PromptChange(String),
     DebouncedFilter,
     TriggerAction(Action),
-    TriggerActionByKeybinding(keyboard::Key, keyboard::Modifiers),
+    TriggerActionByKeybinding(iced::keyboard::Key, iced::keyboard::Modifiers),
     ScrollableViewport(Viewport),
     SaveIntoDisk(Result<PathBuf, Arc<tokio::io::Error>>),
     Close,
@@ -363,12 +363,15 @@ impl Lucien {
     }
 
     pub fn subscription(&self) -> Subscription<Message> {
+        use iced::Event::{Keyboard, Mouse};
+        use iced::{event, keyboard::Event as KeyboardEvent, mouse::Event as MouseEvent};
+
         Subscription::batch([event::listen_with(move |event, status, _| {
             match (status, event) {
-                (_, Event::Keyboard(keyboard::Event::KeyPressed { key, modifiers, .. })) => {
+                (_, Keyboard(KeyboardEvent::KeyPressed { key, modifiers, .. })) => {
                     Some(Message::TriggerActionByKeybinding(key, modifiers))
                 }
-                (event::Status::Ignored, Event::Mouse(mouse::Event::ButtonPressed(_))) => {
+                (event::Status::Ignored, Mouse(MouseEvent::ButtonPressed(_))) => {
                     Some(Message::Close)
                 }
                 _ => None,
