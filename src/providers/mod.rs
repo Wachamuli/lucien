@@ -35,7 +35,7 @@ type Id = String;
 #[derive(Debug, Clone)]
 pub enum ScanState {
     Started,
-    Found(Entry),
+    Found(Vec<Entry>),
     Finished,
     Errored(Id, String),
 }
@@ -43,8 +43,6 @@ pub enum ScanState {
 pub trait Provider {
     // TODO: Maybe I should just return the stream, and make the subscription
     // logic in the subscripiton function
-    // Also, Scan can have many states. Scanning, Completed, and Error
-    // I can create an enum to handle each case
     fn scan(&self, dir: PathBuf) -> Subscription<Message>;
     // Maybe, launch could consume self? But I have to get rid of dynamic dispatch first.
     // I could avoid couple clones doing this.

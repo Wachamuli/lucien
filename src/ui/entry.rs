@@ -13,7 +13,7 @@ use crate::{
     ui::icon::BakedIcons,
 };
 
-const ALT_SHORTCUTS: [&str; 5] = ["Alt+1", "Alt+2", "Alt+3", "Alt+4", "Alt+5"];
+const CTRL_SHORTCUTS: [&str; 5] = ["Ctrl+1", "Ctrl+2", "Ctrl+3", "Ctrl+4", "Ctrl+5"];
 
 // Maybe unnecesarry constant, this is stack based. (but nice to have ergonomic?)
 const FONT_BOLD: Font = Font {
@@ -40,8 +40,8 @@ pub fn display_entry<'a>(
 ) -> Element<'a, Message, CustomTheme> {
     let shortcut_label: Element<'a, Message, CustomTheme> = if is_selected {
         image(&baked_icons.enter).width(18).height(18).into()
-    } else if index < ALT_SHORTCUTS.len() {
-        text(ALT_SHORTCUTS[index])
+    } else if index < CTRL_SHORTCUTS.len() {
+        text(CTRL_SHORTCUTS[index])
             .size(12)
             .class(TextClass::TextDim)
             .into()

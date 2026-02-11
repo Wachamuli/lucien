@@ -43,7 +43,7 @@ pub struct Lucien {
     prompt: String,
     matcher: SkimMatcherV2,
     cached_entries: Vec<Entry>,
-    ranked_entries: Vec<usize>,
+    entries: Vec<usize>,
     preferences: Preferences,
     selected_entry: usize,
     last_viewport: Option<Viewport>,
@@ -82,7 +82,7 @@ impl Lucien {
             prompt: String::new(),
             matcher: SkimMatcherV2::default(),
             cached_entries: Vec::new(),
-            ranked_entries: Vec::new(),
+            entries: Vec::new(),
             preferences,
             selected_entry: 0,
             last_viewport: None,
@@ -121,14 +121,14 @@ impl Lucien {
             }
         });
 
-        self.ranked_entries = ranked
+        self.entries = ranked
             .into_iter()
             .map(|(_score, app_index)| app_index)
             .collect();
     }
 
     fn toggle_favorite(&mut self, index: usize) -> Task<Message> {
-        let Some(app) = self.ranked_entries.get(index) else {
+        let Some(app) = self.entries.get(index) else {
             return Task::none();
         };
 
@@ -152,7 +152,7 @@ impl Lucien {
     }
 
     fn go_to_entry(&mut self, step: isize) -> Task<Message> {
-        let total = self.ranked_entries.len();
+        let total = self.entries.len();
         if total == 0 {
             return Task::none();
         }
@@ -169,7 +169,7 @@ impl Lucien {
     }
 
     fn launch_entry(&self, index: usize) -> Task<Message> {
-        let Some(entry_index) = self.ranked_entries.get(index) else {
+        let Some(entry_index) = self.entries.get(index) else {
             return Task::none();
         };
 
@@ -194,7 +194,7 @@ impl Lucien {
         };
 
         // 1. Get coordinates from injected layout
-        let entry_index = self.ranked_entries[self.selected_entry];
+        let entry_index = self.entries[self.selected_entry];
         let is_fav = self
             .preferences
             .favorite_apps
@@ -250,15 +250,18 @@ impl Lucien {
                     ScanState::Started => {
                         self.prompt.clear();
                         self.cached_entries.clear();
-                        self.ranked_entries.clear();
+                        self.entries.clear();
                         self.is_scan_completed = false;
                     }
-                    ScanState::Found(entry) => {
-                        self.cached_entries.push(entry);
-                        self.ranked_entries.push(self.cached_entries.len() - 1);
+                    ScanState::Found(entry_batch) => {
+                        let batch_len = entry_batch.len();
+                        let start_index = self.cached_entries.len();
+
+                        self.cached_entries.extend(entry_batch);
+                        self.entries.extend(start_index..start_index + batch_len);
 
                         if !self.preferences.favorite_apps.is_empty() {
-                            self.ranked_entries.sort_by_key(|index| {
+                            self.entries.sort_by_key(|index| {
                                 let app = &self.cached_entries[*index];
                                 !self.preferences.favorite_apps.contains(&app.id)
                             });
@@ -315,7 +318,7 @@ impl Lucien {
                         self.prompt.clear();
                         self.provider = ProviderKind::File(FileProvider)
                     }
-                    _ => (),
+                    _ => {}
                 };
 
                 let (task, handle) = Task::future(async {
@@ -376,7 +379,7 @@ impl Lucien {
         let mut general_column =
             Column::new().push_maybe(show_sections.then(|| section("General")));
 
-        for (rank_pos, app_index) in self.ranked_entries.iter().enumerate() {
+        for (rank_pos, app_index) in self.entries.iter().enumerate() {
             let entry = &self.cached_entries[*app_index];
             let is_favorite = self.preferences.favorite_apps.contains(&entry.id);
             let is_selected = self.selected_entry == rank_pos;
@@ -420,7 +423,7 @@ impl Lucien {
         }
 
         let results_not_found: Option<Container<Message, CustomTheme>> =
-            (self.ranked_entries.is_empty() && self.is_scan_completed).then(|| {
+            (self.entries.is_empty() && self.is_scan_completed).then(|| {
                 container(
                     text("No Results Found")
                         .size(14)
@@ -433,7 +436,7 @@ impl Lucien {
                 .padding(19.8)
             });
 
-        let show_results = !self.ranked_entries.is_empty() || self.is_scan_completed;
+        let show_results = !self.entries.is_empty() || self.is_scan_completed;
 
         let content = Column::new()
             .push(starred_column)

@@ -8,6 +8,7 @@ use iced::{Subscription, Task, widget::image};
 
 use crate::{
     launcher::Message,
+    providers::app::SCAN_BATCH_SIZE,
     ui::icon::{
         APPLICATION_DEFAULT, AUDIO_GENERIC, FOLDER_DEFAULT, FONT_GENERIC, IMAGE_GENERIC,
         MODEL_GENERIC, MULTIPART_GENERIC, TEXT_GENERIC, VIDEO_GENERIC,
@@ -27,6 +28,8 @@ impl Provider for FileProvider {
     fn scan(&self, dir: PathBuf) -> Subscription<Message> {
         let stream = iced::stream::channel(100, |mut output| async move {
             let _ = output.send(Message::ScanEvent(ScanState::Started)).await;
+            let mut batch = Vec::with_capacity(SCAN_BATCH_SIZE);
+
             if let Some(parent_directory) = dir.parent() {
                 let parent_entry = Entry::new(
                     parent_directory.to_str().unwrap(),
@@ -34,10 +37,7 @@ impl Provider for FileProvider {
                     Some(parent_directory.to_string_lossy()),
                     get_icon_from_mimetype(&parent_directory, 28),
                 );
-
-                let _ = output
-                    .send(Message::ScanEvent(ScanState::Found(parent_entry)))
-                    .await;
+                batch.push(parent_entry);
             }
 
             let mut child_directories = tokio::fs::read_dir(dir).await.unwrap();
@@ -55,15 +55,28 @@ impl Provider for FileProvider {
                     get_icon_from_mimetype(&path, 28),
                 );
 
+                batch.push(child_entry);
+
+                if batch.len() >= SCAN_BATCH_SIZE {
+                    let _ = output
+                        .send(Message::ScanEvent(ScanState::Found(std::mem::replace(
+                            &mut batch,
+                            Vec::with_capacity(SCAN_BATCH_SIZE),
+                        ))))
+                        .await;
+                }
+            }
+
+            if !batch.is_empty() {
                 let _ = output
-                    .send(Message::ScanEvent(ScanState::Found(child_entry)))
+                    .send(Message::ScanEvent(ScanState::Found(batch)))
                     .await;
             }
 
             let _ = output.send(Message::ScanEvent(ScanState::Finished)).await;
         });
 
-        iced::Subscription::run_with_id("provider-scan", stream)
+        iced::Subscription::run_with_id("file-provider-scan", stream)
     }
 
     fn launch(&self, id: &str) -> Task<Message> {

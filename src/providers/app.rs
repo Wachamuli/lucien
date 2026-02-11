@@ -16,6 +16,9 @@ use crate::{
 
 use super::{Entry, Provider, ScanState, spawn_with_new_session};
 
+// TODO: Move to configuration file
+pub const SCAN_BATCH_SIZE: usize = 10;
+
 #[derive(Debug, Clone, Copy)]
 pub struct AppProvider;
 
@@ -26,7 +29,9 @@ impl Provider for AppProvider {
             tokio::task::spawn_blocking(move || {
                 let xdg_dirs = xdg::BaseDirectories::new();
                 let apps = gio::AppInfo::all();
+
                 let _ = sync_sender.blocking_send(Message::ScanEvent(ScanState::Started));
+                let mut batch = Vec::with_capacity(SCAN_BATCH_SIZE);
 
                 for app in apps {
                     if !app.should_show() {
@@ -47,7 +52,17 @@ impl Provider for AppProvider {
                         .unwrap_or_else(|| image::Handle::from_bytes(APPLICATION_DEFAULT));
 
                     let entry = Entry::new(cmd, name, description, icon);
-                    let _ = sync_sender.blocking_send(Message::ScanEvent(ScanState::Found(entry)));
+                    batch.push(entry);
+
+                    if batch.len() >= SCAN_BATCH_SIZE {
+                        let _ = sync_sender.blocking_send(Message::ScanEvent(ScanState::Found(
+                            std::mem::replace(&mut batch, Vec::with_capacity(SCAN_BATCH_SIZE)),
+                        )));
+                    }
+                }
+
+                if !batch.is_empty() {
+                    let _ = sync_sender.blocking_send(Message::ScanEvent(ScanState::Found(batch)));
                 }
             });
 
@@ -58,7 +73,7 @@ impl Provider for AppProvider {
             let _ = output.send(Message::ScanEvent(ScanState::Finished)).await;
         });
 
-        iced::Subscription::run_with_id("provider-scan", stream)
+        iced::Subscription::run_with_id("app-provider-scan", stream)
     }
 
     fn launch(&self, id: &str) -> Task<Message> {
