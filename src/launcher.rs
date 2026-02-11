@@ -61,11 +61,10 @@ pub enum Message {
     TriggerActionByKeybinding(iced::keyboard::Key, iced::keyboard::Modifiers),
     ScrollableViewport(Viewport),
     SaveIntoDisk(Result<PathBuf, Arc<tokio::io::Error>>),
-    Close,
 }
 
 impl Lucien {
-    pub fn init(preferences: Preferences) -> (Self, Task<Message>) {
+    pub fn new(preferences: Preferences) -> (Self, Task<Message>) {
         let auto_focus_prompt_task = text_input::focus(TEXT_INPUT_ID.clone());
         let default_provider = ProviderKind::App(AppProvider);
 
@@ -340,10 +339,8 @@ impl Lucien {
                 self.last_viewport = Some(viewport);
                 Task::none()
             }
-            Message::Close => iced::exit(),
-
-            Message::AnchorChange(_anchor) => todo!(),
             Message::SetInputRegion(_action_callback) => todo!(),
+            Message::AnchorChange(_anchor) => todo!(),
             Message::AnchorSizeChange(_anchor, _) => todo!(),
             Message::LayerChange(_layer) => todo!(),
             Message::MarginChange(_) => todo!(),
@@ -353,17 +350,18 @@ impl Lucien {
     }
 
     pub fn subscription(&self) -> Subscription<Message> {
-        use iced::Event::{Keyboard, Mouse};
-        use iced::{event, keyboard::Event as KeyboardEvent, mouse::Event as MouseEvent};
+        use iced::Event::{Keyboard as IcedKeyboardEvent, Window as IcedWindowEvent};
+        use iced::window;
+        use iced::{event, keyboard};
 
         Subscription::batch([
             self.provider.handler().scan(PathBuf::from(env!("HOME"))),
-            event::listen_with(move |event, status, _| match (status, event) {
-                (_, Keyboard(KeyboardEvent::KeyPressed { key, modifiers, .. })) => {
+            event::listen_with(move |event, _, _| match event {
+                IcedKeyboardEvent(keyboard::Event::KeyPressed { key, modifiers, .. }) => {
                     Some(Message::TriggerActionByKeybinding(key, modifiers))
                 }
-                (event::Status::Ignored, Mouse(MouseEvent::ButtonPressed(_))) => {
-                    Some(Message::Close)
+                IcedWindowEvent(window::Event::Unfocused) => {
+                    Some(Message::TriggerAction(Action::Close))
                 }
                 _ => None,
             }),

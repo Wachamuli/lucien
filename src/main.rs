@@ -36,19 +36,19 @@ fn main() -> anyhow::Result<()> {
 
     let _single_instance_lock = get_single_instance(package_name)?;
 
-    let cache_dir = xdg::BaseDirectories::with_prefix(package_name).get_cache_home().context(
-            "Could not determine the user's Home directory. Ensure the $HOME environment variable is set."
-        )?;
+    let xdg_cache_directory = xdg::BaseDirectories::with_prefix(package_name)
+        .get_cache_home()
+        .context("Failed to find cache directory: check that $HOME is set.")?;
 
-    let _log_guard = setup_tracing_subscriber(cache_dir, "logs")?;
+    let _log_guard = setup_tracing_subscriber(xdg_cache_directory, "logs")?;
     tracing::info!("Running {package_name} v.{package_version}...");
 
-    let pref = load_application_preferences()?;
+    let preferences = load_application_preferences()?;
 
     let layershell_settings = LayerShellSettings {
         size: Some((700, 500)),
         anchor: Anchor::empty(),
-        keyboard_interactivity: KeyboardInteractivity::Exclusive,
+        keyboard_interactivity: KeyboardInteractivity::OnDemand,
         layer: Layer::Overlay,
         ..Default::default()
     };
@@ -58,7 +58,7 @@ fn main() -> anyhow::Result<()> {
         .theme(Lucien::theme)
         .layer_settings(layershell_settings)
         .antialiasing(true)
-        .run_with(|| Lucien::init(pref))?;
+        .run_with(|| Lucien::new(preferences))?;
 
     Ok(())
 }
