@@ -1,6 +1,7 @@
 use std::{collections::HashMap, str::FromStr};
 
-use serde;
+use serde::de::{self, Visitor};
+use serde::{self, Deserializer, Serializer};
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Serialize, Deserialize, Hash, Eq, PartialEq)]
@@ -39,9 +40,13 @@ impl FromStr for Modifier {
     }
 }
 
-#[derive(Debug, Serialize, Deserialize, Hash, PartialEq, Eq)]
+#[derive(Debug, Serialize, Deserialize, Hash, PartialEq, Eq, Clone)]
 #[serde(rename_all = "lowercase")]
 pub enum Key {
+    Up,
+    Down,
+    Left,
+    Right,
     Tab,
     Escape,
     #[serde(untagged)]
@@ -51,6 +56,10 @@ pub enum Key {
 impl std::fmt::Display for Key {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
+            Key::Up => write!(f, "up"),
+            Key::Down => write!(f, "down"),
+            Key::Left => write!(f, "left"),
+            Key::Right => write!(f, "right"),
             Key::Tab => write!(f, "tab"),
             Key::Escape => write!(f, "escape"),
             Key::Char(c) => write!(f, "{c}"),
@@ -65,9 +74,13 @@ impl FromStr for Key {
         match s {
             "tab" => Ok(Key::Tab),
             "escape" => Ok(Key::Escape),
+            "up" => Ok(Key::Up),
+            "down" => Ok(Key::Down),
+            "left" => Ok(Key::Left),
+            "right" => Ok(Key::Right),
             s => {
                 let Some(character) = s.chars().next() else {
-                    return Err("Empty character.".to_string());
+                    return Err("missing character".to_string());
                 };
 
                 if !character.is_alphanumeric() {
@@ -82,16 +95,77 @@ impl FromStr for Key {
     }
 }
 
-#[derive(Debug, Serialize, Deserialize, Hash, Eq, PartialEq, Copy, Clone)]
-#[serde(rename_all = "snake_case")]
+#[derive(Debug, Hash, Eq, PartialEq, Copy, Clone)]
 pub enum Action {
     ToggleFavorite,
     Close,
     NextEntry,
     PreviousEntry,
+    LaunchEntry(usize),
 }
 
-#[derive(Debug, Hash, PartialEq, Eq)]
+impl Serialize for Action {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        match self {
+            Action::ToggleFavorite => serializer.serialize_str("toggle_favorite"),
+            Action::Close => serializer.serialize_str("close"),
+            Action::NextEntry => serializer.serialize_str("next_entry"),
+            Action::PreviousEntry => serializer.serialize_str("previous_entry"),
+            Action::LaunchEntry(n) => serializer.serialize_str(&format!("launch_entry({})", n)),
+        }
+    }
+}
+
+impl<'de> Deserialize<'de> for Action {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        struct ActionVisitor;
+
+        impl<'de> Visitor<'de> for ActionVisitor {
+            type Value = Action;
+
+            fn expecting(&self, formatter: &mut std::fmt::Formatter) -> std::fmt::Result {
+                formatter.write_str("a valid action string")
+            }
+
+            fn visit_str<E>(self, value: &str) -> Result<Action, E>
+            where
+                E: de::Error,
+            {
+                match value {
+                    "toggle_favorite" => Ok(Action::ToggleFavorite),
+                    "close" => Ok(Action::Close),
+                    "next_entry" => Ok(Action::NextEntry),
+                    "previous_entry" => Ok(Action::PreviousEntry),
+                    s if s.starts_with("launch_entry(") && s.ends_with(")") => {
+                        let num_str = &s[13..s.len() - 1]; // Extract the number
+                        let num = num_str.parse::<usize>().map_err(de::Error::custom)?;
+                        Ok(Action::LaunchEntry(num))
+                    }
+                    _ => Err(de::Error::unknown_variant(
+                        value,
+                        &[
+                            "toggle_favorite",
+                            "close",
+                            "next_entry",
+                            "previous_entry",
+                            "launch_entry(n)",
+                        ],
+                    )),
+                }
+            }
+        }
+
+        deserializer.deserialize_str(ActionVisitor)
+    }
+}
+
+#[derive(Debug, Hash, PartialEq, Eq, Clone)]
 pub struct KeyStroke {
     pub key: Key,
     pub modifiers: Vec<Modifier>,
@@ -178,6 +252,10 @@ impl KeyStroke {
         let key = match iced_key {
             iced::keyboard::Key::Named(iced::keyboard::key::Named::Tab) => Key::Tab,
             iced::keyboard::Key::Named(iced::keyboard::key::Named::Escape) => Key::Escape,
+            iced::keyboard::Key::Named(iced::keyboard::key::Named::ArrowUp) => Key::Up,
+            iced::keyboard::Key::Named(iced::keyboard::key::Named::ArrowDown) => Key::Down,
+            iced::keyboard::Key::Named(iced::keyboard::key::Named::ArrowLeft) => Key::Left,
+            iced::keyboard::Key::Named(iced::keyboard::key::Named::ArrowRight) => Key::Right,
             iced::keyboard::Key::Character(c) => Key::Char(c.chars().next().unwrap_or(' ')),
             _ => Key::Char(' '),
         };
@@ -196,9 +274,31 @@ pub fn default_keybindings() -> HashMap<KeyStroke, Action> {
             Action::ToggleFavorite,
         ),
         (KeyStroke::new(Key::Tab, []), Action::NextEntry),
+        (KeyStroke::new(Key::Down, []), Action::NextEntry),
         (
             KeyStroke::new(Key::Tab, [Modifier::Shift]),
             Action::PreviousEntry,
+        ),
+        (KeyStroke::new(Key::Up, []), Action::PreviousEntry),
+        (
+            KeyStroke::new(Key::Char('1'), [Modifier::Control]),
+            Action::LaunchEntry(1),
+        ),
+        (
+            KeyStroke::new(Key::Char('2'), [Modifier::Control]),
+            Action::LaunchEntry(2),
+        ),
+        (
+            KeyStroke::new(Key::Char('3'), [Modifier::Control]),
+            Action::LaunchEntry(3),
+        ),
+        (
+            KeyStroke::new(Key::Char('4'), [Modifier::Control]),
+            Action::LaunchEntry(4),
+        ),
+        (
+            KeyStroke::new(Key::Char('5'), [Modifier::Control]),
+            Action::LaunchEntry(5),
         ),
     ])
 }

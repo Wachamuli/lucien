@@ -5,7 +5,10 @@ use iced::{
 
 use crate::{
     launcher::Message,
-    preferences::theme::{ButtonClass, CustomTheme, Entry as EntryStyle, TextClass},
+    preferences::{
+        keybindings::Action,
+        theme::{ButtonClass, CustomTheme, Entry as EntryStyle, TextClass},
+    },
     providers::Entry,
     ui::icon::BakedIcons,
 };
@@ -41,7 +44,7 @@ pub fn display_entry<'a>(
 
     let mark_favorite: Element<'a, Message, CustomTheme> =
         button(image(star_handle).width(18).height(18))
-            .on_press(Message::MarkFavorite(index))
+            .on_press(Message::TriggerAction(Action::ToggleFavorite))
             .class(ButtonClass::Transparent)
             .into();
 
@@ -80,7 +83,7 @@ pub fn display_entry<'a>(
         .spacing(12)
         .align_y(iced::Alignment::Center),
     )
-    .on_press(Message::LaunchEntry(index))
+    .on_press(Message::TriggerAction(Action::LaunchEntry(index)))
     .padding(iced::Padding::from(&style.padding))
     .height(style.height)
     .width(Length::Fill)

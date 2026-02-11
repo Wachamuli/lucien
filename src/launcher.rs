@@ -5,8 +5,7 @@ use std::{
 
 use fuzzy_matcher::{FuzzyMatcher, skim::SkimMatcherV2};
 use iced::{
-    Alignment, Event, Length, Subscription, Task, event,
-    keyboard::{self, Key},
+    Alignment, Length, Subscription, Task,
     widget::{
         Column, Container, container, image, row,
         scrollable::{self, RelativeOffset, Viewport},
@@ -41,7 +40,6 @@ pub struct Lucien {
     provider: ProviderKind,
     prompt: String,
     matcher: SkimMatcherV2,
-    keyboard_modifiers: keyboard::Modifiers,
     cached_entries: Vec<Entry>,
     ranked_entries: Vec<usize>,
     preferences: Preferences,
@@ -57,12 +55,11 @@ pub enum Message {
     PopulateEntries(Vec<Entry>),
     PromptChange(String),
     DebouncedFilter,
-    LaunchEntry(usize),
-    MarkFavorite(usize),
-    Keybinding(keyboard::Key, keyboard::Modifiers),
+    TriggerAction(Action),
+    TriggerActionByKeybinding(iced::keyboard::Key, iced::keyboard::Modifiers),
     ScrollableViewport(Viewport),
-    SystemEvent(iced::Event),
     SaveIntoDisk(Result<PathBuf, Arc<tokio::io::Error>>),
+    Close,
 }
 
 impl Lucien {
@@ -90,7 +87,6 @@ impl Lucien {
             provider: default_provider,
             prompt: String::new(),
             matcher: SkimMatcherV2::default(),
-            keyboard_modifiers: keyboard::Modifiers::empty(),
             cached_entries: Vec::new(),
             ranked_entries: Vec::new(),
             preferences,
@@ -178,12 +174,23 @@ impl Lucien {
         Task::none()
     }
 
+    fn launch_entry(&self, index: usize) -> Task<Message> {
+        let Some(entry_index) = self.ranked_entries.get(index) else {
+            return Task::none();
+        };
+
+        let entry = &self.cached_entries[*entry_index];
+
+        self.provider.handler().launch(&entry.id)
+    }
+
     fn handle_action(&mut self, action: Action) -> Task<Message> {
         match action {
-            Action::ToggleFavorite => self.mark_favorite(self.selected_entry),
             Action::Close => iced::exit(),
             Action::NextEntry => self.go_to_entry(1),
             Action::PreviousEntry => self.go_to_entry(-1),
+            Action::ToggleFavorite => self.mark_favorite(self.selected_entry),
+            Action::LaunchEntry(index) => self.launch_entry(index),
         }
     }
 
@@ -296,30 +303,20 @@ impl Lucien {
 
                 Task::none()
             }
-            Message::Keybinding(input_keystroke, input_modifiers) => {
-                self.keyboard_modifiers = input_modifiers;
-                let keystroke = KeyStroke::from_iced_keyboard(input_keystroke, input_modifiers);
+            Message::TriggerAction(action) => {
+                tracing::debug!(?action, "Action triggered");
+                self.handle_action(action)
+            }
+            Message::TriggerActionByKeybinding(keys, modifiers) => {
+                let keystroke = KeyStroke::from_iced_keyboard(keys, modifiers);
                 if let Some(action) = self.preferences.keybindings.get(&keystroke) {
-                    tracing::debug!(?action, %keystroke, "Action triggered");
+                    tracing::debug!(%keystroke, "Keystroke triggered");
                     return self.handle_action(*action);
                 }
 
                 Task::none()
             }
-            Message::LaunchEntry(index) => {
-                let Some(entry_index) = self.ranked_entries.get(index) else {
-                    return Task::none();
-                };
-
-                let entry = &self.cached_entries[*entry_index];
-
-                self.provider.handler().launch(&entry.id)
-            }
             Message::PromptChange(prompt) => {
-                if self.keyboard_modifiers.alt() {
-                    return Task::none();
-                }
-
                 self.prompt = prompt;
 
                 if let Some(handle) = self.search_handle.take() {
@@ -349,29 +346,12 @@ impl Lucien {
 
                 scrollable::snap_to(SCROLLABLE_ID.clone(), RelativeOffset { x: 0.0, y: 0.0 })
             }
-            Message::MarkFavorite(index) => self.mark_favorite(index),
             Message::ScrollableViewport(viewport) => {
                 self.last_viewport = Some(viewport);
                 Task::none()
             }
-            Message::SystemEvent(Event::Keyboard(keyboard::Event::KeyPressed {
-                key: Key::Named(key),
-                ..
-            })) => match key {
-                keyboard::key::Named::ArrowUp => self.go_to_entry(-1),
-                keyboard::key::Named::ArrowDown => self.go_to_entry(1),
-                _ => Task::none(),
-            },
-            Message::SystemEvent(iced::Event::Keyboard(keyboard::Event::ModifiersChanged(
-                modifiers,
-            ))) => {
-                self.keyboard_modifiers = modifiers;
-                Task::none()
-            }
-            Message::SystemEvent(iced::Event::Mouse(iced::mouse::Event::ButtonPressed(_))) => {
-                iced::exit()
-            }
-            Message::SystemEvent(_) => Task::none(),
+            Message::Close => iced::exit(),
+
             Message::AnchorChange(_anchor) => todo!(),
             Message::SetInputRegion(_action_callback) => todo!(),
             Message::AnchorSizeChange(_anchor, _) => todo!(),
@@ -383,30 +363,20 @@ impl Lucien {
     }
 
     pub fn subscription(&self) -> Subscription<Message> {
-        Subscription::batch([
-            event::listen().map(Message::SystemEvent),
-            event::listen_with(move |event, status, _id| match (event, status) {
-                (
-                    Event::Keyboard(keyboard::Event::KeyPressed {
-                        physical_key: keyboard::key::Physical::Code(physical_key_pressed),
-                        modifiers,
-                        ..
-                    }),
-                    _,
-                ) if modifiers.alt() => match physical_key_pressed {
-                    keyboard::key::Code::Digit1 => Some(Message::LaunchEntry(0)),
-                    keyboard::key::Code::Digit2 => Some(Message::LaunchEntry(1)),
-                    keyboard::key::Code::Digit3 => Some(Message::LaunchEntry(2)),
-                    keyboard::key::Code::Digit4 => Some(Message::LaunchEntry(3)),
-                    keyboard::key::Code::Digit5 => Some(Message::LaunchEntry(4)),
-                    _ => None,
-                },
-                (Event::Keyboard(keyboard::Event::KeyPressed { key, modifiers, .. }), _) => {
-                    Some(Message::Keybinding(key, modifiers))
+        use iced::Event::{Keyboard, Mouse};
+        use iced::{event, keyboard::Event as KeyboardEvent, mouse::Event as MouseEvent};
+
+        Subscription::batch([event::listen_with(move |event, status, _| {
+            match (status, event) {
+                (_, Keyboard(KeyboardEvent::KeyPressed { key, modifiers, .. })) => {
+                    Some(Message::TriggerActionByKeybinding(key, modifiers))
+                }
+                (event::Status::Ignored, Mouse(MouseEvent::ButtonPressed(_))) => {
+                    Some(Message::Close)
                 }
                 _ => None,
-            }),
-        ])
+            }
+        })])
     }
 
     pub fn view(&self) -> Container<'_, Message, CustomTheme> {
@@ -514,7 +484,9 @@ impl Lucien {
             .magnifier(&self.icons.magnifier)
             .id(TEXT_INPUT_ID.clone())
             .on_input(Message::PromptChange)
-            .on_submit(Message::LaunchEntry(self.selected_entry))
+            .on_submit(Message::TriggerAction(Action::LaunchEntry(
+                self.selected_entry,
+            )))
             .view();
 
         container(iced::widget::column![
