@@ -2,7 +2,7 @@ use std::path::PathBuf;
 use std::{io, os::unix::process::CommandExt, path::Path, process};
 
 use iced::futures::SinkExt;
-use iced::futures::future::BoxFuture;
+use iced::futures::channel::mpsc::Sender as FuturesSender;
 use iced::widget::image;
 use iced::{Subscription, Task};
 use resvg::{tiny_skia, usvg};
@@ -120,9 +120,8 @@ impl Drop for Scanner {
             .blocking_send(Message::ScanEvent(ScannerState::Finished));
     }
 }
-use iced::futures::channel::mpsc::Sender as FuturesSender;
 
-struct AsyncScanner {
+pub struct AsyncScanner {
     sender: FuturesSender<Message>,
     batch: Vec<Entry>,
     capacity: usize,
@@ -166,25 +165,12 @@ impl AsyncScanner {
 
     pub async fn collect<F>(sender: FuturesSender<Message>, capacity: usize, f: F)
     where
-        for<'a> F: MyAsyncFnOnce<'a>,
+        F: AsyncFnOnce(&mut AsyncScanner),
     {
         let mut scanner = Self::new(sender, capacity).await;
-        f.call_once(&mut scanner).await;
+        // TODO: Return a Result and handle errors with the ScanState::Errored variant
+        f(&mut scanner).await;
         scanner.finish().await;
-    }
-}
-
-pub trait MyAsyncFnOnce<'a> {
-    fn call_once(self, data: &'a mut AsyncScanner) -> BoxFuture<'a, ()>;
-}
-
-impl<'a, F, Fut> MyAsyncFnOnce<'a> for F
-where
-    F: FnOnce(&'a mut AsyncScanner) -> Fut,
-    Fut: std::future::Future<Output = ()> + Send + 'a,
-{
-    fn call_once(self, data: &'a mut AsyncScanner) -> BoxFuture<'a, ()> {
-        Box::pin(self(data))
     }
 }
 
