@@ -8,10 +8,10 @@ const KEYSTROKE_SEPARATOR: &str = "-";
 
 bitflags! {
     #[derive(Debug, Clone, Hash, Eq, PartialEq)]
-    pub struct Modifiers: u32 {
-        const SUPER = 0b100 << 9;
-        const CONTROL = 0b100 << 3;
-        const ALT = 0b100 << 6;
+    pub struct Modifiers: u8 {
+        const SUPER = 0b000;
+        const CONTROL = 0b001;
+        const ALT = 0b111;
         const SHIFT = 0b100;
     }
 }
@@ -99,8 +99,6 @@ impl FromStr for Key {
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         let mut chars = s.chars();
 
-        // TODO: Allow non-alphanumeric values like '/', ',', '?',
-        // but not the '-' separator
         if let (Some(c), None) = (chars.next(), chars.next()) {
             if c.is_alphanumeric() {
                 return Ok(Key::Character(c));
@@ -240,6 +238,11 @@ impl std::fmt::Display for Keystrokes {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let modifiers_str = self.modifiers.to_string();
         let key_str = self.key.to_string();
+
+        if modifiers_str.is_empty() {
+            return write!(f, "{key_str}");
+        }
+
         write!(f, "{modifiers_str}{KEYSTROKE_SEPARATOR}{key_str}")
     }
 }

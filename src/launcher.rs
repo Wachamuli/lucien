@@ -184,6 +184,7 @@ impl Lucien {
     }
 
     fn handle_action(&mut self, action: Action) -> Task<Message> {
+        tracing::debug!(?action, "Action triggered");
         match action {
             Action::Close => iced::exit(),
             Action::NextEntry => self.go_to_entry(1),
@@ -302,13 +303,10 @@ impl Lucien {
 
                 Task::none()
             }
-            Message::TriggerAction(action) => {
-                tracing::debug!(?action, "Action triggered");
-                self.handle_action(action)
-            }
+            Message::TriggerAction(action) => self.handle_action(action),
             Message::TriggerActionByKeybinding(keystrokes) => {
+                tracing::debug!(%keystrokes, "Keystroke triggered");
                 if let Some(action) = self.preferences.keybindings.get(&keystrokes) {
-                    tracing::debug!(%keystrokes, "Keystroke triggered");
                     return self.handle_action(*action);
                 }
 
