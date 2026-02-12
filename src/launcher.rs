@@ -21,7 +21,7 @@ use crate::{
         keybindings::{Action, Keystrokes},
         theme::{ContainerClass, CustomTheme, TextClass},
     },
-    providers::{Entry, ProviderKind, ScanState, app::AppProvider, file::FileProvider},
+    providers::{Entry, ProviderKind, ScannerState, app::AppProvider, file::FileProvider},
     ui::{
         entry::{self, FONT_ITALIC, section},
         icon::{
@@ -55,7 +55,7 @@ pub struct Lucien {
 #[to_layer_message]
 #[derive(Debug, Clone)]
 pub enum Message {
-    ScanEvent(ScanState),
+    ScanEvent(ScannerState),
     PromptChange(String),
     DebouncedFilter,
     TriggerAction(Action),
@@ -248,13 +248,13 @@ impl Lucien {
         match message {
             Message::ScanEvent(scan_event) => {
                 match scan_event {
-                    ScanState::Started => {
+                    ScannerState::Started => {
                         self.prompt.clear();
                         self.cached_entries.clear();
                         self.entries.clear();
                         self.is_scan_completed = false;
                     }
-                    ScanState::Found(entry_batch) => {
+                    ScannerState::Found(entry_batch) => {
                         let batch_len = entry_batch.len();
                         let start_index = self.cached_entries.len();
 
@@ -268,10 +268,10 @@ impl Lucien {
                             });
                         }
                     }
-                    ScanState::Finished => {
+                    ScannerState::Finished => {
                         self.is_scan_completed = true;
                     }
-                    ScanState::Errored(id, error) => {
+                    ScannerState::Errored(id, error) => {
                         tracing::error!(error = error, "An error ocurred while scanning {id}");
                     }
                 }

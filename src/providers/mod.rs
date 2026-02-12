@@ -1,6 +1,7 @@
 use std::path::PathBuf;
 use std::{io, os::unix::process::CommandExt, path::Path, process};
 
+use iced::futures::SinkExt;
 use iced::widget::image;
 use iced::{Subscription, Task};
 use resvg::{tiny_skia, usvg};
@@ -32,14 +33,6 @@ impl ProviderKind {
 // TODO: A more robust Id type
 type Id = String;
 
-#[derive(Debug, Clone)]
-pub enum ScanState {
-    Started,
-    Found(Vec<Entry>),
-    Finished,
-    Errored(Id, String),
-}
-
 pub trait Provider {
     // TODO: Maybe I should just return the stream, and make the subscription
     // logic in the subscripiton function
@@ -70,6 +63,109 @@ impl Entry {
             secondary: secondary.map(Into::into),
             icon,
         }
+    }
+}
+
+// TODO: Move to configuration file
+pub const SCAN_BATCH_SIZE: usize = 10;
+
+#[derive(Debug, Clone)]
+pub enum ScannerState {
+    Started,
+    Found(Vec<Entry>),
+    Finished,
+    Errored(Id, String),
+}
+
+struct Scanner {
+    sender: tokio::sync::mpsc::Sender<Message>,
+    batch: Vec<Entry>,
+    capacity: usize,
+}
+
+impl Scanner {
+    pub fn new(sender: tokio::sync::mpsc::Sender<Message>, capacity: usize) -> Self {
+        let _ = sender.blocking_send(Message::ScanEvent(ScannerState::Started));
+        Self {
+            sender,
+            batch: Vec::with_capacity(capacity),
+            capacity,
+        }
+    }
+
+    pub fn load(&mut self, entry: Entry) {
+        self.batch.push(entry);
+
+        if self.batch.len() >= self.capacity {
+            self.flush()
+        }
+    }
+
+    fn flush(&mut self) {
+        if !self.batch.is_empty() {
+            let ready_batch = std::mem::replace(&mut self.batch, Vec::with_capacity(self.capacity));
+            let _ = self
+                .sender
+                .blocking_send(Message::ScanEvent(ScannerState::Found(ready_batch)));
+        }
+    }
+}
+
+impl Drop for Scanner {
+    fn drop(&mut self) {
+        self.flush();
+        let _ = self
+            .sender
+            .blocking_send(Message::ScanEvent(ScannerState::Finished));
+    }
+}
+use iced::futures::channel::mpsc::Sender as FuturesSender;
+
+struct AsyncScanner {
+    sender: FuturesSender<Message>,
+    batch: Vec<Entry>,
+    capacity: usize,
+}
+
+impl AsyncScanner {
+    async fn new(mut sender: FuturesSender<Message>, capacity: usize) -> Self {
+        let _ = sender.send(Message::ScanEvent(ScannerState::Started)).await;
+        Self {
+            sender,
+            capacity,
+            batch: Vec::with_capacity(capacity),
+        }
+    }
+
+    async fn load(&mut self, entry: Entry) {
+        self.batch.push(entry);
+
+        if self.batch.len() >= self.capacity {
+            self.flush().await;
+        }
+    }
+
+    async fn flush(&mut self) {
+        if !self.batch.is_empty() {
+            let ready_batch = std::mem::replace(&mut self.batch, Vec::with_capacity(self.capacity));
+            self.sender
+                .send(Message::ScanEvent(ScannerState::Found(ready_batch)));
+        }
+    }
+
+    async fn finish(mut self) {
+        self.flush();
+        let _ = self.sender.send(Message::ScanEvent(ScannerState::Finished));
+    }
+
+    pub async fn collect<F, Fut>(sender: FuturesSender<Message>, capacity: usize, f: F)
+    where
+        F: FnOnce(&mut AsyncScanner) -> Fut,
+        Fut: std::future::Future<Output = ()>,
+    {
+        let mut scanner = Self::new(sender, capacity).await;
+        f(&mut scanner).await;
+        let _ = scanner.finish().await;
     }
 }
 

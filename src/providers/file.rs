@@ -8,14 +8,14 @@ use iced::{Subscription, Task, widget::image};
 
 use crate::{
     launcher::Message,
-    providers::app::SCAN_BATCH_SIZE,
+    providers::SCAN_BATCH_SIZE,
     ui::icon::{
         APPLICATION_DEFAULT, AUDIO_GENERIC, FOLDER_DEFAULT, FONT_GENERIC, IMAGE_GENERIC,
         MODEL_GENERIC, MULTIPART_GENERIC, TEXT_GENERIC, VIDEO_GENERIC,
     },
 };
 
-use super::{Entry, Provider, ScanState, spawn_with_new_session};
+use super::{Entry, Provider, ScannerState, spawn_with_new_session};
 
 #[derive(Debug, Clone, Copy)]
 pub struct FileProvider;
@@ -27,7 +27,6 @@ impl Provider for FileProvider {
     // This funcion call is the culprit: Path::to_str() -> Option<&str>
     fn scan(&self, dir: PathBuf) -> Subscription<Message> {
         let stream = iced::stream::channel(100, |mut output| async move {
-            let _ = output.send(Message::ScanEvent(ScanState::Started)).await;
             let mut batch = Vec::with_capacity(SCAN_BATCH_SIZE);
 
             if let Some(parent_directory) = dir.parent() {
@@ -59,7 +58,7 @@ impl Provider for FileProvider {
 
                 if batch.len() >= SCAN_BATCH_SIZE {
                     let _ = output
-                        .send(Message::ScanEvent(ScanState::Found(std::mem::replace(
+                        .send(Message::ScanEvent(ScannerState::Found(std::mem::replace(
                             &mut batch,
                             Vec::with_capacity(SCAN_BATCH_SIZE),
                         ))))
@@ -69,11 +68,13 @@ impl Provider for FileProvider {
 
             if !batch.is_empty() {
                 let _ = output
-                    .send(Message::ScanEvent(ScanState::Found(batch)))
+                    .send(Message::ScanEvent(ScannerState::Found(batch)))
                     .await;
             }
 
-            let _ = output.send(Message::ScanEvent(ScanState::Finished)).await;
+            let _ = output
+                .send(Message::ScanEvent(ScannerState::Finished))
+                .await;
         });
 
         iced::Subscription::run_with_id("file-provider-scan", stream)

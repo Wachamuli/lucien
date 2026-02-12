@@ -14,10 +14,7 @@ use crate::{
     ui::icon::{APPLICATION_DEFAULT, ICON_EXTENSIONS, ICON_SIZES},
 };
 
-use super::{Entry, Provider, ScanState, spawn_with_new_session};
-
-// TODO: Move to configuration file
-pub const SCAN_BATCH_SIZE: usize = 10;
+use super::{Entry, Provider, SCAN_BATCH_SIZE, Scanner, spawn_with_new_session};
 
 #[derive(Debug, Clone, Copy)]
 pub struct AppProvider;
@@ -28,16 +25,12 @@ impl Provider for AppProvider {
             let (sync_sender, mut sync_receiver) = tokio::sync::mpsc::channel::<Message>(100);
             tokio::task::spawn_blocking(move || {
                 let xdg_dirs = xdg::BaseDirectories::new();
-                let apps = gio::AppInfo::all();
-
-                let _ = sync_sender.blocking_send(Message::ScanEvent(ScanState::Started));
-                let mut batch = Vec::with_capacity(SCAN_BATCH_SIZE);
+                let apps = gio::AppInfo::all()
+                    .into_iter()
+                    .filter(|app| app.should_show());
+                let mut scanner = Scanner::new(sync_sender, SCAN_BATCH_SIZE);
 
                 for app in apps {
-                    if !app.should_show() {
-                        continue;
-                    }
-
                     let cmd = app
                         .commandline()
                         .map(|c| c.to_string_lossy().into_owned())
@@ -52,25 +45,13 @@ impl Provider for AppProvider {
                         .unwrap_or_else(|| image::Handle::from_bytes(APPLICATION_DEFAULT));
 
                     let entry = Entry::new(cmd, name, description, icon);
-                    batch.push(entry);
-
-                    if batch.len() >= SCAN_BATCH_SIZE {
-                        let _ = sync_sender.blocking_send(Message::ScanEvent(ScanState::Found(
-                            std::mem::replace(&mut batch, Vec::with_capacity(SCAN_BATCH_SIZE)),
-                        )));
-                    }
-                }
-
-                if !batch.is_empty() {
-                    let _ = sync_sender.blocking_send(Message::ScanEvent(ScanState::Found(batch)));
+                    scanner.load(entry);
                 }
             });
 
             while let Some(entry) = sync_receiver.recv().await {
                 let _ = output.send(entry).await;
             }
-
-            let _ = output.send(Message::ScanEvent(ScanState::Finished)).await;
         });
 
         iced::Subscription::run_with_id("app-provider-scan", stream)
@@ -82,20 +63,21 @@ impl Provider for AppProvider {
             .filter(|arg| !arg.starts_with('%'))
             .collect::<Vec<_>>();
 
-        if let [binary, args @ ..] = raw_command_without_placeholders.as_slice() {
-            let mut command = process::Command::new(binary);
-            command.args(args);
-            tracing::info!(binary = %binary, args = ?args, "Attempting to launch detached process.");
-
-            if let Err(e) = spawn_with_new_session(&mut command) {
-                tracing::error!(error = %e, binary = %binary, "Failed to spawn process.");
-            } else {
-                tracing::info!(binary = %binary, "Process launched successfully.");
-            }
-        } else {
+        let [binary, args @ ..] = raw_command_without_placeholders.as_slice() else {
             tracing::warn!("Launch failed: provided ID resulted in an empty command.");
+            return Task::none();
+        };
+
+        let mut command = process::Command::new(binary);
+        command.args(args);
+        tracing::info!(binary = %binary, args = ?args, "Attempting to launch detached process.");
+
+        if let Err(e) = spawn_with_new_session(&mut command) {
+            tracing::error!(error = %e, binary = %binary, "Failed to spawn process.");
+            return Task::none();
         }
 
+        tracing::info!(binary = %binary, "Process launched successfully.");
         iced::exit()
     }
 }
