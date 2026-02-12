@@ -17,7 +17,7 @@ use iced_layershell::to_layer_message;
 use crate::{
     preferences::{
         self, Preferences,
-        keybindings::{Action, KeyStroke},
+        keybindings::{Action, Key, Keystrokes},
         theme::{ContainerClass, CustomTheme, TextClass},
     },
     providers::{Entry, ProviderKind, app::AppProvider, file::FileProvider},
@@ -56,7 +56,7 @@ pub enum Message {
     PromptChange(String),
     DebouncedFilter,
     TriggerAction(Action),
-    TriggerActionByKeybinding(iced::keyboard::Key, iced::keyboard::Modifiers),
+    TriggerActionByKeybinding(Keystrokes),
     ScrollableViewport(Viewport),
     SaveIntoDisk(Result<PathBuf, Arc<tokio::io::Error>>),
 }
@@ -306,10 +306,9 @@ impl Lucien {
                 tracing::debug!(?action, "Action triggered");
                 self.handle_action(action)
             }
-            Message::TriggerActionByKeybinding(keys, modifiers) => {
-                let keystroke = KeyStroke::from_iced_keyboard(keys, modifiers);
-                if let Some(action) = self.preferences.keybindings.get(&keystroke) {
-                    tracing::debug!(%keystroke, "Keystroke triggered");
+            Message::TriggerActionByKeybinding(keystrokes) => {
+                if let Some(action) = self.preferences.keybindings.get(&keystrokes) {
+                    tracing::debug!(%keystrokes, "Keystroke triggered");
                     return self.handle_action(*action);
                 }
 
@@ -366,7 +365,8 @@ impl Lucien {
 
         Subscription::batch([event::listen_with(move |event, _, _| match event {
             Keyboard(keyboard::Event::KeyPressed { key, modifiers, .. }) => {
-                Some(Message::TriggerActionByKeybinding(key, modifiers))
+                let keystrokes = Keystrokes::from_iced_keyboard(key, modifiers);
+                Some(Message::TriggerActionByKeybinding(keystrokes))
             }
             Window(window::Event::Unfocused) => Some(Message::TriggerAction(Action::Close)),
             _ => None,
