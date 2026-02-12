@@ -2,6 +2,7 @@ use std::path::PathBuf;
 use std::{io, os::unix::process::CommandExt, path::Path, process};
 
 use iced::futures::SinkExt;
+use iced::futures::future::BoxFuture;
 use iced::widget::image;
 use iced::{Subscription, Task};
 use resvg::{tiny_skia, usvg};
@@ -148,24 +149,42 @@ impl AsyncScanner {
     async fn flush(&mut self) {
         if !self.batch.is_empty() {
             let ready_batch = std::mem::replace(&mut self.batch, Vec::with_capacity(self.capacity));
-            self.sender
-                .send(Message::ScanEvent(ScannerState::Found(ready_batch)));
+            let _ = self
+                .sender
+                .send(Message::ScanEvent(ScannerState::Found(ready_batch)))
+                .await;
         }
     }
 
     async fn finish(mut self) {
-        self.flush();
-        let _ = self.sender.send(Message::ScanEvent(ScannerState::Finished));
+        self.flush().await;
+        let _ = self
+            .sender
+            .send(Message::ScanEvent(ScannerState::Finished))
+            .await;
     }
 
-    pub async fn collect<F, Fut>(sender: FuturesSender<Message>, capacity: usize, f: F)
+    pub async fn collect<F>(sender: FuturesSender<Message>, capacity: usize, f: F)
     where
-        F: FnOnce(&mut AsyncScanner) -> Fut,
-        Fut: std::future::Future<Output = ()>,
+        for<'a> F: MyAsyncFnOnce<'a>,
     {
         let mut scanner = Self::new(sender, capacity).await;
-        f(&mut scanner).await;
-        let _ = scanner.finish().await;
+        f.call_once(&mut scanner).await;
+        scanner.finish().await;
+    }
+}
+
+pub trait MyAsyncFnOnce<'a> {
+    fn call_once(self, data: &'a mut AsyncScanner) -> BoxFuture<'a, ()>;
+}
+
+impl<'a, F, Fut> MyAsyncFnOnce<'a> for F
+where
+    F: FnOnce(&'a mut AsyncScanner) -> Fut,
+    Fut: std::future::Future<Output = ()> + Send + 'a,
+{
+    fn call_once(self, data: &'a mut AsyncScanner) -> BoxFuture<'a, ()> {
+        Box::pin(self(data))
     }
 }
 

@@ -1,4 +1,4 @@
-use iced::futures::SinkExt;
+use iced::futures::{FutureExt, SinkExt};
 use std::{
     path::{Path, PathBuf},
     process,
@@ -8,14 +8,14 @@ use iced::{Subscription, Task, widget::image};
 
 use crate::{
     launcher::Message,
-    providers::SCAN_BATCH_SIZE,
+    providers::{AsyncScanner, SCAN_BATCH_SIZE},
     ui::icon::{
         APPLICATION_DEFAULT, AUDIO_GENERIC, FOLDER_DEFAULT, FONT_GENERIC, IMAGE_GENERIC,
         MODEL_GENERIC, MULTIPART_GENERIC, TEXT_GENERIC, VIDEO_GENERIC,
     },
 };
 
-use super::{Entry, Provider, ScannerState, spawn_with_new_session};
+use super::{Entry, Provider, spawn_with_new_session};
 
 #[derive(Debug, Clone, Copy)]
 pub struct FileProvider;
@@ -26,55 +26,36 @@ impl Provider for FileProvider {
     // In order to fix this, id should be a PathBuf or similar.
     // This funcion call is the culprit: Path::to_str() -> Option<&str>
     fn scan(&self, dir: PathBuf) -> Subscription<Message> {
-        let stream = iced::stream::channel(100, |mut output| async move {
-            let mut batch = Vec::with_capacity(SCAN_BATCH_SIZE);
-
-            if let Some(parent_directory) = dir.parent() {
-                let parent_entry = Entry::new(
-                    parent_directory.to_str().unwrap(),
-                    "..",
-                    Some(parent_directory.to_string_lossy()),
-                    get_icon_from_mimetype(&parent_directory, 28),
-                );
-                batch.push(parent_entry);
-            }
-
-            let mut child_directories = tokio::fs::read_dir(dir).await.unwrap();
-
-            while let Some(child_dir) = child_directories.next_entry().await.unwrap() {
-                let path = child_dir.path();
-
-                let id_str = path.to_string_lossy();
-                let main_display = path.file_name().unwrap().to_string_lossy();
-
-                let child_entry = Entry::new(
-                    id_str.clone(),
-                    main_display,
-                    Some(id_str),
-                    get_icon_from_mimetype(&path, 28),
-                );
-
-                batch.push(child_entry);
-
-                if batch.len() >= SCAN_BATCH_SIZE {
-                    let _ = output
-                        .send(Message::ScanEvent(ScannerState::Found(std::mem::replace(
-                            &mut batch,
-                            Vec::with_capacity(SCAN_BATCH_SIZE),
-                        ))))
-                        .await;
-                }
-            }
-
-            if !batch.is_empty() {
-                let _ = output
-                    .send(Message::ScanEvent(ScannerState::Found(batch)))
-                    .await;
-            }
-
-            let _ = output
-                .send(Message::ScanEvent(ScannerState::Finished))
-                .await;
+        let stream = iced::stream::channel(100, |output| async move {
+            AsyncScanner::collect(
+                output,
+                SCAN_BATCH_SIZE,
+                async move |scanner: &mut AsyncScanner| {
+                    if let Some(parent_directory) = dir.parent() {
+                        let parent_entry = Entry::new(
+                            parent_directory.to_str().unwrap(),
+                            "..",
+                            Some(parent_directory.to_string_lossy()),
+                            get_icon_from_mimetype(&parent_directory, 28),
+                        );
+                        scanner.load(parent_entry).await;
+                    }
+                    let mut child_directories = tokio::fs::read_dir(&dir).await.unwrap();
+                    while let Some(child_dir) = child_directories.next_entry().await.unwrap() {
+                        let path = child_dir.path();
+                        let id_str = path.to_string_lossy();
+                        let main_display = path.file_name().unwrap().to_string_lossy();
+                        let child_entry = Entry::new(
+                            id_str.clone(),
+                            main_display,
+                            Some(id_str),
+                            get_icon_from_mimetype(&path, 28),
+                        );
+                        scanner.load(child_entry).await;
+                    }
+                },
+            )
+            .await;
         });
 
         iced::Subscription::run_with_id("file-provider-scan", stream)
