@@ -17,7 +17,7 @@ use iced_layershell::to_layer_message;
 use crate::{
     preferences::{
         self, Preferences,
-        keybindings::{Action, KeyStroke},
+        keybindings::{Action, Key, Keystrokes},
         theme::{ContainerClass, CustomTheme, TextClass},
     },
     providers::{Entry, ProviderKind, app::AppProvider, file::FileProvider},
@@ -56,7 +56,7 @@ pub enum Message {
     PromptChange(String),
     DebouncedFilter,
     TriggerAction(Action),
-    TriggerActionByKeybinding(iced::keyboard::Key, iced::keyboard::Modifiers),
+    TriggerActionByKeybinding(Keystrokes),
     ScrollableViewport(Viewport),
     SaveIntoDisk(Result<PathBuf, Arc<tokio::io::Error>>),
 }
@@ -184,6 +184,7 @@ impl Lucien {
     }
 
     fn handle_action(&mut self, action: Action) -> Task<Message> {
+        tracing::debug!(?action, "Action triggered");
         match action {
             Action::Close => iced::exit(),
             Action::NextEntry => self.go_to_entry(1),
@@ -302,14 +303,10 @@ impl Lucien {
 
                 Task::none()
             }
-            Message::TriggerAction(action) => {
-                tracing::debug!(?action, "Action triggered");
-                self.handle_action(action)
-            }
-            Message::TriggerActionByKeybinding(keys, modifiers) => {
-                let keystroke = KeyStroke::from_iced_keyboard(keys, modifiers);
-                if let Some(action) = self.preferences.keybindings.get(&keystroke) {
-                    tracing::debug!(%keystroke, "Keystroke triggered");
+            Message::TriggerAction(action) => self.handle_action(action),
+            Message::TriggerActionByKeybinding(keystrokes) => {
+                tracing::debug!(%keystrokes, "Keystroke triggered");
+                if let Some(action) = self.preferences.keybindings.get(&keystrokes) {
                     return self.handle_action(*action);
                 }
 
@@ -365,8 +362,9 @@ impl Lucien {
         use iced::{event, keyboard};
 
         Subscription::batch([event::listen_with(move |event, _, _| match event {
-            Keyboard(keyboard::Event::KeyPressed { key, modifiers, .. }) => {
-                Some(Message::TriggerActionByKeybinding(key, modifiers))
+            Keyboard(keyboard::Event::KeyPressed { modifiers, key, .. }) => {
+                let keystrokes = Keystrokes::from_iced_keystrokes(modifiers, key);
+                Some(Message::TriggerActionByKeybinding(keystrokes))
             }
             Window(window::Event::Unfocused) => Some(Message::TriggerAction(Action::Close)),
             _ => None,

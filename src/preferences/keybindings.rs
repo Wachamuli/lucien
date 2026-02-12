@@ -1,42 +1,66 @@
 use std::{collections::HashMap, str::FromStr};
 
-use serde::de::{self, Visitor};
+use gio::glib::bitflags::bitflags;
 use serde::{self, Deserializer, Serializer};
 use serde::{Deserialize, Serialize};
 
-#[derive(Debug, Clone, Serialize, Deserialize, Hash, Eq, PartialEq)]
-#[serde(rename_all = "lowercase")]
-pub enum Modifier {
-    Alt,
-    Shift,
-    Control,
-    Super,
-}
+const KEYSTROKE_SEPARATOR: &str = "-";
 
-impl std::fmt::Display for Modifier {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            Modifier::Alt => write!(f, "alt"),
-            Modifier::Shift => write!(f, "shift"),
-            Modifier::Control => write!(f, "control"),
-            Modifier::Super => write!(f, "super"),
-        }
+bitflags! {
+    #[derive(Debug, Clone, Hash, Eq, PartialEq)]
+    pub struct Modifiers: u8 {
+        const SUPER   = 0b0001;
+        const CONTROL = 0b0010;
+        const ALT     = 0b0100;
+        const SHIFT   = 0b1000;
     }
 }
 
-impl FromStr for Modifier {
+impl std::fmt::Display for Modifiers {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let mut modifier_names = self.iter_names().map(|(name, _)| match name {
+            "SUPER" => "super",
+            "CONTROL" => "control",
+            "ALT" => "alt",
+            "SHIFT" => "shift",
+            name => name,
+        });
+
+        if let Some(first) = modifier_names.next() {
+            write!(f, "{first}")?;
+            for modifier in modifier_names {
+                write!(f, "{KEYSTROKE_SEPARATOR}{modifier}")?;
+            }
+        };
+
+        Ok(())
+    }
+}
+
+impl FromStr for Modifiers {
     type Err = String;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
-        match s.trim().to_lowercase().as_str() {
-            "alt" => Ok(Modifier::Alt),
-            "shift" => Ok(Modifier::Shift),
-            "control" => Ok(Modifier::Control),
-            "super" => Ok(Modifier::Super),
-            c => Err(format!(
-                "`{c}` is not valid modifier. Use `alt`, `shift`, `control`, or, `super` instead"
-            )),
+        if s.is_empty() {
+            return Ok(Modifiers::empty());
         }
+
+        s.split(KEYSTROKE_SEPARATOR)
+            .try_fold(Modifiers::empty(), |mut acc, part| {
+                acc |= match part {
+                    "control" => Modifiers::CONTROL,
+                    "shift" => Modifiers::SHIFT,
+                    "alt" => Modifiers::ALT,
+                    "super" => Modifiers::SUPER,
+                    _ => {
+                        return Err(format!(
+                            "'{part}' is not a valid modifier. Use \
+                            'logo', 'control', 'alt', or 'shift' instead"
+                        ));
+                    }
+                };
+                Ok(acc)
+            })
     }
 }
 
@@ -49,8 +73,9 @@ pub enum Key {
     Right,
     Tab,
     Escape,
+    Unidentified,
     #[serde(untagged)]
-    Char(char),
+    Character(char),
 }
 
 impl std::fmt::Display for Key {
@@ -62,7 +87,8 @@ impl std::fmt::Display for Key {
             Key::Right => write!(f, "right"),
             Key::Tab => write!(f, "tab"),
             Key::Escape => write!(f, "escape"),
-            Key::Char(c) => write!(f, "{c}"),
+            Key::Character(c) => write!(f, "{c}"),
+            Key::Unidentified => write!(f, "unidentified"),
         }
     }
 }
@@ -71,6 +97,14 @@ impl FromStr for Key {
     type Err = String;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
+        let mut chars = s.chars();
+
+        if let (Some(c), None) = (chars.next(), chars.next()) {
+            if c.is_alphanumeric() {
+                return Ok(Key::Character(c));
+            }
+        }
+
         match s {
             "tab" => Ok(Key::Tab),
             "escape" => Ok(Key::Escape),
@@ -78,19 +112,11 @@ impl FromStr for Key {
             "down" => Ok(Key::Down),
             "left" => Ok(Key::Left),
             "right" => Ok(Key::Right),
-            s => {
-                let Some(character) = s.chars().next() else {
-                    return Err("missing character".to_string());
-                };
-
-                if !character.is_alphanumeric() {
-                    return Err(format!(
-                        "{s} is not a alphanumeric value. A-Z, a-z, and 0-9 values are accepted"
-                    ));
-                }
-
-                return Ok(Key::Char(character));
-            }
+            _ => Err(format!(
+                "'{s}' is not a valid key. It must be a named key \
+                    ('tab', 'escape', 'up', 'down', 'left', 'right') or \
+                    a single alphanumeric character (A-Z, 0-9)"
+            )),
         }
     }
 }
@@ -102,6 +128,41 @@ pub enum Action {
     NextEntry,
     PreviousEntry,
     LaunchEntry(usize),
+}
+
+fn extract_parameter<T: FromStr>(parameter_part: &str) -> Result<T, String> {
+    parameter_part
+        .trim_end_matches(')')
+        .trim()
+        .parse::<T>()
+        .map_err(|_| {
+            format!(
+                "incorrect type assigned to parameter: expected {}",
+                std::any::type_name::<T>()
+            )
+        })
+}
+
+impl FromStr for Action {
+    type Err = String;
+
+    fn from_str(action: &str) -> Result<Self, Self::Err> {
+        let (identifier, param) = action.split_once("(").unwrap_or((action, ""));
+        match identifier {
+            "toggle_favorite" => Ok(Action::ToggleFavorite),
+            "close" => Ok(Action::Close),
+            "next_entry" => Ok(Action::NextEntry),
+            "previous_entry" => Ok(Action::PreviousEntry),
+            "launch_entry" if param.ends_with(")") => {
+                let index: usize = extract_parameter(param)?;
+                Ok(Action::LaunchEntry(index))
+            }
+            _ => Err(format!(
+                "unknown action '{action}'. Available actions are: 'toggle_favorite', \
+                'close', 'next_entry', 'previous_entry', 'launch_entry(index)'"
+            )),
+        }
+    }
 }
 
 impl Serialize for Action {
@@ -124,54 +185,18 @@ impl<'de> Deserialize<'de> for Action {
     where
         D: Deserializer<'de>,
     {
-        struct ActionVisitor;
-
-        impl<'de> Visitor<'de> for ActionVisitor {
-            type Value = Action;
-
-            fn expecting(&self, formatter: &mut std::fmt::Formatter) -> std::fmt::Result {
-                formatter.write_str("a valid action string")
-            }
-
-            fn visit_str<E>(self, value: &str) -> Result<Action, E>
-            where
-                E: de::Error,
-            {
-                match value {
-                    "toggle_favorite" => Ok(Action::ToggleFavorite),
-                    "close" => Ok(Action::Close),
-                    "next_entry" => Ok(Action::NextEntry),
-                    "previous_entry" => Ok(Action::PreviousEntry),
-                    s if s.starts_with("launch_entry(") && s.ends_with(")") => {
-                        let num_str = &s[13..s.len() - 1]; // Extract the number
-                        let num = num_str.parse::<usize>().map_err(de::Error::custom)?;
-                        Ok(Action::LaunchEntry(num))
-                    }
-                    _ => Err(de::Error::unknown_variant(
-                        value,
-                        &[
-                            "toggle_favorite",
-                            "close",
-                            "next_entry",
-                            "previous_entry",
-                            "launch_entry(n)",
-                        ],
-                    )),
-                }
-            }
-        }
-
-        deserializer.deserialize_str(ActionVisitor)
+        let value = String::deserialize(deserializer)?;
+        Self::from_str(&value).map_err(serde::de::Error::custom)
     }
 }
 
 #[derive(Debug, Hash, PartialEq, Eq, Clone)]
-pub struct KeyStroke {
+pub struct Keystrokes {
     pub key: Key,
-    pub modifiers: Vec<Modifier>,
+    pub modifiers: Modifiers,
 }
 
-impl<'de> Deserialize<'de> for KeyStroke {
+impl<'de> Deserialize<'de> for Keystrokes {
     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
     where
         D: serde::Deserializer<'de>,
@@ -181,7 +206,7 @@ impl<'de> Deserialize<'de> for KeyStroke {
     }
 }
 
-impl Serialize for KeyStroke {
+impl Serialize for Keystrokes {
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
     where
         S: serde::Serializer,
@@ -190,39 +215,47 @@ impl Serialize for KeyStroke {
     }
 }
 
-impl FromStr for KeyStroke {
+impl FromStr for Keystrokes {
     type Err = String;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
-        let mut parts: Vec<&str> = s.split('-').collect();
-
-        let key_str = parts.pop().ok_or("missing key part")?;
-        let key = Key::from_str(key_str)?;
-
-        let mut modifiers = parts
-            .into_iter()
-            .map(Modifier::from_str)
-            .collect::<Result<Vec<Modifier>, String>>()?;
-        modifiers.sort_by_key(|m| m.to_string());
-        Ok(KeyStroke { key, modifiers })
+        match s.rsplit_once(KEYSTROKE_SEPARATOR) {
+            Some((modifiers_str, key_str)) => {
+                let key = Key::from_str(key_str)?;
+                let modifiers = Modifiers::from_str(modifiers_str)?;
+                Ok(Keystrokes { modifiers, key })
+            }
+            None => {
+                let key = Key::from_str(s)?;
+                let modifiers = Modifiers::empty();
+                Ok(Keystrokes { modifiers, key })
+            }
+        }
     }
 }
 
-impl std::fmt::Display for KeyStroke {
+impl std::fmt::Display for Keystrokes {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        let mut sorted_mods = self.modifiers.clone();
-        sorted_mods.sort_by_key(|m| m.to_string());
+        let modifiers_str = self.modifiers.to_string();
 
-        let mut parts: Vec<String> = sorted_mods.iter().map(|m| m.to_string()).collect();
-        parts.push(self.key.to_string());
-        write!(f, "{}", parts.join("-"))
+        if self.key == Key::Unidentified {
+            return write!(f, "{modifiers_str}");
+        }
+
+        let key_str = self.key.to_string();
+
+        if modifiers_str.is_empty() {
+            return write!(f, "{key_str}");
+        }
+
+        write!(f, "{modifiers_str}{KEYSTROKE_SEPARATOR}{key_str}")
     }
 }
 
-impl KeyStroke {
-    fn new<I>(key: Key, modifiers: I) -> Self
+impl Keystrokes {
+    fn new<I>(modifiers: I, key: Key) -> Self
     where
-        I: IntoIterator<Item = Modifier>,
+        I: IntoIterator<Item = Modifiers>,
     {
         Self {
             key,
@@ -230,74 +263,92 @@ impl KeyStroke {
         }
     }
 
-    pub fn from_iced_keyboard(
-        iced_key: iced::keyboard::Key,
+    #[rustfmt::skip]
+    pub fn from_iced_keystrokes(
         iced_modifiers: iced::keyboard::Modifiers,
+        iced_key: iced::keyboard::Key,
     ) -> Self {
-        let mut modifiers = Vec::new();
+        let mut modifiers = Modifiers::empty();
 
-        if iced_modifiers.control() {
-            modifiers.push(Modifier::Control)
-        };
-        if iced_modifiers.logo() {
-            modifiers.push(Modifier::Super);
-        }
-        if iced_modifiers.alt() {
-            modifiers.push(Modifier::Alt)
-        };
-        if iced_modifiers.shift() {
-            modifiers.push(Modifier::Shift);
+        // NOTE: `iced_modifiers` does not include the modifier bit for the key currently
+        // being pressed, only for keys already held. So for lone modifier presses we
+        // also check `iced_key` directly and OR in the flag ourselves.
+        if iced_modifiers.logo()    { modifiers |= Modifiers::SUPER }
+        if iced_modifiers.control() { modifiers |= Modifiers::CONTROL }
+        if iced_modifiers.alt()     { modifiers |= Modifiers::ALT }
+        if iced_modifiers.shift()   { modifiers |= Modifiers::SHIFT }
+
+        use iced::keyboard::Key as IcedKey;
+        use iced::keyboard::key::Named as IcedNamedKey;
+
+        // Supplement the modifier state from the key itself to catch lone modifier presses
+        // (see comment above).
+        if let IcedKey::Named(ref named) = iced_key {
+            match named {
+                IcedNamedKey::Super       => modifiers |= Modifiers::SUPER,
+                IcedNamedKey::Control     => modifiers |= Modifiers::CONTROL,
+                IcedNamedKey::Alt         => modifiers |= Modifiers::ALT,
+                IcedNamedKey::Shift       => modifiers |= Modifiers::SHIFT,
+                _ => {}
+            }
         }
 
         let key = match iced_key {
-            iced::keyboard::Key::Named(iced::keyboard::key::Named::Tab) => Key::Tab,
-            iced::keyboard::Key::Named(iced::keyboard::key::Named::Escape) => Key::Escape,
-            iced::keyboard::Key::Named(iced::keyboard::key::Named::ArrowUp) => Key::Up,
-            iced::keyboard::Key::Named(iced::keyboard::key::Named::ArrowDown) => Key::Down,
-            iced::keyboard::Key::Named(iced::keyboard::key::Named::ArrowLeft) => Key::Left,
-            iced::keyboard::Key::Named(iced::keyboard::key::Named::ArrowRight) => Key::Right,
-            iced::keyboard::Key::Character(c) => Key::Char(c.chars().next().unwrap_or(' ')),
-            _ => Key::Char(' '),
+            IcedKey::Character(smol_str) => smol_str
+                .chars()
+                .next()
+                .map(Key::Character)
+                .unwrap_or(Key::Unidentified),
+            IcedKey::Named(named) => match named {
+                IcedNamedKey::Tab => Key::Tab,
+                IcedNamedKey::Escape => Key::Escape,
+                IcedNamedKey::ArrowUp => Key::Up,
+                IcedNamedKey::ArrowDown => Key::Down,
+                IcedNamedKey::ArrowLeft => Key::Left,
+                IcedNamedKey::ArrowRight => Key::Right,
+                _ => Key::Unidentified,
+            },
+            _ => Key::Unidentified,
         };
 
-        KeyStroke { key, modifiers }
+        Keystrokes { key, modifiers }
     }
 }
 
-pub type Keybindings = HashMap<KeyStroke, Action>;
+pub type Keybindings = HashMap<Keystrokes, Action>;
 
-pub fn default_keybindings() -> HashMap<KeyStroke, Action> {
+pub fn default_keybindings() -> HashMap<Keystrokes, Action> {
     HashMap::from([
-        (KeyStroke::new(Key::Escape, []), Action::Close),
+        (Keystrokes::new([], Key::Escape), Action::Close),
         (
-            KeyStroke::new(Key::Char('f'), [Modifier::Control]),
+            Keystrokes::new([Modifiers::CONTROL], Key::Character('f')),
             Action::ToggleFavorite,
         ),
-        (KeyStroke::new(Key::Tab, []), Action::NextEntry),
-        (KeyStroke::new(Key::Down, []), Action::NextEntry),
+        (Keystrokes::new([], Key::Tab), Action::NextEntry),
+        (Keystrokes::new([], Key::Down), Action::NextEntry),
         (
-            KeyStroke::new(Key::Tab, [Modifier::Shift]),
+            Keystrokes::new([Modifiers::SHIFT], Key::Tab),
             Action::PreviousEntry,
         ),
-        (KeyStroke::new(Key::Up, []), Action::PreviousEntry),
+        (Keystrokes::new([], Key::Up), Action::PreviousEntry),
         (
-            KeyStroke::new(Key::Char('1'), [Modifier::Control]),
+            Keystrokes::new([Modifiers::CONTROL], Key::Character('1')),
             Action::LaunchEntry(1),
         ),
         (
-            KeyStroke::new(Key::Char('2'), [Modifier::Control]),
+            Keystrokes::new([Modifiers::CONTROL], Key::Character('2')),
             Action::LaunchEntry(2),
         ),
         (
-            KeyStroke::new(Key::Char('3'), [Modifier::Control]),
+            Keystrokes::new([Modifiers::CONTROL], Key::Character('3')),
             Action::LaunchEntry(3),
         ),
         (
-            KeyStroke::new(Key::Char('4'), [Modifier::Control]),
+            Keystrokes::new([Modifiers::CONTROL], Key::Character('4')),
             Action::LaunchEntry(4),
         ),
         (
-            KeyStroke::new(Key::Char('5'), [Modifier::Control]),
+            Keystrokes::new([Modifiers::CONTROL], Key::Character('5')),
             Action::LaunchEntry(5),
         ),
     ])
