@@ -9,10 +9,10 @@ const KEYSTROKE_SEPARATOR: &str = "-";
 bitflags! {
     #[derive(Debug, Clone, Hash, Eq, PartialEq)]
     pub struct Modifiers: u8 {
-        const SUPER = 0b000;
-        const CONTROL = 0b001;
-        const ALT = 0b111;
-        const SHIFT = 0b100;
+        const SUPER   = 0b0001;
+        const CONTROL = 0b0010;
+        const ALT     = 0b0100;
+        const SHIFT   = 0b1000;
     }
 }
 
@@ -153,7 +153,7 @@ impl FromStr for Action {
             "close" => Ok(Action::Close),
             "next_entry" => Ok(Action::NextEntry),
             "previous_entry" => Ok(Action::PreviousEntry),
-            "launch_entry" if !param.is_empty() => {
+            "launch_entry" if param.ends_with(")") => {
                 let index: usize = extract_parameter(param)?;
                 Ok(Action::LaunchEntry(index))
             }
@@ -237,6 +237,11 @@ impl FromStr for Keystrokes {
 impl std::fmt::Display for Keystrokes {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let modifiers_str = self.modifiers.to_string();
+
+        if self.key == Key::Unidentified {
+            return write!(f, "{modifiers_str}");
+        }
+
         let key_str = self.key.to_string();
 
         if modifiers_str.is_empty() {
@@ -248,7 +253,7 @@ impl std::fmt::Display for Keystrokes {
 }
 
 impl Keystrokes {
-    fn new<I>(key: Key, modifiers: I) -> Self
+    fn new<I>(modifiers: I, key: Key) -> Self
     where
         I: IntoIterator<Item = Modifiers>,
     {
@@ -259,12 +264,15 @@ impl Keystrokes {
     }
 
     #[rustfmt::skip]
-    pub fn from_iced_keyboard(
-        iced_key: iced::keyboard::Key,
+    pub fn from_iced_keystrokes(
         iced_modifiers: iced::keyboard::Modifiers,
+        iced_key: iced::keyboard::Key,
     ) -> Self {
         let mut modifiers = Modifiers::empty();
 
+        // NOTE: `iced_modifiers` does not include the modifier bit for the key currently
+        // being pressed, only for keys already held. So for lone modifier presses we
+        // also check `iced_key` directly and OR in the flag ourselves.
         if iced_modifiers.logo()    { modifiers |= Modifiers::SUPER }
         if iced_modifiers.control() { modifiers |= Modifiers::CONTROL }
         if iced_modifiers.alt()     { modifiers |= Modifiers::ALT }
@@ -272,6 +280,18 @@ impl Keystrokes {
 
         use iced::keyboard::Key as IcedKey;
         use iced::keyboard::key::Named as IcedNamedKey;
+
+        // Supplement the modifier state from the key itself to catch lone modifier presses
+        // (see comment above).
+        if let IcedKey::Named(ref named) = iced_key {
+            match named {
+                IcedNamedKey::Super       => modifiers |= Modifiers::SUPER,
+                IcedNamedKey::Control     => modifiers |= Modifiers::CONTROL,
+                IcedNamedKey::Alt         => modifiers |= Modifiers::ALT,
+                IcedNamedKey::Shift       => modifiers |= Modifiers::SHIFT,
+                _ => {}
+            }
+        }
 
         let key = match iced_key {
             IcedKey::Character(smol_str) => smol_str
@@ -299,36 +319,36 @@ pub type Keybindings = HashMap<Keystrokes, Action>;
 
 pub fn default_keybindings() -> HashMap<Keystrokes, Action> {
     HashMap::from([
-        (Keystrokes::new(Key::Escape, []), Action::Close),
+        (Keystrokes::new([], Key::Escape), Action::Close),
         (
-            Keystrokes::new(Key::Character('f'), [Modifiers::CONTROL]),
+            Keystrokes::new([Modifiers::CONTROL], Key::Character('f')),
             Action::ToggleFavorite,
         ),
-        (Keystrokes::new(Key::Tab, []), Action::NextEntry),
-        (Keystrokes::new(Key::Down, []), Action::NextEntry),
+        (Keystrokes::new([], Key::Tab), Action::NextEntry),
+        (Keystrokes::new([], Key::Down), Action::NextEntry),
         (
-            Keystrokes::new(Key::Tab, [Modifiers::SHIFT]),
+            Keystrokes::new([Modifiers::SHIFT], Key::Tab),
             Action::PreviousEntry,
         ),
-        (Keystrokes::new(Key::Up, []), Action::PreviousEntry),
+        (Keystrokes::new([], Key::Up), Action::PreviousEntry),
         (
-            Keystrokes::new(Key::Character('1'), [Modifiers::CONTROL]),
+            Keystrokes::new([Modifiers::CONTROL], Key::Character('1')),
             Action::LaunchEntry(1),
         ),
         (
-            Keystrokes::new(Key::Character('2'), [Modifiers::CONTROL]),
+            Keystrokes::new([Modifiers::CONTROL], Key::Character('2')),
             Action::LaunchEntry(2),
         ),
         (
-            Keystrokes::new(Key::Character('3'), [Modifiers::CONTROL]),
+            Keystrokes::new([Modifiers::CONTROL], Key::Character('3')),
             Action::LaunchEntry(3),
         ),
         (
-            Keystrokes::new(Key::Character('4'), [Modifiers::CONTROL]),
+            Keystrokes::new([Modifiers::CONTROL], Key::Character('4')),
             Action::LaunchEntry(4),
         ),
         (
-            Keystrokes::new(Key::Character('5'), [Modifiers::CONTROL]),
+            Keystrokes::new([Modifiers::CONTROL], Key::Character('5')),
             Action::LaunchEntry(5),
         ),
     ])

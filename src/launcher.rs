@@ -362,8 +362,8 @@ impl Lucien {
         use iced::{event, keyboard};
 
         Subscription::batch([event::listen_with(move |event, _, _| match event {
-            Keyboard(keyboard::Event::KeyPressed { key, modifiers, .. }) => {
-                let keystrokes = Keystrokes::from_iced_keyboard(key, modifiers);
+            Keyboard(keyboard::Event::KeyPressed { modifiers, key, .. }) => {
+                let keystrokes = Keystrokes::from_iced_keystrokes(modifiers, key);
                 Some(Message::TriggerActionByKeybinding(keystrokes))
             }
             Window(window::Event::Unfocused) => Some(Message::TriggerAction(Action::Close)),
