@@ -75,7 +75,6 @@ pub enum ScannerState {
     Started,
     Found(Vec<Entry>),
     Finished,
-    Errored(Id, String),
 }
 
 struct Scanner {
@@ -163,7 +162,7 @@ impl AsyncScanner {
             .await;
     }
 
-    pub async fn collect<F>(sender: FuturesSender<Message>, capacity: usize, f: F)
+    pub async fn run<F>(sender: FuturesSender<Message>, capacity: usize, f: F)
     where
         F: AsyncFnOnce(&mut AsyncScanner),
     {

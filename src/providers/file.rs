@@ -26,7 +26,7 @@ impl Provider for FileProvider {
     // This funcion call is the culprit: Path::to_str() -> Option<&str>
     fn scan(&self, dir: PathBuf) -> Subscription<Message> {
         let stream = iced::stream::channel(100, async move |output| {
-            AsyncScanner::collect(output, SCAN_BATCH_SIZE, async move |scanner| {
+            AsyncScanner::run(output, SCAN_BATCH_SIZE, async move |scanner| {
                 if let Some(parent_directory) = dir.parent() {
                     let parent_entry = Entry::new(
                         parent_directory.to_str().unwrap(),
@@ -57,9 +57,11 @@ impl Provider for FileProvider {
     }
 
     fn launch(&self, id: &str) -> Task<Message> {
-        let provider_clone = self.clone();
+        // let provider_clone = self.clone();
         let path = PathBuf::from(id);
 
+        // It's making another unnecessary syscall to determine if it is a dir.
+        // Pass the file metadata instead.
         // if path.is_dir() {
         //     return Task::perform(
         //         async move { provider_clone.scan(&path) },
