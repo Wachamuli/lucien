@@ -1,3 +1,6 @@
+use std::collections::HashMap;
+
+use fuzzy_matcher::{FuzzyMatcher, skim::SkimMatcherV2};
 use iced::{
     Alignment, Element, Font, Length, font,
     widget::{Container, button, container, horizontal_space, image, row, text},
@@ -6,10 +9,11 @@ use iced::{
 use crate::{
     launcher::{Message, SECTION_HEIGHT},
     preferences::{
+        Preferences,
         keybindings::Action,
         theme::{ButtonClass, CustomTheme, Entry as EntryStyle, TextClass},
     },
-    providers::{Entry, EntryIcon},
+    providers::{Entry, EntryIcon, Id},
     ui::icon::BakedIcons,
 };
 
@@ -126,4 +130,74 @@ pub fn section(name: &str) -> Container<'_, Message, CustomTheme> {
         bottom: 5.,
         left: 10.,
     })
+}
+
+#[derive(Default)]
+pub struct EntryRegistry {
+    entries: Vec<Entry>,
+    entry_indices: Vec<usize>,
+    entry_index_map: HashMap<Id, usize>,
+}
+
+impl EntryRegistry {
+    pub fn clear(&mut self) {
+        self.entries.clear();
+        self.entry_indices.clear();
+        self.entry_index_map.clear();
+    }
+
+    pub fn push(&mut self, entry: Entry) {
+        let id = entry.id.clone();
+        self.entries.push(entry);
+        let index = self.entries.len();
+        self.entry_indices.push(index);
+        self.entry_index_map.insert(id, index);
+    }
+
+    pub fn get_by_index(&self, index: usize) -> Option<&Entry> {
+        self.entries.get(index)
+    }
+
+    pub fn get_by_id(&self, id: Id) -> Option<&Entry> {
+        if let Some(index) = self.entry_index_map.get(&id) {
+            return self.get_by_index(*index);
+        }
+
+        None
+    }
+
+    pub fn sort_by_rank(
+        &mut self,
+        preferences: &Preferences,
+        matcher: &SkimMatcherV2,
+        pattern: &str,
+    ) {
+        let mut ranked: Vec<(i64, usize)> = self
+            .entries
+            .iter()
+            .enumerate()
+            .filter_map(|(index, entry)| {
+                let score = matcher.fuzzy_match(&entry.main, pattern)?;
+                Some((score, index))
+            })
+            .collect();
+
+        ranked.sort_by(|(score_a, index_a), (score_b, index_b)| {
+            let entry_a = &self.entries[*index_a];
+            let entry_b = &self.entries[*index_b];
+            let a_is_fav = preferences.favorite_apps.contains(&entry_a.id);
+            let b_is_fav = preferences.favorite_apps.contains(&entry_b.id);
+
+            match (a_is_fav, b_is_fav) {
+                (true, false) => std::cmp::Ordering::Less,
+                (false, true) => std::cmp::Ordering::Greater,
+                _ => score_b.cmp(score_a),
+            }
+        });
+
+        self.entry_indices = ranked
+            .into_iter()
+            .map(|(_score, app_index)| app_index)
+            .collect();
+    }
 }

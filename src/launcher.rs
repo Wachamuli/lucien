@@ -42,13 +42,14 @@ static TEXT_INPUT_ID: LazyLock<text_input::Id> = LazyLock::new(text_input::Id::u
 static SCROLLABLE_ID: LazyLock<scrollable::Id> = LazyLock::new(scrollable::Id::unique);
 
 pub struct Lucien {
+    cached_entries: Vec<Entry>,
+    entries: Vec<usize>,
     entry_index_map: HashMap<String, usize>,
+
     is_scan_completed: bool,
     provider: ProviderKind,
     prompt: String,
     matcher: SkimMatcherV2,
-    cached_entries: Vec<Entry>,
-    entries: Vec<usize>,
     preferences: Preferences,
     selected_entry: usize,
     last_viewport: Option<Viewport>,
