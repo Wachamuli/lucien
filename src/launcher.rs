@@ -1,6 +1,7 @@
 use std::{
+    collections::HashMap,
     env,
-    path::{Path, PathBuf},
+    path::PathBuf,
     sync::{Arc, LazyLock},
 };
 
@@ -22,7 +23,7 @@ use crate::{
         theme::{ContainerClass, CustomTheme, TextClass},
     },
     providers::{
-        Entry, EntryIcon, ProviderKind, ScannerState, app::AppProvider, file::FileProvider,
+        Entry, EntryIcon, Id, ProviderKind, ScannerState, app::AppProvider, file::FileProvider,
     },
     ui::{
         entry::{self, FONT_ITALIC, section},
@@ -41,6 +42,7 @@ static TEXT_INPUT_ID: LazyLock<text_input::Id> = LazyLock::new(text_input::Id::u
 static SCROLLABLE_ID: LazyLock<scrollable::Id> = LazyLock::new(scrollable::Id::unique);
 
 pub struct Lucien {
+    entry_index_map: HashMap<String, usize>,
     is_scan_completed: bool,
     provider: ProviderKind,
     prompt: String,
@@ -64,7 +66,7 @@ pub enum Message {
     TriggerActionByKeybinding(Keystrokes),
     ScrollableViewport(Viewport),
     SaveIntoDisk(Result<PathBuf, Arc<tokio::io::Error>>),
-    IconLoaded { name: String, handle: image::Handle },
+    IconLoaded { id: Id, handle: image::Handle },
 }
 
 impl Lucien {
@@ -80,6 +82,7 @@ impl Lucien {
         };
 
         let initial_values = Self {
+            entry_index_map: HashMap::new(),
             is_scan_completed: false,
             provider: default_provider,
             prompt: String::new(),
@@ -257,12 +260,16 @@ impl Lucien {
                         self.entries.clear();
                         self.is_scan_completed = false;
                     }
-                    ScannerState::Found(entry_batch) => {
-                        let batch_len = entry_batch.len();
+                    ScannerState::Found(batch) => {
                         let start_index = self.cached_entries.len();
 
-                        self.cached_entries.extend(entry_batch);
-                        self.entries.extend(start_index..start_index + batch_len);
+                        for (offset, entry) in batch.into_iter().enumerate() {
+                            let global_index = start_index + offset;
+
+                            self.entry_index_map.insert(entry.id.clone(), global_index);
+                            self.cached_entries.push(entry);
+                            self.entries.push(global_index);
+                        }
 
                         if !self.preferences.favorite_apps.is_empty() {
                             self.entries.sort_by_key(|index| {
@@ -281,13 +288,10 @@ impl Lucien {
 
                 Task::none()
             }
-            Message::IconLoaded { name, handle } => {
-                for entry in self.cached_entries.iter_mut() {
-                    if let EntryIcon::Lazy(ref icon_name) = entry.icon {
-                        if name == *icon_name {
-                            entry.icon = EntryIcon::Handle(handle);
-                            break;
-                        }
+            Message::IconLoaded { id, handle } => {
+                if let Some(&index) = self.entry_index_map.get(&id) {
+                    if let Some(entry) = self.cached_entries.get_mut(index) {
+                        entry.icon = EntryIcon::Handle(handle);
                     }
                 }
                 Task::none()

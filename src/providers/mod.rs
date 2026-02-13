@@ -31,9 +31,6 @@ impl ProviderKind {
     }
 }
 
-// TODO: A more robust Id type
-type Id = String;
-
 pub trait Provider {
     // TODO: Maybe I should just return the stream, and make the subscription
     // logic in the subscripiton function
@@ -42,6 +39,8 @@ pub trait Provider {
     // I could avoid couple clones doing this.
     fn launch(&self, id: &str) -> Task<Message>;
 }
+
+pub type Id = String;
 
 #[derive(Debug, Clone)]
 pub enum EntryIcon {
@@ -85,14 +84,14 @@ pub enum ScannerState {
 }
 
 struct Scanner {
-    sender: tokio::sync::mpsc::Sender<Message>,
+    sender: FuturesSender<Message>,
     batch: Vec<Entry>,
     capacity: usize,
 }
 
 impl Scanner {
-    pub fn new(sender: tokio::sync::mpsc::Sender<Message>, capacity: usize) -> Self {
-        let _ = sender.blocking_send(Message::ScanEvent(ScannerState::Started));
+    pub fn new(mut sender: FuturesSender<Message>, capacity: usize) -> Self {
+        let _ = sender.try_send(Message::ScanEvent(ScannerState::Started));
         Self {
             sender,
             batch: Vec::with_capacity(capacity),
@@ -113,7 +112,7 @@ impl Scanner {
             let ready_batch = std::mem::replace(&mut self.batch, Vec::with_capacity(self.capacity));
             let _ = self
                 .sender
-                .blocking_send(Message::ScanEvent(ScannerState::Found(ready_batch)));
+                .try_send(Message::ScanEvent(ScannerState::Found(ready_batch)));
         }
     }
 }
@@ -123,7 +122,7 @@ impl Drop for Scanner {
         self.flush();
         let _ = self
             .sender
-            .blocking_send(Message::ScanEvent(ScannerState::Finished));
+            .try_send(Message::ScanEvent(ScannerState::Finished));
     }
 }
 
