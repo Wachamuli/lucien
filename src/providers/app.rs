@@ -2,15 +2,20 @@ use std::{
     fmt::Write,
     path::{Path, PathBuf},
     process,
+    sync::Arc,
 };
 
 use gio::prelude::{AppInfoExt, IconExt};
 
-use iced::{Subscription, Task, futures::SinkExt, widget::image};
+use iced::{
+    Subscription, Task,
+    futures::SinkExt,
+    widget::{Lazy, image},
+};
 
 use crate::{
     launcher::Message,
-    providers::load_raster_icon,
+    providers::{EntryIcon, ScannerState, load_raster_icon},
     ui::icon::{APPLICATION_DEFAULT, ICON_EXTENSIONS, ICON_SIZES},
 };
 
@@ -21,40 +26,66 @@ pub struct AppProvider;
 
 impl Provider for AppProvider {
     fn scan(&self, _dir: PathBuf) -> Subscription<Message> {
-        let stream = iced::stream::channel(100, |mut output| async move {
-            let (sync_sender, mut sync_receiver) = tokio::sync::mpsc::channel::<Message>(100);
-            tokio::task::spawn_blocking(move || {
-                let xdg_dirs = xdg::BaseDirectories::new();
-                let apps = gio::AppInfo::all()
-                    .into_iter()
-                    .filter(|app| app.should_show());
-                let mut scanner = Scanner::new(sync_sender, SCAN_BATCH_SIZE);
+        iced::Subscription::run_with_id(
+            "app-provider-scan",
+            iced::stream::channel(100, |output| async move {
+                let xdg_dirs = Arc::new(xdg::BaseDirectories::new());
+                let mut scanner_output = output.clone();
 
-                for app in apps {
-                    let cmd = app
-                        .commandline()
-                        .map(|c| c.to_string_lossy().into_owned())
-                        .unwrap_or_default();
-                    let name = app.name().to_string();
-                    let description = app.description().map(|d| d.to_string());
-                    let icon = app
-                        .icon()
-                        .and_then(|i| i.to_string())
-                        .and_then(|name| get_icon_path_from_xdgicon(&name, &xdg_dirs))
-                        .and_then(|path| load_raster_icon(&path, 64))
-                        .unwrap_or_else(|| image::Handle::from_bytes(APPLICATION_DEFAULT));
+                tokio::task::spawn_blocking(move || {
+                    let apps = gio::AppInfo::all()
+                        .into_iter()
+                        .filter(|app| app.should_show());
+                    let _ = scanner_output.try_send(Message::ScanEvent(ScannerState::Started));
 
-                    let entry = Entry::new(cmd, name, description, icon);
-                    scanner.load(entry);
-                }
-            });
+                    for app in apps {
+                        let id = app
+                            .commandline()
+                            .map(|c| c.to_string_lossy().into_owned())
+                            .unwrap_or_default();
+                        let icon_name = app.icon().and_then(|i| i.to_string());
 
-            while let Some(entry) = sync_receiver.recv().await {
-                let _ = output.send(entry).await;
-            }
-        });
+                        let icon_type = icon_name
+                            .clone()
+                            .map(|s| EntryIcon::Lazy(s.to_string()))
+                            .unwrap_or_else(|| {
+                                EntryIcon::Handle(image::Handle::from_bytes(APPLICATION_DEFAULT))
+                            });
 
-        iced::Subscription::run_with_id("app-provider-scan", stream)
+                        let entry = Entry::new(
+                            id.clone(),
+                            app.name().to_string(),
+                            app.description().map(|d| d.to_string()),
+                            icon_type,
+                        );
+
+                        // Send metadata to UI immediately
+                        let _ = scanner_output
+                            .try_send(Message::ScanEvent(ScannerState::Found(vec![entry])));
+
+                        // 2. Spawn Icon Loader Task (Parallel)
+                        if let Some(name) = icon_name.clone() {
+                            let mut loader_output = scanner_output.clone();
+                            let xdg_clone = xdg_dirs.clone();
+
+                            tokio::spawn(async move {
+                                let handle =
+                                    load_icon_with_cache(name.to_string(), xdg_clone).await;
+                                let _ = loader_output
+                                    .send(Message::IconLoaded {
+                                        name: icon_name.unwrap_or_default().to_string(),
+                                        handle,
+                                    })
+                                    .await;
+                            });
+                        }
+                    }
+                });
+
+                // Keep the subscription alive
+                std::future::pending::<()>().await;
+            }),
+        )
     }
 
     fn launch(&self, id: &str) -> Task<Message> {
@@ -80,6 +111,28 @@ impl Provider for AppProvider {
         tracing::info!(binary = %binary, "Process launched successfully.");
         iced::exit()
     }
+}
+
+async fn load_icon_with_cache(name: String, xdg: Arc<xdg::BaseDirectories>) -> image::Handle {
+    // Check disk cache first (This is fast)
+
+    // Cache Miss: Do the slow stuff
+    let handle = tokio::task::spawn_blocking(move || {
+        let dirs = xdg;
+        let xdg_path = get_icon_path_from_xdgicon(&name, &dirs)?;
+        load_raster_icon(&xdg_path, 64)
+    })
+    .await
+    .ok()
+    .flatten();
+
+    let final_handle = handle.unwrap_or_else(|| image::Handle::from_bytes(APPLICATION_DEFAULT));
+
+    // Save to disk cache for next time if we successfully found it
+    // You'll need to extract raw bytes from your load_raster_icon for this to work
+    // cache.save(&name, &raw_bytes);
+
+    final_handle
 }
 
 pub fn get_icon_path_from_xdgicon(

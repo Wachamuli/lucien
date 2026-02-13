@@ -21,7 +21,9 @@ use crate::{
         keybindings::{Action, Keystrokes},
         theme::{ContainerClass, CustomTheme, TextClass},
     },
-    providers::{Entry, ProviderKind, ScannerState, app::AppProvider, file::FileProvider},
+    providers::{
+        Entry, EntryIcon, ProviderKind, ScannerState, app::AppProvider, file::FileProvider,
+    },
     ui::{
         entry::{self, FONT_ITALIC, section},
         icon::{
@@ -62,6 +64,7 @@ pub enum Message {
     TriggerActionByKeybinding(Keystrokes),
     ScrollableViewport(Viewport),
     SaveIntoDisk(Result<PathBuf, Arc<tokio::io::Error>>),
+    IconLoaded { name: String, handle: image::Handle },
 }
 
 impl Lucien {
@@ -276,6 +279,17 @@ impl Lucien {
                     }
                 }
 
+                Task::none()
+            }
+            Message::IconLoaded { name, handle } => {
+                for entry in self.cached_entries.iter_mut() {
+                    if let EntryIcon::Lazy(ref icon_name) = entry.icon {
+                        if name == *icon_name {
+                            entry.icon = EntryIcon::Handle(handle);
+                            break;
+                        }
+                    }
+                }
                 Task::none()
             }
             Message::SaveIntoDisk(result) => {

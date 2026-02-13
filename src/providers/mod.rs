@@ -44,11 +44,17 @@ pub trait Provider {
 }
 
 #[derive(Debug, Clone)]
+pub enum EntryIcon {
+    Lazy(String),
+    Handle(iced::widget::image::Handle),
+}
+
+#[derive(Debug, Clone)]
 pub struct Entry {
     pub id: Id,
     pub main: String,
     pub secondary: Option<String>,
-    pub icon: iced::widget::image::Handle,
+    pub icon: EntryIcon,
 }
 
 impl Entry {
@@ -56,7 +62,7 @@ impl Entry {
         id: impl Into<String>,
         main: impl Into<String>,
         secondary: Option<impl Into<String>>,
-        icon: iced::widget::image::Handle,
+        icon: EntryIcon,
     ) -> Self {
         Self {
             id: id.into(),

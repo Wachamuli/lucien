@@ -1,6 +1,6 @@
 use iced::{
     Alignment, Element, Font, Length, font,
-    widget::{Container, button, container, image, row, text},
+    widget::{Container, button, container, horizontal_space, image, row, text},
 };
 
 use crate::{
@@ -9,7 +9,7 @@ use crate::{
         keybindings::Action,
         theme::{ButtonClass, CustomTheme, Entry as EntryStyle, TextClass},
     },
-    providers::Entry,
+    providers::{Entry, EntryIcon},
     ui::icon::BakedIcons,
 };
 
@@ -75,10 +75,17 @@ pub fn display_entry<'a>(
             .class(TextClass::SecondaryText)
     });
 
-    let icon_view: Element<'a, Message, CustomTheme> = image(&entry.icon)
-        .width(style.icon_size)
-        .height(style.icon_size)
-        .into();
+    let icon_view: Element<'a, Message, CustomTheme> = match &entry.icon {
+        EntryIcon::Handle(handle) => image(handle)
+            .width(style.icon_size)
+            .height(style.icon_size)
+            .into(),
+        // We could introduce an icon skeleton here
+        EntryIcon::Lazy(_) => horizontal_space()
+            .width(style.icon_size)
+            .height(style.icon_size)
+            .into(),
+    };
 
     button(
         row![

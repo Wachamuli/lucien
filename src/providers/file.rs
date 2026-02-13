@@ -14,7 +14,7 @@ use crate::{
     },
 };
 
-use super::{Entry, Provider, spawn_with_new_session};
+use super::{Entry, EntryIcon, Provider, spawn_with_new_session};
 
 #[derive(Debug, Clone, Copy)]
 pub struct FileProvider;
@@ -32,7 +32,7 @@ impl Provider for FileProvider {
                         parent_directory.to_str().unwrap(),
                         "..",
                         Some(parent_directory.to_string_lossy()),
-                        get_icon_from_mimetype(&parent_directory, 28),
+                        EntryIcon::Handle(get_icon_from_mimetype(&parent_directory, 28)),
                     );
                     scanner.load(parent_entry).await;
                 }
@@ -45,7 +45,7 @@ impl Provider for FileProvider {
                         id_str.clone(),
                         main_display,
                         Some(id_str),
-                        get_icon_from_mimetype(&path, 28),
+                        EntryIcon::Handle(get_icon_from_mimetype(&path, 28)),
                     );
                     scanner.load(child_entry).await;
                 }
