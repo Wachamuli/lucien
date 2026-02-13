@@ -134,8 +134,9 @@ pub fn section(name: &str) -> Container<'_, Message, CustomTheme> {
 
 #[derive(Default)]
 pub struct EntryRegistry {
-    entries: Vec<Entry>,
-    entry_indices: Vec<usize>,
+    // Find a way to remove the pub from these two fields
+    pub entries: Vec<Entry>,
+    pub entry_indices: Vec<usize>,
     entry_index_map: HashMap<Id, usize>,
 }
 
@@ -146,6 +147,7 @@ impl EntryRegistry {
         self.entry_index_map.clear();
     }
 
+    #[allow(dead_code)]
     pub fn push(&mut self, entry: Entry) {
         let id = entry.id.clone();
         self.entries.push(entry);
@@ -154,16 +156,63 @@ impl EntryRegistry {
         self.entry_index_map.insert(id, index);
     }
 
+    pub fn extend<I>(&mut self, entries: I)
+    where
+        I: IntoIterator<Item = Entry>,
+    {
+        let mut current_index = self.entries.len();
+
+        for entry in entries {
+            let id = entry.id.clone();
+
+            self.entry_index_map.insert(id, current_index);
+            self.entries.push(entry);
+            self.entry_indices.push(current_index);
+
+            current_index += 1;
+        }
+    }
+
     pub fn get_by_index(&self, index: usize) -> Option<&Entry> {
         self.entries.get(index)
     }
 
-    pub fn get_by_id(&self, id: Id) -> Option<&Entry> {
-        if let Some(index) = self.entry_index_map.get(&id) {
+    pub fn get_mut_by_index(&mut self, index: usize) -> Option<&mut Entry> {
+        self.entries.get_mut(index)
+    }
+
+    #[allow(dead_code)]
+    pub fn get_by_id(&mut self, id: &Id) -> Option<&Entry> {
+        if let Some(index) = self.entry_index_map.get(id) {
             return self.get_by_index(*index);
         }
 
         None
+    }
+
+    pub fn get_mut_by_id(&mut self, id: &Id) -> Option<&mut Entry> {
+        if let Some(index) = self.entry_index_map.get(id) {
+            return self.get_mut_by_index(*index);
+        }
+
+        None
+    }
+
+    #[allow(dead_code)]
+    pub fn len(&self) -> usize {
+        self.entries.len()
+    }
+
+    pub fn visible_len(&self) -> usize {
+        self.entry_indices.len()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.entries.is_empty()
+    }
+
+    pub fn is_visibles_empty(&self) -> bool {
+        self.entry_indices.is_empty()
     }
 
     pub fn sort_by_rank(

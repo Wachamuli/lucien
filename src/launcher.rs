@@ -26,7 +26,7 @@ use crate::{
         Entry, EntryIcon, Id, ProviderKind, ScannerState, app::AppProvider, file::FileProvider,
     },
     ui::{
-        entry::{self, FONT_ITALIC, section},
+        entry::{self, EntryRegistry, FONT_ITALIC, section},
         icon::{
             BakedIcons, CUBE_ACTIVE, CUBE_INACTIVE, ENTER, FOLDER_ACTIVE, FOLDER_INACTIVE,
             MAGNIFIER, STAR_ACTIVE, STAR_INACTIVE,
@@ -42,10 +42,7 @@ static TEXT_INPUT_ID: LazyLock<text_input::Id> = LazyLock::new(text_input::Id::u
 static SCROLLABLE_ID: LazyLock<scrollable::Id> = LazyLock::new(scrollable::Id::unique);
 
 pub struct Lucien {
-    cached_entries: Vec<Entry>,
-    entries: Vec<usize>,
-    entry_index_map: HashMap<String, usize>,
-
+    entry_registry: EntryRegistry,
     is_scan_completed: bool,
     provider: ProviderKind,
     prompt: String,
@@ -83,13 +80,11 @@ impl Lucien {
         };
 
         let initial_values = Self {
-            entry_index_map: HashMap::new(),
+            entry_registry: EntryRegistry::default(),
             is_scan_completed: false,
             provider: default_provider,
             prompt: String::new(),
             matcher: SkimMatcherV2::default(),
-            cached_entries: Vec::new(),
-            entries: Vec::new(),
             preferences,
             selected_entry: 0,
             last_viewport: None,
@@ -104,38 +99,8 @@ impl Lucien {
         self.preferences.theme.clone()
     }
 
-    fn update_ranked_apps(&mut self) {
-        let mut ranked: Vec<(i64, usize)> = self
-            .cached_entries
-            .iter()
-            .enumerate()
-            .filter_map(|(index, entry)| {
-                let score = self.matcher.fuzzy_match(&entry.main, &self.prompt)?;
-                Some((score, index))
-            })
-            .collect();
-
-        ranked.sort_by(|(score_a, index_a), (score_b, index_b)| {
-            let entry_a = &self.cached_entries[*index_a];
-            let entry_b = &self.cached_entries[*index_b];
-            let a_is_fav = self.preferences.favorite_apps.contains(&entry_a.id);
-            let b_is_fav = self.preferences.favorite_apps.contains(&entry_b.id);
-
-            match (a_is_fav, b_is_fav) {
-                (true, false) => std::cmp::Ordering::Less,
-                (false, true) => std::cmp::Ordering::Greater,
-                _ => score_b.cmp(score_a),
-            }
-        });
-
-        self.entries = ranked
-            .into_iter()
-            .map(|(_score, app_index)| app_index)
-            .collect();
-    }
-
     fn toggle_favorite(&mut self, index: usize) -> Task<Message> {
-        let Some(app) = self.entries.get(index) else {
+        let Some(app) = self.entry_registry.get_by_index(index) else {
             return Task::none();
         };
 
@@ -144,13 +109,14 @@ impl Lucien {
             return Task::none();
         };
 
-        let id = &self.cached_entries[*app].id;
+        let id = &app.id;
         let path = path.clone();
         // Toggle_favorite is a very opaque function. It actually
         // modifies the in-memory favorite_apps variable.
         // Maybe I should expose this assignnment operation at this level.
         let favorite_apps = self.preferences.toggle_favorite(id);
-        self.update_ranked_apps();
+        self.entry_registry
+            .sort_by_rank(&self.preferences, &self.matcher, &self.prompt);
 
         Task::perform(
             preferences::save_into_disk(path, "favorite_apps", favorite_apps),
@@ -159,7 +125,7 @@ impl Lucien {
     }
 
     fn go_to_entry(&mut self, step: isize) -> Task<Message> {
-        let total = self.entries.len();
+        let total = self.entry_registry.visible_len();
         if total == 0 {
             return Task::none();
         }
@@ -176,11 +142,9 @@ impl Lucien {
     }
 
     fn launch_entry(&self, index: usize) -> Task<Message> {
-        let Some(entry_index) = self.entries.get(index) else {
+        let Some(entry) = self.entry_registry.get_by_index(index) else {
             return Task::none();
         };
-
-        let entry = &self.cached_entries[*entry_index];
 
         self.provider.handler().launch(&entry.id)
     }
@@ -201,12 +165,12 @@ impl Lucien {
             return Task::none();
         };
 
+        let Some(entry) = self.entry_registry.get_by_index(self.selected_entry) else {
+            return Task::none();
+        };
+
         // 1. Get coordinates from injected layout
-        let entry_index = self.entries[self.selected_entry];
-        let is_fav = self
-            .preferences
-            .favorite_apps
-            .contains(&self.cached_entries[entry_index].id);
+        let is_fav = self.preferences.favorite_apps.contains(&entry.id);
         let selection_top = layout.y_for_index(self.selected_entry, is_fav);
         let selection_bottom = selection_top + layout.item_height;
 
@@ -257,27 +221,11 @@ impl Lucien {
                 match scan_event {
                     ScannerState::Started => {
                         self.prompt.clear();
-                        self.cached_entries.clear();
-                        self.entries.clear();
+                        self.entry_registry.clear();
                         self.is_scan_completed = false;
                     }
                     ScannerState::Found(batch) => {
-                        let start_index = self.cached_entries.len();
-
-                        for (offset, entry) in batch.into_iter().enumerate() {
-                            let global_index = start_index + offset;
-
-                            self.entry_index_map.insert(entry.id.clone(), global_index);
-                            self.cached_entries.push(entry);
-                            self.entries.push(global_index);
-                        }
-
-                        if !self.preferences.favorite_apps.is_empty() {
-                            self.entries.sort_by_key(|index| {
-                                let app = &self.cached_entries[*index];
-                                !self.preferences.favorite_apps.contains(&app.id)
-                            });
-                        }
+                        self.entry_registry.extend(batch);
                     }
                     ScannerState::Finished => {
                         self.is_scan_completed = true;
@@ -290,10 +238,8 @@ impl Lucien {
                 Task::none()
             }
             Message::IconLoaded { id, handle } => {
-                if let Some(&index) = self.entry_index_map.get(&id) {
-                    if let Some(entry) = self.cached_entries.get_mut(index) {
-                        entry.icon = EntryIcon::Handle(handle);
-                    }
+                if let Some(entry) = self.entry_registry.get_mut_by_id(&id) {
+                    entry.icon = EntryIcon::Handle(handle);
                 }
                 Task::none()
             }
@@ -348,7 +294,8 @@ impl Lucien {
             }
             Message::DebouncedFilter => {
                 self.selected_entry = 0;
-                self.update_ranked_apps();
+                self.entry_registry
+                    .sort_by_rank(&self.preferences, &self.matcher, &self.prompt);
 
                 scrollable::snap_to(SCROLLABLE_ID.clone(), RelativeOffset { x: 0.0, y: 0.0 })
             }
@@ -395,8 +342,8 @@ impl Lucien {
         let mut general_column =
             Column::new().push_maybe(show_sections.then(|| section("General")));
 
-        for (rank_pos, app_index) in self.entries.iter().enumerate() {
-            let entry = &self.cached_entries[*app_index];
+        for (rank_pos, app_index) in self.entry_registry.entry_indices.iter().enumerate() {
+            let entry = &self.entry_registry.entries[*app_index];
             let is_favorite = self.preferences.favorite_apps.contains(&entry.id);
             let is_selected = self.selected_entry == rank_pos;
 
@@ -439,7 +386,7 @@ impl Lucien {
         }
 
         let results_not_found: Option<Container<Message, CustomTheme>> =
-            (self.entries.is_empty() && self.is_scan_completed).then(|| {
+            (self.entry_registry.is_visibles_empty() && self.is_scan_completed).then(|| {
                 container(
                     text("No Results Found")
                         .size(14)
@@ -452,7 +399,8 @@ impl Lucien {
                 .padding(19.8)
             });
 
-        let show_results = !self.entries.is_empty() || self.is_scan_completed;
+        // Maybe the first bool is unnecessary.
+        let show_results = !self.entry_registry.is_empty() || self.is_scan_completed;
 
         let content = Column::new()
             .push(starred_column)
