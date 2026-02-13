@@ -6,7 +6,7 @@ use std::{
 
 use gio::prelude::{AppInfoExt, IconExt};
 
-use iced::{Task, widget::image};
+use iced::{Subscription, Task, futures::SinkExt, widget::image};
 
 use crate::{
     launcher::Message,
@@ -14,37 +14,47 @@ use crate::{
     ui::icon::{APPLICATION_DEFAULT, ICON_EXTENSIONS, ICON_SIZES},
 };
 
-use super::{Entry, Provider, spawn_with_new_session};
+use super::{Entry, Provider, SCAN_BATCH_SIZE, Scanner, spawn_with_new_session};
 
 #[derive(Debug, Clone, Copy)]
 pub struct AppProvider;
 
 impl Provider for AppProvider {
-    fn scan(&self, _dir: &Path) -> Vec<Entry> {
-        let xdg_dirs = xdg::BaseDirectories::new();
+    fn scan(&self, _dir: PathBuf) -> Subscription<Message> {
+        let stream = iced::stream::channel(100, |mut output| async move {
+            let (sync_sender, mut sync_receiver) = tokio::sync::mpsc::channel::<Message>(100);
+            tokio::task::spawn_blocking(move || {
+                let xdg_dirs = xdg::BaseDirectories::new();
+                let apps = gio::AppInfo::all()
+                    .into_iter()
+                    .filter(|app| app.should_show());
+                let mut scanner = Scanner::new(sync_sender, SCAN_BATCH_SIZE);
 
-        gio::AppInfo::all()
-            .iter()
-            .filter_map(|app| {
-                if !app.should_show() {
-                    return None;
+                for app in apps {
+                    let cmd = app
+                        .commandline()
+                        .map(|c| c.to_string_lossy().into_owned())
+                        .unwrap_or_default();
+                    let name = app.name().to_string();
+                    let description = app.description().map(|d| d.to_string());
+                    let icon = app
+                        .icon()
+                        .and_then(|i| i.to_string())
+                        .and_then(|name| get_icon_path_from_xdgicon(&name, &xdg_dirs))
+                        .and_then(|path| load_raster_icon(&path, 64))
+                        .unwrap_or_else(|| image::Handle::from_bytes(APPLICATION_DEFAULT));
+
+                    let entry = Entry::new(cmd, name, description, icon);
+                    scanner.load(entry);
                 }
+            });
 
-                let icon = app
-                    .icon()
-                    .and_then(|icon| icon.to_string())
-                    .and_then(|icon_name| get_icon_path_from_xdgicon(&icon_name, &xdg_dirs))
-                    .and_then(|path| load_raster_icon(&path, 64))
-                    .unwrap_or_else(|| image::Handle::from_bytes(APPLICATION_DEFAULT));
+            while let Some(entry) = sync_receiver.recv().await {
+                let _ = output.send(entry).await;
+            }
+        });
 
-                Some(Entry::new(
-                    app.commandline()?.to_str()?,
-                    app.name().to_string(),
-                    app.description(),
-                    icon,
-                ))
-            })
-            .collect()
+        iced::Subscription::run_with_id("app-provider-scan", stream)
     }
 
     fn launch(&self, id: &str) -> Task<Message> {
@@ -53,20 +63,21 @@ impl Provider for AppProvider {
             .filter(|arg| !arg.starts_with('%'))
             .collect::<Vec<_>>();
 
-        if let [binary, args @ ..] = raw_command_without_placeholders.as_slice() {
-            let mut command = process::Command::new(binary);
-            command.args(args);
-            tracing::info!(binary = %binary, args = ?args, "Attempting to launch detached process.");
-
-            if let Err(e) = spawn_with_new_session(&mut command) {
-                tracing::error!(error = %e, binary = %binary, "Failed to spawn process.");
-            } else {
-                tracing::info!(binary = %binary, "Process launched successfully.");
-            }
-        } else {
+        let [binary, args @ ..] = raw_command_without_placeholders.as_slice() else {
             tracing::warn!("Launch failed: provided ID resulted in an empty command.");
+            return Task::none();
+        };
+
+        let mut command = process::Command::new(binary);
+        command.args(args);
+        tracing::info!(binary = %binary, args = ?args, "Attempting to launch detached process.");
+
+        if let Err(e) = spawn_with_new_session(&mut command) {
+            tracing::error!(error = %e, binary = %binary, "Failed to spawn process.");
+            return Task::none();
         }
 
+        tracing::info!(binary = %binary, "Process launched successfully.");
         iced::exit()
     }
 }
@@ -75,9 +86,9 @@ pub fn get_icon_path_from_xdgicon(
     icon_name: &str,
     xdg_dirs: &xdg::BaseDirectories,
 ) -> Option<PathBuf> {
-    let path_iconname = PathBuf::from(icon_name);
+    let path_iconname = Path::new(icon_name);
     if path_iconname.is_absolute() && path_iconname.exists() {
-        return Some(path_iconname);
+        return Some(path_iconname.to_path_buf());
     }
 
     let mut path_str = String::with_capacity(128);

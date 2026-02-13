@@ -1,12 +1,10 @@
-use std::{
-    io,
-    os::unix::process::CommandExt,
-    path::{Path, PathBuf},
-    process,
-};
+use std::path::PathBuf;
+use std::{io, os::unix::process::CommandExt, path::Path, process};
 
-use iced::Task;
+use iced::futures::SinkExt;
+use iced::futures::channel::mpsc::Sender as FuturesSender;
 use iced::widget::image;
+use iced::{Subscription, Task};
 use resvg::{tiny_skia, usvg};
 
 use crate::{
@@ -33,18 +31,21 @@ impl ProviderKind {
     }
 }
 
+// TODO: A more robust Id type
+type Id = String;
+
 pub trait Provider {
-    // Maybe this function should return a Task<Message::PopulateEntries>?
-    fn scan(&self, dir: &Path) -> Vec<Entry>;
+    // TODO: Maybe I should just return the stream, and make the subscription
+    // logic in the subscripiton function
+    fn scan(&self, dir: PathBuf) -> Subscription<Message>;
     // Maybe, launch could consume self? But I have to get rid of dynamic dispatch first.
     // I could avoid couple clones doing this.
     fn launch(&self, id: &str) -> Task<Message>;
-    // fn get_icon(&self, entry: &Entry, size: u32) -> image::Handle;
 }
 
 #[derive(Debug, Clone)]
 pub struct Entry {
-    pub id: String,
+    pub id: Id,
     pub main: String,
     pub secondary: Option<String>,
     pub icon: iced::widget::image::Handle,
@@ -63,6 +64,113 @@ impl Entry {
             secondary: secondary.map(Into::into),
             icon,
         }
+    }
+}
+
+// TODO: Move to configuration file
+pub const SCAN_BATCH_SIZE: usize = 10;
+
+#[derive(Debug, Clone)]
+pub enum ScannerState {
+    Started,
+    Found(Vec<Entry>),
+    Finished,
+    Errored(Id, String),
+}
+
+struct Scanner {
+    sender: tokio::sync::mpsc::Sender<Message>,
+    batch: Vec<Entry>,
+    capacity: usize,
+}
+
+impl Scanner {
+    pub fn new(sender: tokio::sync::mpsc::Sender<Message>, capacity: usize) -> Self {
+        let _ = sender.blocking_send(Message::ScanEvent(ScannerState::Started));
+        Self {
+            sender,
+            batch: Vec::with_capacity(capacity),
+            capacity,
+        }
+    }
+
+    pub fn load(&mut self, entry: Entry) {
+        self.batch.push(entry);
+
+        if self.batch.len() >= self.capacity {
+            self.flush()
+        }
+    }
+
+    fn flush(&mut self) {
+        if !self.batch.is_empty() {
+            let ready_batch = std::mem::replace(&mut self.batch, Vec::with_capacity(self.capacity));
+            let _ = self
+                .sender
+                .blocking_send(Message::ScanEvent(ScannerState::Found(ready_batch)));
+        }
+    }
+}
+
+impl Drop for Scanner {
+    fn drop(&mut self) {
+        self.flush();
+        let _ = self
+            .sender
+            .blocking_send(Message::ScanEvent(ScannerState::Finished));
+    }
+}
+
+pub struct AsyncScanner {
+    sender: FuturesSender<Message>,
+    batch: Vec<Entry>,
+    capacity: usize,
+}
+
+impl AsyncScanner {
+    async fn new(mut sender: FuturesSender<Message>, capacity: usize) -> Self {
+        let _ = sender.send(Message::ScanEvent(ScannerState::Started)).await;
+        Self {
+            sender,
+            capacity,
+            batch: Vec::with_capacity(capacity),
+        }
+    }
+
+    async fn load(&mut self, entry: Entry) {
+        self.batch.push(entry);
+
+        if self.batch.len() >= self.capacity {
+            self.flush().await;
+        }
+    }
+
+    async fn flush(&mut self) {
+        if !self.batch.is_empty() {
+            let ready_batch = std::mem::replace(&mut self.batch, Vec::with_capacity(self.capacity));
+            let _ = self
+                .sender
+                .send(Message::ScanEvent(ScannerState::Found(ready_batch)))
+                .await;
+        }
+    }
+
+    async fn finish(mut self) {
+        self.flush().await;
+        let _ = self
+            .sender
+            .send(Message::ScanEvent(ScannerState::Finished))
+            .await;
+    }
+
+    pub async fn run<F>(sender: FuturesSender<Message>, capacity: usize, f: F)
+    where
+        F: AsyncFnOnce(&mut AsyncScanner),
+    {
+        let mut scanner = Self::new(sender, capacity).await;
+        // TODO: Return a Result and handle errors with the ScanState::Errored variant
+        f(&mut scanner).await;
+        scanner.finish().await;
     }
 }
 
@@ -99,6 +207,9 @@ fn rasterize_svg(path: &Path, size: u32) -> Option<tiny_skia::Pixmap> {
     Some(pixmap)
 }
 
+// TODO: Maybe I should create my own IconType to distinguish
+// between  default and custom icons. I don't want to perform
+// any of this logic if the Icon Is a default one.
 fn load_raster_icon(path: &Path, size: u32) -> Option<image::Handle> {
     let extension = path.extension()?.to_str()?;
 
@@ -110,23 +221,4 @@ fn load_raster_icon(path: &Path, size: u32) -> Option<image::Handle> {
         "png" => Some(image::Handle::from_path(path)),
         _ => None,
     }
-}
-
-pub fn load_icon_with_cache(path: &Path, size: u32) -> Option<image::Handle> {
-    use std::collections::HashMap;
-    use std::sync::OnceLock;
-
-    static CACHE: OnceLock<std::sync::Mutex<HashMap<PathBuf, Option<image::Handle>>>> =
-        OnceLock::new();
-    let cache = CACHE.get_or_init(|| std::sync::Mutex::new(HashMap::new()));
-
-    let mut cache = cache.lock().unwrap();
-
-    if let Some(cached) = cache.get(path) {
-        return cached.clone();
-    }
-
-    let handle = load_raster_icon(path, size);
-    cache.insert(path.to_path_buf(), handle.clone());
-    handle
 }

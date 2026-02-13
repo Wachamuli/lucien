@@ -3,11 +3,11 @@ use std::{
     process,
 };
 
-use iced::{Task, widget::image};
+use iced::{Subscription, Task, widget::image};
 
 use crate::{
     launcher::Message,
-    providers::load_raster_icon,
+    providers::{AsyncScanner, SCAN_BATCH_SIZE},
     ui::icon::{
         APPLICATION_DEFAULT, AUDIO_GENERIC, FOLDER_DEFAULT, FONT_GENERIC, IMAGE_GENERIC,
         MODEL_GENERIC, MULTIPART_GENERIC, TEXT_GENERIC, VIDEO_GENERIC,
@@ -20,58 +20,54 @@ use super::{Entry, Provider, spawn_with_new_session};
 pub struct FileProvider;
 
 impl Provider for FileProvider {
-    fn scan(&self, dir: &Path) -> Vec<Entry> {
-        let child_entries = std::fs::read_dir(dir)
-            .map(|entries| {
-                entries.filter_map(|entry| {
-                    let entry = entry.ok()?;
-                    let path = entry.path();
-
-                    // FIXME: Unix-like systems accept non-UTF-8 valid sequences
-                    // as valid file names. Right now, these entries are being skip.
-                    // In order to fix this, id should be a PathBuf or similar.
-                    let id_str = path.to_str()?.to_owned();
-                    let main_display = path.file_name()?.to_string_lossy().into_owned();
-
-                    Some(Entry::new(
+    // FIXME: Unix-like systems accept non-UTF-8 valid sequences
+    // as valid file names. Right now, these entries are being skip.
+    // In order to fix this, id should be a PathBuf or similar.
+    // This funcion call is the culprit: Path::to_str() -> Option<&str>
+    fn scan(&self, dir: PathBuf) -> Subscription<Message> {
+        let stream = iced::stream::channel(100, async move |output| {
+            AsyncScanner::run(output, SCAN_BATCH_SIZE, async move |scanner| {
+                if let Some(parent_directory) = dir.parent() {
+                    let parent_entry = Entry::new(
+                        parent_directory.to_str().unwrap(),
+                        "..",
+                        Some(parent_directory.to_string_lossy()),
+                        get_icon_from_mimetype(&parent_directory, 28),
+                    );
+                    scanner.load(parent_entry).await;
+                }
+                let mut child_directories = tokio::fs::read_dir(&dir).await.unwrap();
+                while let Some(child_dir) = child_directories.next_entry().await.unwrap() {
+                    let path = child_dir.path();
+                    let id_str = path.to_string_lossy();
+                    let main_display = path.file_name().unwrap().to_string_lossy();
+                    let child_entry = Entry::new(
                         id_str.clone(),
                         main_display,
                         Some(id_str),
                         get_icon_from_mimetype(&path, 28),
-                    ))
-                })
+                    );
+                    scanner.load(child_entry).await;
+                }
             })
-            .into_iter()
-            .flatten();
-
-        let parent_dir = dir.parent();
-
-        let parent_dir_entry = parent_dir.map(|p| {
-            // FIXME: Same problem here.
-            Entry::new(
-                p.to_str().unwrap(),
-                "..",
-                Some(p.to_string_lossy()),
-                get_icon_from_mimetype(&p, 28),
-            )
+            .await;
         });
 
-        parent_dir_entry
-            .into_iter()
-            .chain(child_entries)
-            .collect::<Vec<_>>()
+        iced::Subscription::run_with_id("file-provider-scan", stream)
     }
 
     fn launch(&self, id: &str) -> Task<Message> {
-        let provider_clone = self.clone();
+        // let provider_clone = self.clone();
         let path = PathBuf::from(id);
 
-        if path.is_dir() {
-            return Task::perform(
-                async move { provider_clone.scan(&path) },
-                Message::PopulateEntries,
-            );
-        }
+        // It's making another unnecessary syscall to determine if it is a dir.
+        // Pass the file metadata instead.
+        // if path.is_dir() {
+        //     return Task::perform(
+        //         async move { provider_clone.scan(&path) },
+        //         Message::Scan,
+        //     );
+        // }
 
         let mut command = process::Command::new("xdg-open");
         command.arg(&path);
