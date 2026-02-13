@@ -75,6 +75,7 @@ pub enum ScannerState {
     Started,
     Found(Vec<Entry>),
     Finished,
+    Errored(Id, String),
 }
 
 struct Scanner {
