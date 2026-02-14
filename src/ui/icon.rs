@@ -43,4 +43,8 @@ pub struct BakedIcons {
     pub star_inactive: iced::widget::image::Handle,
     pub enter: iced::widget::image::Handle,
     pub icon_placeholder: iced::widget::image::Handle,
+    pub application_icon: iced::widget::image::Handle,
+    pub application_icon_inactive: iced::widget::image::Handle,
+    pub folder_icon_inactive: iced::widget::image::Handle,
+    pub folder_icon: iced::widget::image::Handle,
 }

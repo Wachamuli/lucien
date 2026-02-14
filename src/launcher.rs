@@ -77,12 +77,17 @@ impl Lucien {
     pub fn new(preferences: Preferences) -> (Self, Task<Message>) {
         let default_provider = ProviderKind::App(AppProvider);
 
+        // TODO: Move this to the init message
         let baked_icons = BakedIcons {
             enter: image::Handle::from_bytes(ENTER),
             magnifier: image::Handle::from_bytes(MAGNIFIER),
             star_active: image::Handle::from_bytes(STAR_ACTIVE),
             star_inactive: image::Handle::from_bytes(STAR_INACTIVE),
             icon_placeholder: image::Handle::from_bytes(ICON_PLACEHOLDER),
+            application_icon: image::Handle::from_bytes(CUBE_ACTIVE),
+            application_icon_inactive: image::Handle::from_bytes(CUBE_INACTIVE),
+            folder_icon: image::Handle::from_bytes(FOLDER_ACTIVE),
+            folder_icon_inactive: image::Handle::from_bytes(FOLDER_INACTIVE),
         };
 
         let context = LauncherContext::with_path(env!("HOME"));
@@ -144,7 +149,7 @@ impl Lucien {
 
         if old_pos != self.selected_entry {
             let layout = AppLayout::new(&self.preferences, &self.prompt);
-            return self.snap_if_needed(&layout);
+            return self.snap_to_entry(&layout);
         }
 
         Task::none()
@@ -169,7 +174,7 @@ impl Lucien {
         }
     }
 
-    pub fn snap_if_needed(&self, layout: &AppLayout) -> Task<Message> {
+    pub fn snap_to_entry(&self, layout: &AppLayout) -> Task<Message> {
         let Some(viewport) = &self.last_viewport else {
             return Task::none();
         };
@@ -441,23 +446,19 @@ impl Lucien {
     }
 
     fn provider_indicator<'a>(&'a self) -> Container<'a, Message, CustomTheme> {
-        let launcher_icon = match self.provider {
-            ProviderKind::App(_) => CUBE_ACTIVE,
-            _ => CUBE_INACTIVE,
+        let apps_icon = match self.provider {
+            ProviderKind::App(_) => &self.baked_icons.application_icon,
+            _ => &self.baked_icons.application_icon_inactive,
         };
-        let terminal_icon = match self.provider {
-            ProviderKind::File(_) => FOLDER_ACTIVE,
-            _ => FOLDER_INACTIVE,
+        let folder_icon = match self.provider {
+            ProviderKind::File(_) => &self.baked_icons.folder_icon,
+            _ => &self.baked_icons.folder_icon_inactive,
         };
 
         container(
             row![
-                image(image::Handle::from_bytes(launcher_icon))
-                    .width(18)
-                    .height(18),
-                image(image::Handle::from_bytes(terminal_icon))
-                    .width(18)
-                    .height(18),
+                image(apps_icon).width(18).height(18),
+                image(folder_icon).width(18).height(18),
             ]
             .spacing(10),
         )
