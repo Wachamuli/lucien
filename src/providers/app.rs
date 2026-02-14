@@ -25,36 +25,38 @@ pub struct AppProvider;
 
 impl Provider for AppProvider {
     fn scan(&self, _context: LauncherContext) -> Subscription<Message> {
-        let stream = iced::stream::channel(100, async |mut output| {
-            let spawn_handler = tokio::runtime::Handle::current();
-            tokio::task::spawn_blocking(move || {
-                let xdg_dirs = Arc::new(xdg::BaseDirectories::new());
-                let apps = gio::AppInfo::all()
-                    .into_iter()
-                    .filter(|app| app.should_show());
-                let mut scanner = Scanner::new(output.clone(), SCAN_BATCH_SIZE);
+        Subscription::run(|| {
+            iced::stream::channel(100, async move |output| {
+                let spawn_handler = tokio::runtime::Handle::current();
+                tokio::task::spawn_blocking(move || {
+                    let xdg_dirs = Arc::new(xdg::BaseDirectories::new());
+                    let apps = gio::AppInfo::all()
+                        .into_iter()
+                        .filter(|app| app.should_show());
+                    let mut scanner = Scanner::new(output.clone(), SCAN_BATCH_SIZE);
 
-                for app in apps {
-                    let meta = AppMetadata::from(app);
-                    let entry = Entry::new(
-                        meta.id.clone(),
-                        meta.name,
-                        meta.description,
-                        meta.icon.clone(),
-                    );
-                    if let EntryIcon::Lazy(icon_name) = meta.icon {
-                        let output_clone = output.clone();
-                        let xdg_dirs_clone = xdg_dirs.clone();
-                        spawn_handler.spawn(async move {
-                            resolve_icon(meta.id, icon_name, xdg_dirs_clone, output_clone).await
-                        });
+                    for app in apps {
+                        let meta = AppMetadata::from(app);
+                        let entry = Entry::new(
+                            meta.id.clone(),
+                            meta.name,
+                            meta.description,
+                            meta.icon.clone(),
+                        );
+                        if let EntryIcon::Lazy(icon_name) = meta.icon {
+                            let output_clone = output.clone();
+                            let xdg_dirs_clone = xdg_dirs.clone();
+                            spawn_handler.spawn(async move {
+                                resolve_icon(meta.id, icon_name, xdg_dirs_clone, output_clone).await
+                            });
+                        }
+                        scanner.load(entry);
                     }
-                    scanner.load(entry);
-                }
-            });
-        });
+                });
 
-        iced::Subscription::none()
+                std::future::pending::<()>().await;
+            })
+        })
     }
 
     fn launch(&self, id: &str) -> Task<Message> {

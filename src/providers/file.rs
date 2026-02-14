@@ -24,39 +24,38 @@ impl Provider for FileProvider {
     // as valid file names. Right now, these entries are being skip.
     // In order to fix this, id should be a PathBuf or similar.
     // This funcion call is the culprit: Path::to_str() -> Option<&str>
-    fn scan(&self, context: LauncherContext) -> Subscription<Message> {
-        let path = context.path.to_string_lossy().into_owned();
-
-        let stream = iced::stream::channel(100, async move |output| {
-            AsyncScanner::run(output, SCAN_BATCH_SIZE, async move |scanner| {
-                let icon_size = context.entry_theme.icon_size as u32;
-                if let Some(parent_directory) = context.path.parent() {
-                    let parent_entry = Entry::new(
-                        parent_directory.to_str().unwrap(),
-                        "..",
-                        Some(parent_directory.to_string_lossy()),
-                        EntryIcon::Handle(get_icon_from_mimetype(&parent_directory, icon_size)),
-                    );
-                    scanner.load(parent_entry).await;
-                }
-                let mut child_directories = tokio::fs::read_dir(&context.path).await.unwrap();
-                while let Some(child_dir) = child_directories.next_entry().await.unwrap() {
-                    let path = child_dir.path();
-                    let id_str = path.to_string_lossy();
-                    let main_display = path.file_name().unwrap().to_string_lossy();
-                    let child_entry = Entry::new(
-                        id_str.clone(),
-                        main_display,
-                        Some(id_str),
-                        EntryIcon::Handle(get_icon_from_mimetype(&path, icon_size)),
-                    );
-                    scanner.load(child_entry).await;
-                }
+    fn scan(&self, _context: LauncherContext) -> Subscription<Message> {
+        iced::Subscription::run(|| {
+            iced::stream::channel(100, async move |output| {
+                AsyncScanner::run(output, SCAN_BATCH_SIZE, async move |scanner| {
+                    let icon_size = 64;
+                    let path = PathBuf::from(env!("HOME"));
+                    if let Some(parent_directory) = path.parent() {
+                        let parent_entry = Entry::new(
+                            parent_directory.to_str().unwrap(),
+                            "..",
+                            Some(parent_directory.to_string_lossy()),
+                            EntryIcon::Handle(get_icon_from_mimetype(&parent_directory, icon_size)),
+                        );
+                        scanner.load(parent_entry).await;
+                    }
+                    let mut child_directories = tokio::fs::read_dir(path).await.unwrap();
+                    while let Some(child_dir) = child_directories.next_entry().await.unwrap() {
+                        let path = child_dir.path();
+                        let id_str = path.to_string_lossy();
+                        let main_display = path.file_name().unwrap().to_string_lossy();
+                        let child_entry = Entry::new(
+                            id_str.clone(),
+                            main_display,
+                            Some(id_str),
+                            EntryIcon::Handle(get_icon_from_mimetype(&path, icon_size)),
+                        );
+                        scanner.load(child_entry).await;
+                    }
+                })
+                .await;
             })
-            .await;
-        });
-
-        iced::Subscription::none()
+        })
     }
 
     fn launch(&self, id: &str) -> Task<Message> {
