@@ -84,8 +84,7 @@ pub fn display_entry<'a>(
             .width(style.icon_size)
             .height(style.icon_size)
             .into(),
-        // We could introduce an icon skeleton here
-        EntryIcon::Lazy(_) => horizontal_space()
+        EntryIcon::Lazy(_) => image(&baked_icons.icon_placeholder)
             .width(style.icon_size)
             .height(style.icon_size)
             .into(),
