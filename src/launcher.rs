@@ -1,4 +1,7 @@
-use iced::{Element, widget};
+use iced::{
+    Element,
+    widget::{self, operation::AbsoluteOffset},
+};
 use std::{
     env,
     path::PathBuf,
@@ -72,7 +75,6 @@ pub enum Message {
 
 impl Lucien {
     pub fn new(preferences: Preferences) -> (Self, Task<Message>) {
-        let auto_focus_prompt_task = widget::operation::focus(TEXT_INPUT_ID.clone());
         let default_provider = ProviderKind::App(AppProvider);
 
         let baked_icons = BakedIcons {
@@ -99,7 +101,7 @@ impl Lucien {
             baked_icons,
         };
 
-        (initial_values, auto_focus_prompt_task)
+        (initial_values, Task::none())
     }
 
     pub fn theme(&self) -> CustomTheme {
@@ -230,26 +232,28 @@ impl Lucien {
 
                 widget::operation::snap_to(SCROLLABLE_ID.clone(), RelativeOffset { x: 0.0, y: 0.0 })
             }
-            Message::ScanEvent(scan_event) => {
-                match scan_event {
-                    ScannerState::Started => {
-                        self.prompt.clear();
-                        self.entry_registry.clear();
-                        self.is_scan_completed = false;
-                    }
-                    ScannerState::Found(batch) => {
-                        self.entry_registry.extend(batch);
-                    }
-                    ScannerState::Finished => {
-                        self.is_scan_completed = true;
-                    }
-                    ScannerState::Errored(id, error) => {
-                        tracing::error!(error = error, "An error ocurred while scanning {id}");
-                    }
+            Message::ScanEvent(scan_event) => match scan_event {
+                ScannerState::Started => {
+                    self.prompt.clear();
+                    self.entry_registry.clear();
+                    self.is_scan_completed = false;
+                    // TODO: Move to an Init message, because the prompt should be ready
+                    // instantly.
+                    widget::operation::focus(TEXT_INPUT_ID.clone())
                 }
-
-                Task::none()
-            }
+                ScannerState::Found(batch) => {
+                    self.entry_registry.extend(batch);
+                    Task::none()
+                }
+                ScannerState::Finished => {
+                    self.is_scan_completed = true;
+                    Task::none()
+                }
+                ScannerState::Errored(id, error) => {
+                    tracing::error!(error = error, "An error ocurred while scanning {id}");
+                    Task::none()
+                }
+            },
             Message::IconResolved { id, handle } => {
                 if let Some(entry) = self.entry_registry.get_mut_by_id(&id) {
                     entry.icon = EntryIcon::Handle(handle);
