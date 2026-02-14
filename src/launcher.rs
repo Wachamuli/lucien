@@ -1,11 +1,10 @@
 use std::{
-    collections::HashMap,
     env,
     path::PathBuf,
     sync::{Arc, LazyLock},
 };
 
-use fuzzy_matcher::{FuzzyMatcher, skim::SkimMatcherV2};
+use fuzzy_matcher::skim::SkimMatcherV2;
 use iced::{
     Alignment, Length, Subscription, Task,
     widget::{
@@ -22,14 +21,12 @@ use crate::{
         keybindings::{Action, Keystrokes},
         theme::{ContainerClass, CustomTheme, TextClass},
     },
-    providers::{
-        Entry, EntryIcon, Id, ProviderKind, ScannerState, app::AppProvider, file::FileProvider,
-    },
+    providers::{EntryIcon, Id, ProviderKind, ScannerState, app::AppProvider, file::FileProvider},
     ui::{
         entry::{self, EntryRegistry, FONT_ITALIC, section},
         icon::{
             BakedIcons, CUBE_ACTIVE, CUBE_INACTIVE, ENTER, FOLDER_ACTIVE, FOLDER_INACTIVE,
-            MAGNIFIER, STAR_ACTIVE, STAR_INACTIVE,
+            ICON_PLACEHOLDER, MAGNIFIER, STAR_ACTIVE, STAR_INACTIVE,
         },
         prompt::Prompt,
     },
@@ -51,7 +48,7 @@ pub struct Lucien {
     selected_entry: usize,
     last_viewport: Option<Viewport>,
     search_handle: Option<iced::task::Handle>,
-    icons: BakedIcons,
+    baked_icons: BakedIcons,
 }
 
 #[to_layer_message]
@@ -64,7 +61,7 @@ pub enum Message {
     TriggerActionByKeybinding(Keystrokes),
     ScrollableViewport(Viewport),
     SaveIntoDisk(Result<PathBuf, Arc<tokio::io::Error>>),
-    IconLoaded { id: Id, handle: image::Handle },
+    IconResolved { id: Id, handle: image::Handle },
 }
 
 impl Lucien {
@@ -77,6 +74,7 @@ impl Lucien {
             magnifier: image::Handle::from_bytes(MAGNIFIER),
             star_active: image::Handle::from_bytes(STAR_ACTIVE),
             star_inactive: image::Handle::from_bytes(STAR_INACTIVE),
+            icon_placeholder: image::Handle::from_bytes(ICON_PLACEHOLDER),
         };
 
         let initial_values = Self {
@@ -89,7 +87,7 @@ impl Lucien {
             selected_entry: 0,
             last_viewport: None,
             search_handle: None,
-            icons: baked_icons,
+            baked_icons,
         };
 
         (initial_values, auto_focus_prompt_task)
@@ -237,7 +235,7 @@ impl Lucien {
 
                 Task::none()
             }
-            Message::IconLoaded { id, handle } => {
+            Message::IconResolved { id, handle } => {
                 if let Some(entry) = self.entry_registry.get_mut_by_id(&id) {
                     entry.icon = EntryIcon::Handle(handle);
                 }
@@ -342,46 +340,29 @@ impl Lucien {
         let mut general_column =
             Column::new().push_maybe(show_sections.then(|| section("General")));
 
-        for (rank_pos, app_index) in self.entry_registry.entry_indices.iter().enumerate() {
-            let entry = &self.entry_registry.entries[*app_index];
+        for (visual_index, entry) in self.entry_registry.iter_visible().enumerate() {
             let is_favorite = self.preferences.favorite_apps.contains(&entry.id);
-            let is_selected = self.selected_entry == rank_pos;
+            let is_selected = self.selected_entry == visual_index;
 
             let item_height = theme.launchpad.entry.height;
             let style = &self.preferences.theme.launchpad.entry;
 
-            let element = container(entry::display_entry(
+            // TODO widget::lazy entries?
+            let entry_view = container(entry::display_entry(
                 entry,
-                &self.icons,
+                &self.baked_icons,
                 style,
-                rank_pos,
+                visual_index,
                 is_selected,
                 is_favorite,
             ))
             .height(item_height)
             .width(Length::Fill);
 
-            // let element: Element<Message, CustomTheme> = container(iced::widget::lazy(
-            //     (*app_index, is_selected, is_favorite),
-            //     move |_| {
-            //         display_entry(
-            //             entry,
-            //             &self.icons,
-            //             style,
-            //             rank_pos,
-            //             is_selected,
-            //             is_favorite,
-            //         )
-            //     },
-            // ))
-            // .height(item_height)
-            // .width(Length::Fill)
-            // .into();
-
             if is_favorite && self.prompt.is_empty() {
-                starred_column = starred_column.push(element);
+                starred_column = starred_column.push(entry_view);
             } else {
-                general_column = general_column.push(element);
+                general_column = general_column.push(entry_view);
             }
         }
 
@@ -419,7 +400,7 @@ impl Lucien {
 
         let prompt = Prompt::new(&self.prompt, &self.preferences.theme)
             .indicator(self.provider_indicator())
-            .magnifier(&self.icons.magnifier)
+            .magnifier(&self.baked_icons.magnifier)
             .id(TEXT_INPUT_ID.clone())
             .on_input(Message::PromptChange)
             .on_submit(Message::TriggerAction(Action::LaunchEntry(

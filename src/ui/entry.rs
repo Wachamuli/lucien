@@ -38,14 +38,14 @@ pub fn display_entry<'a>(
     entry: &'a Entry,
     baked_icons: &'a BakedIcons,
     style: &'a EntryStyle,
-    index: usize,
+    visual_index: usize,
     is_selected: bool,
     is_favorite: bool,
 ) -> Element<'a, Message, CustomTheme> {
     let shortcut_label: Element<'a, Message, CustomTheme> = if is_selected {
         image(&baked_icons.enter).width(18).height(18).into()
-    } else if index < CTRL_SHORTCUTS.len() {
-        text(CTRL_SHORTCUTS[index])
+    } else if visual_index < CTRL_SHORTCUTS.len() {
+        text(CTRL_SHORTCUTS[visual_index])
             .size(12)
             .class(TextClass::TextDim)
             .into()
@@ -78,7 +78,6 @@ pub fn display_entry<'a>(
             .size(style.secondary_font_size)
             .class(TextClass::SecondaryText)
     });
-
     let icon_view: Element<'a, Message, CustomTheme> = match &entry.icon {
         EntryIcon::Handle(handle) => image(handle)
             .width(style.icon_size)
@@ -99,7 +98,7 @@ pub fn display_entry<'a>(
         .spacing(12)
         .align_y(iced::Alignment::Center),
     )
-    .on_press(Message::TriggerAction(Action::LaunchEntry(index)))
+    .on_press(Message::TriggerAction(Action::LaunchEntry(visual_index)))
     .padding(iced::Padding::from(&style.padding))
     .height(style.height)
     .width(Length::Fill)
@@ -133,9 +132,8 @@ pub fn section(name: &str) -> Container<'_, Message, CustomTheme> {
 
 #[derive(Default)]
 pub struct EntryRegistry {
-    // Find a way to remove the pub from these two fields
-    pub entries: Vec<Entry>,
-    pub entry_indices: Vec<usize>,
+    entries: Vec<Entry>,
+    entry_indices: Vec<usize>,
     entry_index_map: HashMap<Id, usize>,
 }
 
@@ -212,6 +210,12 @@ impl EntryRegistry {
 
     pub fn is_visibles_empty(&self) -> bool {
         self.entry_indices.is_empty()
+    }
+
+    pub fn iter_visible(&self) -> impl Iterator<Item = &Entry> {
+        self.entry_indices
+            .iter()
+            .filter_map(|&original_idx| self.entries.get(original_idx))
     }
 
     pub fn sort_by_rank(

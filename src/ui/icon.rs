@@ -35,6 +35,7 @@ pub static MULTIPART_GENERIC: &[u8] =
     include_bytes!("../../assets/mimetypes/package-x-generic.png");
 pub static MODEL_GENERIC: &[u8] = include_bytes!("../../assets/mimetypes/model.png");
 
+// TODO: I should have this struct declared and use in one place
 #[derive(Debug, Clone)]
 pub struct BakedIcons {
     pub magnifier: iced::widget::image::Handle,
