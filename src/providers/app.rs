@@ -25,7 +25,7 @@ pub struct AppProvider;
 
 impl Provider for AppProvider {
     fn scan(&self, _context: LauncherContext) -> Subscription<Message> {
-        let stream = iced::stream::channel(100, |output| async move {
+        let stream = iced::stream::channel(100, async |mut output| {
             let spawn_handler = tokio::runtime::Handle::current();
             tokio::task::spawn_blocking(move || {
                 let xdg_dirs = Arc::new(xdg::BaseDirectories::new());
@@ -54,7 +54,7 @@ impl Provider for AppProvider {
             });
         });
 
-        iced::Subscription::run_with_id("app-provider-scan", stream)
+        iced::Subscription::none()
     }
 
     fn launch(&self, id: &str) -> Task<Message> {

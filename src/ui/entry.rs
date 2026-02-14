@@ -3,7 +3,7 @@ use std::collections::HashMap;
 use fuzzy_matcher::{FuzzyMatcher, skim::SkimMatcherV2};
 use iced::{
     Alignment, Element, Font, Length, font,
-    widget::{Container, button, container, horizontal_space, image, row, text},
+    widget::{Container, button, container, image, row, text},
 };
 
 use crate::{
@@ -66,33 +66,34 @@ pub fn display_entry<'a>(
             .into()
     });
     let actions = row![]
-        .push_maybe(mark_favorite)
+        .extend(mark_favorite)
         .push(shortcut_label)
         .align_y(Alignment::Center);
     let main = text(&entry.main)
-        .size(style.font_size)
+        .size(style.font_size as u32)
         .width(Length::Fill)
         .font(FONT_BOLD);
     let secondary = entry.secondary.as_ref().map(|desc| {
         text(desc)
-            .size(style.secondary_font_size)
+            .size(style.secondary_font_size as u32)
             .class(TextClass::SecondaryText)
+            .into()
     });
     let icon_view: Element<'a, Message, CustomTheme> = match &entry.icon {
         EntryIcon::Handle(handle) => image(handle)
-            .width(style.icon_size)
-            .height(style.icon_size)
+            .width(style.icon_size as u32)
+            .height(style.icon_size as u32)
             .into(),
         EntryIcon::Lazy(_) => image(&baked_icons.icon_placeholder)
-            .width(style.icon_size)
-            .height(style.icon_size)
+            .width(style.icon_size as u32)
+            .height(style.icon_size as u32)
             .into(),
     };
 
     button(
         row![
             icon_view,
-            iced::widget::column![main].push_maybe(secondary).spacing(2),
+            iced::widget::column![main].extend(secondary).spacing(2),
             actions
         ]
         .spacing(12)

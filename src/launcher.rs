@@ -1,3 +1,4 @@
+use iced::{Element, widget};
 use std::{
     env,
     path::PathBuf,
@@ -38,8 +39,8 @@ use crate::{
 // TODO: Remove this constant
 pub const SECTION_HEIGHT: f32 = 36.0;
 
-static TEXT_INPUT_ID: LazyLock<text_input::Id> = LazyLock::new(text_input::Id::unique);
-static SCROLLABLE_ID: LazyLock<scrollable::Id> = LazyLock::new(scrollable::Id::unique);
+static TEXT_INPUT_ID: LazyLock<iced::widget::Id> = LazyLock::new(iced::widget::Id::unique);
+static SCROLLABLE_ID: LazyLock<iced::widget::Id> = LazyLock::new(iced::widget::Id::unique);
 
 pub struct Lucien {
     entry_registry: EntryRegistry,
@@ -71,7 +72,7 @@ pub enum Message {
 
 impl Lucien {
     pub fn new(preferences: Preferences) -> (Self, Task<Message>) {
-        let auto_focus_prompt_task = text_input::focus(TEXT_INPUT_ID.clone());
+        let auto_focus_prompt_task = widget::operation::focus(TEXT_INPUT_ID.clone());
         let default_provider = ProviderKind::App(AppProvider);
 
         let baked_icons = BakedIcons {
@@ -212,7 +213,7 @@ impl Lucien {
             return Task::none();
         };
 
-        scrollable::snap_to(
+        widget::operation::snap_to(
             SCROLLABLE_ID.clone(),
             RelativeOffset {
                 x: 0.0,
@@ -227,7 +228,7 @@ impl Lucien {
                 self.selected_entry = 0;
                 self.context = context;
 
-                scrollable::snap_to(SCROLLABLE_ID.clone(), RelativeOffset { x: 0.0, y: 0.0 })
+                widget::operation::snap_to(SCROLLABLE_ID.clone(), RelativeOffset { x: 0.0, y: 0.0 })
             }
             Message::ScanEvent(scan_event) => {
                 match scan_event {
@@ -309,7 +310,7 @@ impl Lucien {
                 self.entry_registry
                     .sort_by_rank(&self.preferences, &self.matcher, &self.prompt);
 
-                scrollable::snap_to(SCROLLABLE_ID.clone(), RelativeOffset { x: 0.0, y: 0.0 })
+                widget::operation::snap_to(SCROLLABLE_ID.clone(), RelativeOffset { x: 0.0, y: 0.0 })
             }
             Message::ScrollableViewport(viewport) => {
                 self.last_viewport = Some(viewport);
@@ -322,6 +323,7 @@ impl Lucien {
             Message::MarginChange(_) => todo!(),
             Message::SizeChange(_) => todo!(),
             Message::VirtualKeyboardPressed { .. } => todo!(),
+            Message::ExclusiveZoneChange(_) => todo!(),
         }
     }
 
@@ -350,9 +352,9 @@ impl Lucien {
         let show_sections = self.prompt.is_empty() && !self.preferences.favorite_apps.is_empty();
 
         let mut starred_column =
-            Column::new().push_maybe(show_sections.then(|| section("Starred")));
+            Column::new().extend(show_sections.then(|| section("Starred").into()));
         let mut general_column =
-            Column::new().push_maybe(show_sections.then(|| section("General")));
+            Column::new().extend(show_sections.then(|| section("General").into()));
 
         for (visual_index, entry) in self.entry_registry.iter_visible().enumerate() {
             let is_favorite = self.preferences.favorite_apps.contains(&entry.id);
@@ -380,8 +382,8 @@ impl Lucien {
             }
         }
 
-        let results_not_found: Option<Container<Message, CustomTheme>> =
-            (self.entry_registry.is_visibles_empty() && self.is_scan_completed).then(|| {
+        let results_not_found = (self.entry_registry.is_visibles_empty() && self.is_scan_completed)
+            .then(|| {
                 container(
                     text("No Results Found")
                         .size(14)
@@ -392,25 +394,29 @@ impl Lucien {
                         .font(FONT_ITALIC),
                 )
                 .padding(19.8)
-            });
+            })
+            .map(Element::from);
 
-        // Maybe the first bool is unnecessary.
         let show_results = !self.entry_registry.is_empty() || self.is_scan_completed;
 
         let content = Column::new()
             .push(starred_column)
             .push(general_column)
-            .push_maybe(results_not_found)
+            .extend(results_not_found)
             .padding(theme.launchpad.padding)
             .width(Length::Fill);
 
-        let results = show_results.then(|| {
-            iced::widget::scrollable(content)
-                .on_scroll(Message::ScrollableViewport)
-                .id(SCROLLABLE_ID.clone())
-        });
+        let results = show_results
+            .then(|| {
+                iced::widget::scrollable(content)
+                    .on_scroll(Message::ScrollableViewport)
+                    .id(SCROLLABLE_ID.clone())
+            })
+            .map(Element::from);
 
-        let horizontal_rule = show_results.then(|| iced::widget::horizontal_rule(1));
+        let horizontal_rule = show_results
+            .then(|| widget::rule::horizontal(1))
+            .map(Element::from);
 
         let prompt = Prompt::new(&self.prompt, &self.preferences.theme)
             .indicator(self.provider_indicator())
@@ -424,8 +430,8 @@ impl Lucien {
 
         container(
             iced::widget::column![prompt]
-                .push_maybe(horizontal_rule)
-                .push_maybe(results),
+                .extend(horizontal_rule)
+                .extend(results),
         )
         .class(ContainerClass::MainContainer)
     }

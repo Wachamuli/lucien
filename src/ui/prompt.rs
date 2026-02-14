@@ -1,6 +1,6 @@
 use iced::{
     Alignment, Element,
-    widget::{Container, container, horizontal_space, image, row, text_input},
+    widget::{self, Container, Id, container, image, row, space, text_input},
 };
 
 use crate::preferences::theme::CustomTheme;
@@ -12,7 +12,7 @@ pub struct Prompt<'a, Message> {
     on_input: Option<Box<dyn Fn(String) -> Message + 'a>>,
     on_submit: Option<Message>,
     indicator: Option<Container<'a, Message, CustomTheme>>,
-    id: Option<text_input::Id>,
+    id: Option<Id>,
 }
 
 impl<'a, Message> Prompt<'a, Message>
@@ -31,7 +31,7 @@ where
         }
     }
 
-    pub fn id(mut self, id: impl Into<text_input::Id>) -> Self {
+    pub fn id(mut self, id: impl Into<Id>) -> Self {
         self.id = Some(id.into());
         self
     }
@@ -59,18 +59,18 @@ where
     pub fn view(self) -> Container<'a, Message, CustomTheme> {
         let magnifier: Element<Message, CustomTheme> = match self.magnifier {
             Some(handle) => image(handle)
-                .width(self.style.prompt.icon_size)
-                .height(self.style.prompt.icon_size)
+                .width(iced::Length::Fixed(self.style.prompt.icon_size as f32))
+                .height(iced::Length::Fixed(self.style.prompt.icon_size as f32))
                 .into(),
-            None => horizontal_space()
-                .width(self.style.prompt.icon_size)
-                .height(self.style.prompt.icon_size)
+            None => space::horizontal()
+                .width(iced::Length::Fixed(self.style.prompt.icon_size as f32))
+                .height(iced::Length::Fixed(self.style.prompt.icon_size as f32))
                 .into(),
         };
 
         let mut input = text_input("Search...", self.prompt)
             .padding(8)
-            .size(self.style.prompt.font_size)
+            .size(self.style.prompt.font_size as u32)
             .font(iced::Font {
                 weight: iced::font::Weight::Bold,
                 ..Default::default()
@@ -91,7 +91,7 @@ where
         let prompt: Element<Message, CustomTheme> = row![]
             .push(magnifier)
             .push(input)
-            .push_maybe(self.indicator)
+            .extend(self.indicator.map(Element::from))
             .align_y(iced::Alignment::Center)
             .spacing(2)
             .into();

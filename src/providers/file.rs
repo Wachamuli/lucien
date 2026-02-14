@@ -56,7 +56,7 @@ impl Provider for FileProvider {
             .await;
         });
 
-        iced::Subscription::run_with_id(format!("file-provider-scan:{path}"), stream)
+        iced::Subscription::none()
     }
 
     fn launch(&self, id: &str) -> Task<Message> {

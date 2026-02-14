@@ -43,7 +43,7 @@ fn main() -> anyhow::Result<()> {
     let _log_guard = setup_tracing_subscriber(xdg_cache_directory, "logs")?;
     tracing::info!("Running {package_name} v.{package_version}...");
 
-    let preferences = load_application_preferences()?;
+    // let preferences = load_application_preferences()?;
 
     let layershell_settings = LayerShellSettings {
         size: Some((700, 500)),
@@ -53,12 +53,20 @@ fn main() -> anyhow::Result<()> {
         ..Default::default()
     };
 
-    iced_layershell::build_pattern::application(package_name, Lucien::update, Lucien::view)
-        .subscription(Lucien::subscription)
-        .theme(Lucien::theme)
-        .layer_settings(layershell_settings)
-        .antialiasing(true)
-        .run_with(|| Lucien::new(preferences))?;
+    iced_layershell::build_pattern::application(
+        || {
+            let preferences = load_application_preferences().unwrap();
+            Lucien::new(preferences)
+        },
+        package_name,
+        Lucien::update,
+        Lucien::view,
+    )
+    .subscription(Lucien::subscription)
+    .theme(Lucien::theme)
+    .layer_settings(layershell_settings)
+    .antialiasing(true)
+    .run()?;
 
     Ok(())
 }

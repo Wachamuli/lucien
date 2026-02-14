@@ -1,7 +1,9 @@
 use std::ops::Deref;
+use std::str::FromStr;
 
+use iced::theme::Base as IcedBaseTheme;
 use iced::widget::{button, container, rule, scrollable, text, text_input};
-use iced_layershell::DefaultStyle;
+// use iced_layershell::DefaultStyle;
 use serde::{self, Deserialize, Serialize};
 
 const DEFAULT_BACKGROUND_COLOR: &str = "#1F1F1FF2";
@@ -12,6 +14,43 @@ const DEFAULT_MAIN_TEXT: &str = "#F2F2F2FF";
 const DEFAULT_SECONDARY_TEXT: &str = "#FFFFFF80";
 const DEFAULT_DIM_TEXT: &str = "#FFFFFF80";
 const TRANSPARENT: &str = "#00000000";
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+#[serde(default)]
+pub struct CustomTheme {
+    pub background: HexColor,
+    pub border: Border,
+    pub prompt: Prompt,
+    pub launchpad: Launchpad,
+    pub separator: Separator,
+}
+
+impl IcedBaseTheme for CustomTheme {
+    fn default(preference: iced::theme::Mode) -> Self {
+        CustomTheme {
+            ..Default::default()
+        }
+    }
+
+    fn mode(&self) -> iced::theme::Mode {
+        iced::theme::Mode::None
+    }
+
+    fn base(&self) -> iced::theme::Style {
+        iced::theme::Style {
+            background_color: iced::Color::TRANSPARENT,
+            text_color: Default::default(),
+        }
+    }
+
+    fn palette(&self) -> Option<iced::theme::Palette> {
+        None
+    }
+
+    fn name(&self) -> &str {
+        "Lucien"
+    }
+}
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 #[serde(default)]
@@ -53,7 +92,7 @@ impl From<&str> for HexColor {
     // FIXME: Not very idiomatic because it might fail.
     fn from(value: &str) -> HexColor {
         HexColor(
-            iced::Color::parse(value)
+            iced::Color::from_str(value)
                 .expect("Invalid color. Use #RGB, #RRGGBB, #RGBA, or #RRGGBBAA format instead."),
         )
     }
@@ -90,11 +129,7 @@ impl<'de> Deserialize<'de> for HexColor {
         D: serde::Deserializer<'de>,
     {
         let color = String::deserialize(deserializer)?;
-        let converted_color = iced::Color::parse(&color).ok_or_else(|| {
-            serde::de::Error::custom(
-                "Invalid color. Use #RGB, #RRGGBB, #RGBA, or #RRGGBBAA format instead.",
-            )
-        })?;
+        let converted_color = iced::Color::from_str(&color).map_err(serde::de::Error::custom)?;
 
         Ok(HexColor(converted_color))
     }
@@ -236,25 +271,6 @@ impl Default for Launchpad {
     }
 }
 
-#[derive(Debug, Serialize, Deserialize, Clone)]
-#[serde(default)]
-pub struct CustomTheme {
-    pub background: HexColor,
-    pub border: Border,
-    pub prompt: Prompt,
-    pub launchpad: Launchpad,
-    pub separator: Separator,
-}
-
-impl DefaultStyle for CustomTheme {
-    fn default_style(&self) -> iced_layershell::Appearance {
-        iced_layershell::Appearance {
-            background_color: iced::Color::TRANSPARENT,
-            text_color: Default::default(),
-        }
-    }
-}
-
 impl Default for CustomTheme {
     fn default() -> Self {
         Self {
@@ -384,7 +400,7 @@ impl scrollable::Catalog for CustomTheme {
             vertical_rail: iced::widget::scrollable::Rail {
                 background: Some(iced::Background::Color(iced::Color::TRANSPARENT)),
                 scroller: scrollable::Scroller {
-                    color: iced::Color::TRANSPARENT,
+                    background: iced::Background::Color(iced::Color::TRANSPARENT),
                     border: iced::Border {
                         width: 0.0,
                         ..Default::default()
@@ -395,7 +411,7 @@ impl scrollable::Catalog for CustomTheme {
             horizontal_rail: iced::widget::scrollable::Rail {
                 background: None,
                 scroller: scrollable::Scroller {
-                    color: *self.background,
+                    background: iced::Background::Color(*self.background),
                     border: iced::Border {
                         radius: iced::border::radius(5),
                         ..Default::default()
@@ -404,6 +420,19 @@ impl scrollable::Catalog for CustomTheme {
                 border: iced::Border::default(),
             },
             gap: None,
+            auto_scroll: scrollable::AutoScroll {
+                background: iced::Background::Color(*self.background),
+                border: iced::Border {
+                    radius: iced::border::radius(5),
+                    ..Default::default()
+                },
+                shadow: iced::Shadow {
+                    color: *self.background,
+                    offset: iced::Vector::new(0.0, 0.0),
+                    blur_radius: 5.0,
+                },
+                icon: iced::Color::WHITE,
+            },
         }
     }
 }
@@ -422,9 +451,10 @@ impl rule::Catalog for CustomTheme {
     fn style(&self, _class: &Self::Class<'_>) -> rule::Style {
         rule::Style {
             color: *self.separator.color,
-            width: self.separator.width,
+            // width: self.separator.width,
             fill_mode: iced::widget::rule::FillMode::Padded(self.separator.padding),
             radius: self.separator.radius.into(),
+            snap: false,
         }
     }
 }
