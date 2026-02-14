@@ -14,7 +14,7 @@ use crate::{
         theme::{ButtonClass, CustomTheme, Entry as EntryStyle, TextClass},
     },
     providers::{Entry, EntryIcon, Id},
-    ui::icon::BakedIcons,
+    ui::icon::{ENTER, ICON_PLACEHOLDER, STAR_ACTIVE, STAR_INACTIVE},
 };
 
 const CTRL_SHORTCUTS: [&str; 5] = ["Ctrl+1", "Ctrl+2", "Ctrl+3", "Ctrl+4", "Ctrl+5"];
@@ -36,14 +36,13 @@ pub const FONT_ITALIC: Font = Font {
 
 pub fn display_entry<'a>(
     entry: &'a Entry,
-    baked_icons: &'a BakedIcons,
     style: &'a EntryStyle,
     visual_index: usize,
     is_selected: bool,
     is_favorite: bool,
 ) -> Element<'a, Message, CustomTheme> {
     let shortcut_label: Element<'a, Message, CustomTheme> = if is_selected {
-        image(&baked_icons.enter).width(18).height(18).into()
+        image(ENTER.clone()).width(18).height(18).into()
     } else if visual_index < CTRL_SHORTCUTS.len() {
         text(CTRL_SHORTCUTS[visual_index])
             .size(12)
@@ -54,9 +53,9 @@ pub fn display_entry<'a>(
     };
 
     let star_handle = if is_favorite {
-        &baked_icons.star_active
+        STAR_ACTIVE.clone()
     } else {
-        &baked_icons.star_inactive
+        STAR_INACTIVE.clone()
     };
 
     let mark_favorite: Option<Element<'a, Message, CustomTheme>> = is_selected.then(|| {
@@ -84,7 +83,7 @@ pub fn display_entry<'a>(
             .width(style.icon_size as u32)
             .height(style.icon_size as u32)
             .into(),
-        EntryIcon::Lazy(_) => image(&baked_icons.icon_placeholder)
+        EntryIcon::Lazy(_) => image(ICON_PLACEHOLDER.clone())
             .width(style.icon_size as u32)
             .height(style.icon_size as u32)
             .into(),

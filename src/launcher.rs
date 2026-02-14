@@ -32,8 +32,8 @@ use crate::{
     ui::{
         entry::{self, EntryRegistry, FONT_ITALIC, section},
         icon::{
-            BakedIcons, CUBE_ACTIVE, CUBE_INACTIVE, ENTER, FOLDER_ACTIVE, FOLDER_INACTIVE,
-            ICON_PLACEHOLDER, MAGNIFIER, STAR_ACTIVE, STAR_INACTIVE,
+            CUBE_ACTIVE, CUBE_INACTIVE, ENTER, FOLDER_ACTIVE, FOLDER_INACTIVE, ICON_PLACEHOLDER,
+            MAGNIFIER, STAR_ACTIVE, STAR_INACTIVE,
         },
         prompt::Prompt,
     },
@@ -55,7 +55,6 @@ pub struct Lucien {
     selected_entry: usize,
     last_viewport: Option<Viewport>,
     search_handle: Option<iced::task::Handle>,
-    baked_icons: BakedIcons,
     context: LauncherContext,
 }
 
@@ -76,20 +75,6 @@ pub enum Message {
 impl Lucien {
     pub fn new(preferences: Preferences) -> (Self, Task<Message>) {
         let default_provider = ProviderKind::App(AppProvider);
-
-        // TODO: Move this to the init message
-        let baked_icons = BakedIcons {
-            enter: image::Handle::from_bytes(ENTER),
-            magnifier: image::Handle::from_bytes(MAGNIFIER),
-            star_active: image::Handle::from_bytes(STAR_ACTIVE),
-            star_inactive: image::Handle::from_bytes(STAR_INACTIVE),
-            icon_placeholder: image::Handle::from_bytes(ICON_PLACEHOLDER),
-            application_icon: image::Handle::from_bytes(CUBE_ACTIVE),
-            application_icon_inactive: image::Handle::from_bytes(CUBE_INACTIVE),
-            folder_icon: image::Handle::from_bytes(FOLDER_ACTIVE),
-            folder_icon_inactive: image::Handle::from_bytes(FOLDER_INACTIVE),
-        };
-
         let context = LauncherContext::with_path(env!("HOME"));
 
         let initial_values = Self {
@@ -103,7 +88,6 @@ impl Lucien {
             selected_entry: 0,
             last_viewport: None,
             search_handle: None,
-            baked_icons,
         };
 
         (initial_values, Task::none())
@@ -375,7 +359,6 @@ impl Lucien {
             // TODO widget::lazy entries?
             let entry_view = container(entry::display_entry(
                 entry,
-                &self.baked_icons,
                 style,
                 visual_index,
                 is_selected,
@@ -429,7 +412,7 @@ impl Lucien {
 
         let prompt = Prompt::new(&self.prompt, &self.preferences.theme)
             .indicator(self.provider_indicator())
-            .magnifier(&self.baked_icons.magnifier)
+            .magnifier(MAGNIFIER.clone())
             .id(TEXT_INPUT_ID.clone())
             .on_input(Message::PromptChange)
             .on_submit(Message::TriggerAction(Action::LaunchEntry(
@@ -447,12 +430,12 @@ impl Lucien {
 
     fn provider_indicator<'a>(&'a self) -> Container<'a, Message, CustomTheme> {
         let apps_icon = match self.provider {
-            ProviderKind::App(_) => &self.baked_icons.application_icon,
-            _ => &self.baked_icons.application_icon_inactive,
+            ProviderKind::App(_) => CUBE_ACTIVE.clone(),
+            _ => CUBE_INACTIVE.clone(),
         };
         let folder_icon = match self.provider {
-            ProviderKind::File(_) => &self.baked_icons.folder_icon,
-            _ => &self.baked_icons.folder_icon_inactive,
+            ProviderKind::File(_) => FOLDER_ACTIVE.clone(),
+            _ => FOLDER_INACTIVE.clone(),
         };
 
         container(

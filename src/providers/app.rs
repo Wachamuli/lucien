@@ -100,7 +100,7 @@ async fn resolve_icon(
     let _ = output
         .send(Message::IconResolved {
             id,
-            handle: image::Handle::from_bytes(APPLICATION_DEFAULT),
+            handle: APPLICATION_DEFAULT.clone(),
         })
         .await;
 }
@@ -163,7 +163,7 @@ impl From<gio::AppInfo> for AppMetadata {
             .icon()
             .and_then(|i| i.to_string())
             .map(|s| EntryIcon::Lazy(s.to_string()))
-            .unwrap_or_else(|| EntryIcon::Handle(image::Handle::from_bytes(APPLICATION_DEFAULT)));
+            .unwrap_or_else(|| EntryIcon::Handle(APPLICATION_DEFAULT.clone()));
 
         Self {
             id,

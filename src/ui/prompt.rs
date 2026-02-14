@@ -7,7 +7,7 @@ use crate::preferences::theme::CustomTheme;
 
 pub struct Prompt<'a, Message> {
     prompt: &'a str,
-    magnifier: Option<&'a image::Handle>,
+    magnifier: Option<image::Handle>,
     style: &'a CustomTheme,
     on_input: Option<Box<dyn Fn(String) -> Message + 'a>>,
     on_submit: Option<Message>,
@@ -46,7 +46,7 @@ where
         self
     }
 
-    pub fn magnifier(mut self, image: &'a image::Handle) -> Self {
+    pub fn magnifier(mut self, image: image::Handle) -> Self {
         self.magnifier = Some(image);
         self
     }

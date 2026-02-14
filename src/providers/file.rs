@@ -83,7 +83,7 @@ impl Provider for FileProvider {
 
 fn get_icon_from_mimetype(path: &Path, size: u32) -> image::Handle {
     if path.is_dir() {
-        return image::Handle::from_bytes(FOLDER_DEFAULT);
+        return FOLDER_DEFAULT.clone();
     }
 
     let file_extension = path
@@ -128,18 +128,16 @@ impl MimeType {
     }
 
     fn get_icon_from_type(&self) -> image::Handle {
-        let icon_bytes = match self {
-            MimeType::Text => TEXT_GENERIC,
-            MimeType::Application => APPLICATION_DEFAULT,
-            MimeType::Image => IMAGE_GENERIC,
-            MimeType::Audio => AUDIO_GENERIC,
-            MimeType::Video => VIDEO_GENERIC,
-            MimeType::Font => FONT_GENERIC,
-            MimeType::Multipart => MULTIPART_GENERIC,
-            MimeType::Model => MODEL_GENERIC,
-            MimeType::Unknown => TEXT_GENERIC,
-        };
-
-        image::Handle::from_bytes(icon_bytes)
+        match self {
+            MimeType::Text => TEXT_GENERIC.clone(),
+            MimeType::Application => APPLICATION_DEFAULT.clone(),
+            MimeType::Image => IMAGE_GENERIC.clone(),
+            MimeType::Audio => AUDIO_GENERIC.clone(),
+            MimeType::Video => VIDEO_GENERIC.clone(),
+            MimeType::Font => FONT_GENERIC.clone(),
+            MimeType::Multipart => MULTIPART_GENERIC.clone(),
+            MimeType::Model => MODEL_GENERIC.clone(),
+            MimeType::Unknown => TEXT_GENERIC.clone(),
+        }
     }
 }
