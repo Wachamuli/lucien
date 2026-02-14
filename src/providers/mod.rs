@@ -4,6 +4,7 @@ use iced::futures::SinkExt;
 use iced::futures::channel::mpsc::Sender as FuturesSender;
 use iced::{Subscription, Task};
 
+use crate::preferences::theme::Entry as EntryTheme;
 use crate::{
     launcher::Message,
     providers::{app::AppProvider, file::FileProvider},
@@ -28,10 +29,26 @@ impl ProviderKind {
     }
 }
 
+#[derive(Debug, Default, Clone)]
+pub struct LauncherContext {
+    pub path: PathBuf,
+    pub pattern: String,
+    pub entry_theme: EntryTheme,
+}
+
+impl LauncherContext {
+    pub fn with_path(path: impl Into<PathBuf>) -> Self {
+        Self {
+            path: path.into(),
+            ..Default::default()
+        }
+    }
+}
+
 pub trait Provider {
     // TODO: Maybe I should just return the stream, and make the subscription
     // logic in the subscripiton function
-    fn scan(&self, dir: PathBuf) -> Subscription<Message>;
+    fn scan(&self, context: LauncherContext) -> Subscription<Message>;
     // Maybe, launch could consume self? But I have to get rid of dynamic dispatch first.
     // I could avoid couple clones doing this.
     fn launch(&self, id: &str) -> Task<Message>;

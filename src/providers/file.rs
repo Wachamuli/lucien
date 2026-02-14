@@ -7,7 +7,7 @@ use iced::{Subscription, Task, widget::image};
 
 use crate::{
     launcher::Message,
-    providers::{AsyncScanner, SCAN_BATCH_SIZE},
+    providers::{AsyncScanner, LauncherContext, SCAN_BATCH_SIZE},
     ui::icon::{
         APPLICATION_DEFAULT, AUDIO_GENERIC, FOLDER_DEFAULT, FONT_GENERIC, IMAGE_GENERIC,
         MODEL_GENERIC, MULTIPART_GENERIC, TEXT_GENERIC, VIDEO_GENERIC,
@@ -24,19 +24,22 @@ impl Provider for FileProvider {
     // as valid file names. Right now, these entries are being skip.
     // In order to fix this, id should be a PathBuf or similar.
     // This funcion call is the culprit: Path::to_str() -> Option<&str>
-    fn scan(&self, dir: PathBuf) -> Subscription<Message> {
+    fn scan(&self, context: LauncherContext) -> Subscription<Message> {
+        let path = context.path.to_string_lossy().into_owned();
+
         let stream = iced::stream::channel(100, async move |output| {
             AsyncScanner::run(output, SCAN_BATCH_SIZE, async move |scanner| {
-                if let Some(parent_directory) = dir.parent() {
+                let icon_size = context.entry_theme.icon_size as u32;
+                if let Some(parent_directory) = context.path.parent() {
                     let parent_entry = Entry::new(
                         parent_directory.to_str().unwrap(),
                         "..",
                         Some(parent_directory.to_string_lossy()),
-                        EntryIcon::Handle(get_icon_from_mimetype(&parent_directory, 28)),
+                        EntryIcon::Handle(get_icon_from_mimetype(&parent_directory, icon_size)),
                     );
                     scanner.load(parent_entry).await;
                 }
-                let mut child_directories = tokio::fs::read_dir(&dir).await.unwrap();
+                let mut child_directories = tokio::fs::read_dir(&context.path).await.unwrap();
                 while let Some(child_dir) = child_directories.next_entry().await.unwrap() {
                     let path = child_dir.path();
                     let id_str = path.to_string_lossy();
@@ -45,7 +48,7 @@ impl Provider for FileProvider {
                         id_str.clone(),
                         main_display,
                         Some(id_str),
-                        EntryIcon::Handle(get_icon_from_mimetype(&path, 28)),
+                        EntryIcon::Handle(get_icon_from_mimetype(&path, icon_size)),
                     );
                     scanner.load(child_entry).await;
                 }
@@ -53,21 +56,17 @@ impl Provider for FileProvider {
             .await;
         });
 
-        iced::Subscription::run_with_id("file-provider-scan", stream)
+        iced::Subscription::run_with_id(format!("file-provider-scan:{path}"), stream)
     }
 
     fn launch(&self, id: &str) -> Task<Message> {
-        // let provider_clone = self.clone();
         let path = PathBuf::from(id);
 
-        // It's making another unnecessary syscall to determine if it is a dir.
-        // Pass the file metadata instead.
-        // if path.is_dir() {
-        //     return Task::perform(
-        //         async move { provider_clone.scan(&path) },
-        //         Message::Scan,
-        //     );
-        // }
+        if path.is_dir() {
+            return Task::done(Message::ScannerContextChange(LauncherContext::with_path(
+                path,
+            )));
+        }
 
         let mut command = process::Command::new("xdg-open");
         command.arg(&path);

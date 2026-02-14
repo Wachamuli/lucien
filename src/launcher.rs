@@ -21,7 +21,10 @@ use crate::{
         keybindings::{Action, Keystrokes},
         theme::{ContainerClass, CustomTheme, TextClass},
     },
-    providers::{EntryIcon, Id, ProviderKind, ScannerState, app::AppProvider, file::FileProvider},
+    providers::{
+        EntryIcon, Id, LauncherContext, ProviderKind, ScannerState, app::AppProvider,
+        file::FileProvider,
+    },
     ui::{
         entry::{self, EntryRegistry, FONT_ITALIC, section},
         icon::{
@@ -49,12 +52,14 @@ pub struct Lucien {
     last_viewport: Option<Viewport>,
     search_handle: Option<iced::task::Handle>,
     baked_icons: BakedIcons,
+    context: LauncherContext,
 }
 
 #[to_layer_message]
 #[derive(Debug, Clone)]
 pub enum Message {
     ScanEvent(ScannerState),
+    ScannerContextChange(LauncherContext),
     PromptChange(String),
     DebouncedFilter,
     TriggerAction(Action),
@@ -77,9 +82,12 @@ impl Lucien {
             icon_placeholder: image::Handle::from_bytes(ICON_PLACEHOLDER),
         };
 
+        let context = LauncherContext::with_path(env!("HOME"));
+
         let initial_values = Self {
             entry_registry: EntryRegistry::default(),
             is_scan_completed: false,
+            context,
             provider: default_provider,
             prompt: String::new(),
             matcher: SkimMatcherV2::default(),
@@ -215,6 +223,12 @@ impl Lucien {
 
     pub fn update(&mut self, message: Message) -> Task<Message> {
         match message {
+            Message::ScannerContextChange(context) => {
+                self.selected_entry = 0;
+                self.context = context;
+
+                scrollable::snap_to(SCROLLABLE_ID.clone(), RelativeOffset { x: 0.0, y: 0.0 })
+            }
             Message::ScanEvent(scan_event) => {
                 match scan_event {
                     ScannerState::Started => {
@@ -317,7 +331,7 @@ impl Lucien {
         use iced::{event, keyboard};
 
         Subscription::batch([
-            self.provider.handler().scan(PathBuf::from(env!("HOME"))),
+            self.provider.handler().scan(self.context.clone()),
             event::listen_with(move |event, _, _| match event {
                 IcedKeyboardEvent(keyboard::Event::KeyPressed { modifiers, key, .. }) => {
                     let keystrokes = Keystrokes::from_iced_keystrokes(modifiers, key);
