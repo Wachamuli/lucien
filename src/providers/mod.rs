@@ -1,11 +1,8 @@
-use std::path::PathBuf;
-use std::{io, os::unix::process::CommandExt, path::Path, process};
+use std::{io, os::unix::process::CommandExt, path::PathBuf, process};
 
 use iced::futures::SinkExt;
 use iced::futures::channel::mpsc::Sender as FuturesSender;
-use iced::widget::image;
 use iced::{Subscription, Task};
-use resvg::{tiny_skia, usvg};
 
 use crate::{
     launcher::Message,
@@ -44,7 +41,7 @@ pub type Id = String;
 
 #[derive(Debug, Clone)]
 pub enum EntryIcon {
-    Lazy(String),
+    Lazy(Id),
     Handle(iced::widget::image::Handle),
 }
 
@@ -173,7 +170,6 @@ impl AsyncScanner {
         F: AsyncFnOnce(&mut AsyncScanner),
     {
         let mut scanner = Self::new(sender, capacity).await;
-        // TODO: Return a Result and handle errors with the ScanState::Errored variant
         f(&mut scanner).await;
         scanner.finish().await;
     }
@@ -196,34 +192,4 @@ fn spawn_with_new_session(command: &mut process::Command) -> io::Result<process:
     }
 
     command.spawn()
-}
-
-fn rasterize_svg(path: &Path, size: u32) -> Option<tiny_skia::Pixmap> {
-    let svg_data = std::fs::read(path).ok()?;
-    let tree = usvg::Tree::from_data(&svg_data, &usvg::Options::default()).ok()?;
-
-    let mut pixmap = tiny_skia::Pixmap::new(size, size)?;
-    let transform = tiny_skia::Transform::from_scale(
-        size as f32 / tree.size().width(),
-        size as f32 / tree.size().height(),
-    );
-
-    resvg::render(&tree, transform, &mut pixmap.as_mut());
-    Some(pixmap)
-}
-
-// TODO: Maybe I should create my own IconType to distinguish
-// between  default and custom icons. I don't want to perform
-// any of this logic if the Icon Is a default one.
-fn load_raster_icon(path: &Path, size: u32) -> Option<image::Handle> {
-    let extension = path.extension()?.to_str()?;
-
-    match extension {
-        "svg" => {
-            let pixmap = rasterize_svg(path, size)?;
-            Some(image::Handle::from_rgba(size, size, pixmap.data().to_vec()))
-        }
-        "png" => Some(image::Handle::from_path(path)),
-        _ => None,
-    }
 }
