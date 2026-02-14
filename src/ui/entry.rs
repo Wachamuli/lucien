@@ -1,15 +1,19 @@
+use std::collections::HashMap;
+
+use fuzzy_matcher::{FuzzyMatcher, skim::SkimMatcherV2};
 use iced::{
     Alignment, Element, Font, Length, font,
-    widget::{Container, button, container, image, row, text},
+    widget::{Container, button, container, horizontal_space, image, row, text},
 };
 
 use crate::{
     launcher::{Message, SECTION_HEIGHT},
     preferences::{
+        Preferences,
         keybindings::Action,
         theme::{ButtonClass, CustomTheme, Entry as EntryStyle, TextClass},
     },
-    providers::Entry,
+    providers::{Entry, EntryIcon, Id},
     ui::icon::BakedIcons,
 };
 
@@ -34,14 +38,14 @@ pub fn display_entry<'a>(
     entry: &'a Entry,
     baked_icons: &'a BakedIcons,
     style: &'a EntryStyle,
-    index: usize,
+    visual_index: usize,
     is_selected: bool,
     is_favorite: bool,
 ) -> Element<'a, Message, CustomTheme> {
     let shortcut_label: Element<'a, Message, CustomTheme> = if is_selected {
         image(&baked_icons.enter).width(18).height(18).into()
-    } else if index < CTRL_SHORTCUTS.len() {
-        text(CTRL_SHORTCUTS[index])
+    } else if visual_index < CTRL_SHORTCUTS.len() {
+        text(CTRL_SHORTCUTS[visual_index])
             .size(12)
             .class(TextClass::TextDim)
             .into()
@@ -74,11 +78,16 @@ pub fn display_entry<'a>(
             .size(style.secondary_font_size)
             .class(TextClass::SecondaryText)
     });
-
-    let icon_view: Element<'a, Message, CustomTheme> = image(&entry.icon)
-        .width(style.icon_size)
-        .height(style.icon_size)
-        .into();
+    let icon_view: Element<'a, Message, CustomTheme> = match &entry.icon {
+        EntryIcon::Handle(handle) => image(handle)
+            .width(style.icon_size)
+            .height(style.icon_size)
+            .into(),
+        EntryIcon::Lazy(_) => image(&baked_icons.icon_placeholder)
+            .width(style.icon_size)
+            .height(style.icon_size)
+            .into(),
+    };
 
     button(
         row![
@@ -89,7 +98,7 @@ pub fn display_entry<'a>(
         .spacing(12)
         .align_y(iced::Alignment::Center),
     )
-    .on_press(Message::TriggerAction(Action::LaunchEntry(index)))
+    .on_press(Message::TriggerAction(Action::LaunchEntry(visual_index)))
     .padding(iced::Padding::from(&style.padding))
     .height(style.height)
     .width(Length::Fill)
@@ -119,4 +128,128 @@ pub fn section(name: &str) -> Container<'_, Message, CustomTheme> {
         bottom: 5.,
         left: 10.,
     })
+}
+
+#[derive(Default)]
+pub struct EntryRegistry {
+    entries: Vec<Entry>,
+    entry_indices: Vec<usize>,
+    entry_index_map: HashMap<Id, usize>,
+}
+
+impl EntryRegistry {
+    pub fn clear(&mut self) {
+        self.entries.clear();
+        self.entry_indices.clear();
+        self.entry_index_map.clear();
+    }
+
+    #[allow(dead_code)]
+    pub fn push(&mut self, entry: Entry) {
+        let id = entry.id.clone();
+        self.entries.push(entry);
+        let index = self.entries.len();
+        self.entry_indices.push(index);
+        self.entry_index_map.insert(id, index);
+    }
+
+    pub fn extend<I>(&mut self, entries: I)
+    where
+        I: IntoIterator<Item = Entry>,
+    {
+        let mut current_index = self.entries.len();
+
+        for entry in entries {
+            let id = entry.id.clone();
+
+            self.entry_index_map.insert(id, current_index);
+            self.entries.push(entry);
+            self.entry_indices.push(current_index);
+
+            current_index += 1;
+        }
+    }
+
+    pub fn get_by_index(&self, index: usize) -> Option<&Entry> {
+        self.entries.get(index)
+    }
+
+    pub fn get_mut_by_index(&mut self, index: usize) -> Option<&mut Entry> {
+        self.entries.get_mut(index)
+    }
+
+    #[allow(dead_code)]
+    pub fn get_by_id(&mut self, id: &Id) -> Option<&Entry> {
+        if let Some(index) = self.entry_index_map.get(id) {
+            return self.get_by_index(*index);
+        }
+
+        None
+    }
+
+    pub fn get_mut_by_id(&mut self, id: &Id) -> Option<&mut Entry> {
+        if let Some(index) = self.entry_index_map.get(id) {
+            return self.get_mut_by_index(*index);
+        }
+
+        None
+    }
+
+    #[allow(dead_code)]
+    pub fn len(&self) -> usize {
+        self.entries.len()
+    }
+
+    pub fn visible_len(&self) -> usize {
+        self.entry_indices.len()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.entries.is_empty()
+    }
+
+    pub fn is_visibles_empty(&self) -> bool {
+        self.entry_indices.is_empty()
+    }
+
+    pub fn iter_visible(&self) -> impl Iterator<Item = &Entry> {
+        self.entry_indices
+            .iter()
+            .filter_map(|&original_idx| self.entries.get(original_idx))
+    }
+
+    pub fn sort_by_rank(
+        &mut self,
+        preferences: &Preferences,
+        matcher: &SkimMatcherV2,
+        pattern: &str,
+    ) {
+        let mut ranked: Vec<(i64, usize)> = self
+            .entries
+            .iter()
+            .enumerate()
+            .filter_map(|(index, entry)| {
+                let score = matcher.fuzzy_match(&entry.main, pattern)?;
+                Some((score, index))
+            })
+            .collect();
+
+        ranked.sort_by(|(score_a, index_a), (score_b, index_b)| {
+            let entry_a = &self.entries[*index_a];
+            let entry_b = &self.entries[*index_b];
+            let a_is_fav = preferences.favorite_apps.contains(&entry_a.id);
+            let b_is_fav = preferences.favorite_apps.contains(&entry_b.id);
+
+            match (a_is_fav, b_is_fav) {
+                (true, false) => std::cmp::Ordering::Less,
+                (false, true) => std::cmp::Ordering::Greater,
+                _ => score_b.cmp(score_a),
+            }
+        });
+
+        self.entry_indices = ranked
+            .into_iter()
+            .map(|(_score, app_index)| app_index)
+            .collect();
+    }
 }

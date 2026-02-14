@@ -14,6 +14,7 @@ pub static ENTER: &[u8] = include_bytes!("../../assets/icons/enter.png");
 pub static STAR_ACTIVE: &[u8] = include_bytes!("../../assets/icons/star-fill.png");
 pub static CUBE_ACTIVE: &[u8] = include_bytes!("../../assets/icons/tabler--cube-active.png");
 pub static FOLDER_ACTIVE: &[u8] = include_bytes!("../../assets/icons/proicons--folder.png");
+pub static ICON_PLACEHOLDER: &[u8] = include_bytes!("../../assets/icons/icon-placeholder.png");
 
 pub static CUBE_INACTIVE: &[u8] = include_bytes!("../../assets/icons/tabler--cube.png");
 pub static FOLDER_INACTIVE: &[u8] =
@@ -34,10 +35,12 @@ pub static MULTIPART_GENERIC: &[u8] =
     include_bytes!("../../assets/mimetypes/package-x-generic.png");
 pub static MODEL_GENERIC: &[u8] = include_bytes!("../../assets/mimetypes/model.png");
 
+// TODO: I should have this struct declared and use in one place
 #[derive(Debug, Clone)]
 pub struct BakedIcons {
     pub magnifier: iced::widget::image::Handle,
     pub star_active: iced::widget::image::Handle,
     pub star_inactive: iced::widget::image::Handle,
     pub enter: iced::widget::image::Handle,
+    pub icon_placeholder: iced::widget::image::Handle,
 }

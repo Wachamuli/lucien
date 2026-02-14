@@ -1,12 +1,10 @@
-use std::path::PathBuf;
-use std::{io, os::unix::process::CommandExt, path::Path, process};
+use std::{io, os::unix::process::CommandExt, path::PathBuf, process};
 
 use iced::futures::SinkExt;
 use iced::futures::channel::mpsc::Sender as FuturesSender;
-use iced::widget::image;
 use iced::{Subscription, Task};
-use resvg::{tiny_skia, usvg};
 
+use crate::preferences::theme::Entry as EntryTheme;
 use crate::{
     launcher::Message,
     providers::{app::AppProvider, file::FileProvider},
@@ -31,16 +29,37 @@ impl ProviderKind {
     }
 }
 
-// TODO: A more robust Id type
-type Id = String;
+#[derive(Debug, Default, Clone)]
+pub struct LauncherContext {
+    pub path: PathBuf,
+    pub pattern: String,
+    pub entry_theme: EntryTheme,
+}
+
+impl LauncherContext {
+    pub fn with_path(path: impl Into<PathBuf>) -> Self {
+        Self {
+            path: path.into(),
+            ..Default::default()
+        }
+    }
+}
 
 pub trait Provider {
     // TODO: Maybe I should just return the stream, and make the subscription
     // logic in the subscripiton function
-    fn scan(&self, dir: PathBuf) -> Subscription<Message>;
+    fn scan(&self, context: LauncherContext) -> Subscription<Message>;
     // Maybe, launch could consume self? But I have to get rid of dynamic dispatch first.
     // I could avoid couple clones doing this.
     fn launch(&self, id: &str) -> Task<Message>;
+}
+
+pub type Id = String;
+
+#[derive(Debug, Clone)]
+pub enum EntryIcon {
+    Lazy(Id),
+    Handle(iced::widget::image::Handle),
 }
 
 #[derive(Debug, Clone)]
@@ -48,7 +67,7 @@ pub struct Entry {
     pub id: Id,
     pub main: String,
     pub secondary: Option<String>,
-    pub icon: iced::widget::image::Handle,
+    pub icon: EntryIcon,
 }
 
 impl Entry {
@@ -56,7 +75,7 @@ impl Entry {
         id: impl Into<String>,
         main: impl Into<String>,
         secondary: Option<impl Into<String>>,
-        icon: iced::widget::image::Handle,
+        icon: EntryIcon,
     ) -> Self {
         Self {
             id: id.into(),
@@ -79,14 +98,14 @@ pub enum ScannerState {
 }
 
 struct Scanner {
-    sender: tokio::sync::mpsc::Sender<Message>,
+    sender: FuturesSender<Message>,
     batch: Vec<Entry>,
     capacity: usize,
 }
 
 impl Scanner {
-    pub fn new(sender: tokio::sync::mpsc::Sender<Message>, capacity: usize) -> Self {
-        let _ = sender.blocking_send(Message::ScanEvent(ScannerState::Started));
+    pub fn new(mut sender: FuturesSender<Message>, capacity: usize) -> Self {
+        let _ = sender.try_send(Message::ScanEvent(ScannerState::Started));
         Self {
             sender,
             batch: Vec::with_capacity(capacity),
@@ -107,7 +126,7 @@ impl Scanner {
             let ready_batch = std::mem::replace(&mut self.batch, Vec::with_capacity(self.capacity));
             let _ = self
                 .sender
-                .blocking_send(Message::ScanEvent(ScannerState::Found(ready_batch)));
+                .try_send(Message::ScanEvent(ScannerState::Found(ready_batch)));
         }
     }
 }
@@ -117,7 +136,7 @@ impl Drop for Scanner {
         self.flush();
         let _ = self
             .sender
-            .blocking_send(Message::ScanEvent(ScannerState::Finished));
+            .try_send(Message::ScanEvent(ScannerState::Finished));
     }
 }
 
@@ -168,7 +187,6 @@ impl AsyncScanner {
         F: AsyncFnOnce(&mut AsyncScanner),
     {
         let mut scanner = Self::new(sender, capacity).await;
-        // TODO: Return a Result and handle errors with the ScanState::Errored variant
         f(&mut scanner).await;
         scanner.finish().await;
     }
@@ -191,34 +209,4 @@ fn spawn_with_new_session(command: &mut process::Command) -> io::Result<process:
     }
 
     command.spawn()
-}
-
-fn rasterize_svg(path: &Path, size: u32) -> Option<tiny_skia::Pixmap> {
-    let svg_data = std::fs::read(path).ok()?;
-    let tree = usvg::Tree::from_data(&svg_data, &usvg::Options::default()).ok()?;
-
-    let mut pixmap = tiny_skia::Pixmap::new(size, size)?;
-    let transform = tiny_skia::Transform::from_scale(
-        size as f32 / tree.size().width(),
-        size as f32 / tree.size().height(),
-    );
-
-    resvg::render(&tree, transform, &mut pixmap.as_mut());
-    Some(pixmap)
-}
-
-// TODO: Maybe I should create my own IconType to distinguish
-// between  default and custom icons. I don't want to perform
-// any of this logic if the Icon Is a default one.
-fn load_raster_icon(path: &Path, size: u32) -> Option<image::Handle> {
-    let extension = path.extension()?.to_str()?;
-
-    match extension {
-        "svg" => {
-            let pixmap = rasterize_svg(path, size)?;
-            Some(image::Handle::from_rgba(size, size, pixmap.data().to_vec()))
-        }
-        "png" => Some(image::Handle::from_path(path)),
-        _ => None,
-    }
 }
