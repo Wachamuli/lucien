@@ -35,7 +35,7 @@ impl Provider for FileProvider {
                 let (sender, mut receiver) =
                     futures::channel::mpsc::channel::<LauncherContext>(100);
                 let _ = output
-                    .send(Message::ScanEvent(ScannerState::Context(sender)))
+                    .send(Message::ScanEvent(ScannerState::Started2(sender)))
                     .await;
 
                 while let Some(context) = receiver.next().await {
@@ -77,9 +77,7 @@ impl Provider for FileProvider {
         let path = PathBuf::from(id);
 
         if path.is_dir() {
-            return Task::done(Message::ScannerContextChange(LauncherContext::with_path(
-                path,
-            )));
+            return Task::done(Message::ChangeDir(LauncherContext::with_path(path)));
         }
 
         let mut command = process::Command::new("xdg-open");

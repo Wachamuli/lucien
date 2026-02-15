@@ -92,7 +92,7 @@ pub const SCAN_BATCH_SIZE: usize = 10;
 #[derive(Debug, Clone)]
 pub enum ScannerState {
     // Merge context and started: Started(FuturesSender<LauncherContext>)
-    Context(FuturesSender<LauncherContext>),
+    Started2(FuturesSender<LauncherContext>),
     Started,
     Found(Vec<Entry>),
     Finished,

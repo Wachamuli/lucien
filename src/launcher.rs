@@ -50,6 +50,7 @@ pub struct Lucien {
     selected_entry: usize,
     last_viewport: Option<Viewport>,
     search_handle: Option<iced::task::Handle>,
+    scanner_tx: Option<iced::futures::channel::mpsc::Sender<LauncherContext>>,
 }
 
 #[to_layer_message]
@@ -64,6 +65,7 @@ pub enum Message {
     ScrollableViewport(Viewport),
     SaveIntoDisk(Result<PathBuf, Arc<tokio::io::Error>>),
     IconResolved { id: Id, handle: image::Handle },
+    ChangeDir(LauncherContext),
 }
 
 impl Lucien {
@@ -86,6 +88,7 @@ impl Lucien {
             selected_entry: 0,
             last_viewport: None,
             search_handle: None,
+            scanner_tx: None,
         };
 
         (initial_values, Task::none())
@@ -241,11 +244,19 @@ impl Lucien {
                         tracing::error!(error = error, "An error ocurred while scanning {id}");
                         Task::none()
                     }
-                    ScannerState::Context(mut sender) => {
+                    ScannerState::Started2(mut sender) => {
                         let _ = sender.try_send(self.context.clone());
+                        self.scanner_tx = Some(sender);
                         Task::none()
                     }
                 }
+            }
+
+            Message::ChangeDir(launcher_context) => {
+                if let Some(context) = &mut self.scanner_tx {
+                    let _ = context.try_send(launcher_context.clone());
+                }
+                Task::none()
             }
             Message::IconResolved { id, handle } => {
                 if let Some(entry) = self.entry_registry.get_mut_by_id(&id) {
