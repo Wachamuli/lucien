@@ -141,11 +141,7 @@ impl Lucien {
     }
 
     fn launch_entry(&self, index: usize) -> Task<Message> {
-        let Some(&original_index) = self.entry_registry.iter_visible().nth(index) else {
-            return Task::none();
-        };
-
-        if let Some(ent) = self.entry_registry.get_by_index(original_index) {
+        if let Some(ent) = &self.entry_registry.get_visible_by_index(index) {
             return self.provider.handler().launch(&ent.id);
         };
 
@@ -365,14 +361,12 @@ impl Lucien {
         let item_height = theme.launchpad.entry.height;
         let style = &self.preferences.theme.launchpad.entry;
 
-        // let mut starred_column =
-        //     Column::new().extend(show_sections.then(|| section("Starred").into()));
-        // let mut general_column =
-        //     Column::new().extend(show_sections.then(|| section("General").into()));
+        let mut starred_column =
+            Column::new().extend(show_sections.then(|| section("Starred").into()));
+        let mut general_column =
+            Column::new().extend(show_sections.then(|| section("General").into()));
 
-        let mut entries_column = Column::new();
-
-        for (index, entry) in self.entry_registry.iter_visible2().enumerate() {
+        for (index, entry) in self.entry_registry.iter_visible().enumerate() {
             let is_favorite = self.preferences.favorite_apps.contains(&entry.id);
             let is_selected = self.selected_entry == index;
 
@@ -386,14 +380,12 @@ impl Lucien {
             .height(item_height)
             .width(Length::Fill);
 
-            entries_column = entries_column.push(entry_view);
+            if is_favorite && self.prompt.is_empty() {
+                starred_column = starred_column.push(entry_view);
+            } else {
+                general_column = general_column.push(entry_view);
+            }
         }
-
-        // if is_favorite && self.prompt.is_empty() {
-        //     starred_column = starred_column.push(entry_view);
-        // } else {
-        //     general_column = general_column.push(entry_view);
-        // }
 
         let results_not_found = (self.entry_registry.is_visibles_empty() && self.is_scan_completed)
             .then(|| {
@@ -413,9 +405,8 @@ impl Lucien {
         let show_results = !self.entry_registry.is_empty() || self.is_scan_completed;
 
         let content = Column::new()
-            .push(entries_column)
-            // .push(starred_column)
-            // .push(general_column)
+            .push(starred_column)
+            .push(general_column)
             .extend(results_not_found)
             .padding(theme.launchpad.padding)
             .width(Length::Fill);

@@ -131,25 +131,25 @@ pub fn section(name: &str) -> Container<'_, Message, CustomTheme> {
 
 #[derive(Default)]
 pub struct EntryRegistry {
-    physical: Vec<Entry>,
-    r#virtual: Vec<usize>,
-    virtual_mapping: HashMap<Id, usize>,
+    entries: Vec<Entry>,
+    projection: Vec<usize>,
+    registry: HashMap<Id, usize>,
 }
 
 impl EntryRegistry {
     pub fn clear(&mut self) {
-        self.physical.clear();
-        self.r#virtual.clear();
-        self.virtual_mapping.clear();
+        self.entries.clear();
+        self.projection.clear();
+        self.registry.clear();
     }
 
     #[allow(dead_code)]
     pub fn push(&mut self, entry: Entry) {
         let id = entry.id.clone();
-        let index = self.physical.len();
-        self.physical.push(entry);
-        self.r#virtual.push(index);
-        self.virtual_mapping.insert(id, index);
+        let index = self.entries.len();
+        self.entries.push(entry);
+        self.projection.push(index);
+        self.registry.insert(id, index);
     }
 
     pub fn extend<I>(&mut self, entries: I)
@@ -158,25 +158,30 @@ impl EntryRegistry {
     {
         for entry in entries {
             let id = entry.id.clone();
-            let current_index = self.physical.len();
+            let current_index = self.entries.len();
 
-            self.virtual_mapping.insert(id, current_index);
-            self.physical.push(entry);
-            self.r#virtual.push(current_index);
+            self.registry.insert(id, current_index);
+            self.entries.push(entry);
+            self.projection.push(current_index);
         }
     }
 
+    pub fn get_visible_by_index(&self, visual_index: usize) -> Option<&Entry> {
+        let &original_index = self.projection.get(visual_index)?;
+        self.entries.get(original_index)
+    }
+
     pub fn get_by_index(&self, index: usize) -> Option<&Entry> {
-        self.physical.get(index)
+        self.entries.get(index)
     }
 
     pub fn get_mut_by_index(&mut self, index: usize) -> Option<&mut Entry> {
-        self.physical.get_mut(index)
+        self.entries.get_mut(index)
     }
 
     #[allow(dead_code)]
     pub fn get_by_id(&self, id: &Id) -> Option<&Entry> {
-        if let Some(index) = self.virtual_mapping.get(id) {
+        if let Some(index) = self.registry.get(id) {
             return self.get_by_index(*index);
         }
 
@@ -184,7 +189,7 @@ impl EntryRegistry {
     }
 
     pub fn get_mut_by_id(&mut self, id: &Id) -> Option<&mut Entry> {
-        if let Some(index) = self.virtual_mapping.get(id) {
+        if let Some(index) = self.registry.get(id) {
             return self.get_mut_by_index(*index);
         }
 
@@ -193,27 +198,23 @@ impl EntryRegistry {
 
     #[allow(dead_code)]
     pub fn len(&self) -> usize {
-        self.physical.len()
+        self.entries.len()
     }
 
     pub fn visible_len(&self) -> usize {
-        self.r#virtual.len()
+        self.projection.len()
     }
 
     pub fn is_empty(&self) -> bool {
-        self.physical.is_empty()
+        self.entries.is_empty()
     }
 
     pub fn is_visibles_empty(&self) -> bool {
-        self.r#virtual.is_empty()
+        self.projection.is_empty()
     }
 
-    pub fn iter_visible2(&self) -> impl Iterator<Item = &Entry> {
-        self.r#virtual.iter().map(|&index| &self.physical[index])
-    }
-
-    pub fn iter_visible(&self) -> impl Iterator<Item = &usize> {
-        self.r#virtual.iter()
+    pub fn iter_visible(&self) -> impl Iterator<Item = &Entry> {
+        self.projection.iter().map(|&index| &self.entries[index])
     }
 
     pub fn sort_by_rank(
@@ -223,7 +224,7 @@ impl EntryRegistry {
         pattern: &str,
     ) {
         let mut ranked: Vec<(i64, usize)> = self
-            .physical
+            .entries
             .iter()
             .enumerate()
             .filter_map(|(index, entry)| {
@@ -233,8 +234,8 @@ impl EntryRegistry {
             .collect();
 
         ranked.sort_by(|(score_a, index_a), (score_b, index_b)| {
-            let entry_a = &self.physical[*index_a];
-            let entry_b = &self.physical[*index_b];
+            let entry_a = &self.entries[*index_a];
+            let entry_b = &self.entries[*index_b];
             let a_is_fav = preferences.favorite_apps.contains(&entry_a.id);
             let b_is_fav = preferences.favorite_apps.contains(&entry_b.id);
 
@@ -245,7 +246,7 @@ impl EntryRegistry {
             }
         });
 
-        self.r#virtual = ranked
+        self.projection = ranked
             .into_iter()
             .map(|(_score, app_index)| app_index)
             .collect();
