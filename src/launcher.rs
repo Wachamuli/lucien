@@ -1,7 +1,4 @@
-use iced::{
-    Element,
-    widget::{self, operation::AbsoluteOffset},
-};
+use iced::{Element, widget};
 use std::{
     env,
     path::PathBuf,
@@ -13,8 +10,8 @@ use iced::{
     Alignment, Length, Subscription, Task,
     widget::{
         Column, Container, container, image, row,
-        scrollable::{self, RelativeOffset, Viewport},
-        text, text_input,
+        scrollable::{RelativeOffset, Viewport},
+        text,
     },
 };
 use iced_layershell::to_layer_message;
@@ -31,10 +28,7 @@ use crate::{
     },
     ui::{
         entry::{self, EntryRegistry, FONT_ITALIC, section},
-        icon::{
-            CUBE_ACTIVE, CUBE_INACTIVE, ENTER, FOLDER_ACTIVE, FOLDER_INACTIVE, ICON_PLACEHOLDER,
-            MAGNIFIER, STAR_ACTIVE, STAR_INACTIVE,
-        },
+        icon::{CUBE_ACTIVE, CUBE_INACTIVE, FOLDER_ACTIVE, FOLDER_INACTIVE, MAGNIFIER},
         prompt::Prompt,
     },
 };
@@ -356,7 +350,6 @@ impl Lucien {
             let item_height = theme.launchpad.entry.height;
             let style = &self.preferences.theme.launchpad.entry;
 
-            // TODO widget::lazy entries?
             let entry_view = container(entry::display_entry(
                 entry,
                 style,

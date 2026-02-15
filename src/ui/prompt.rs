@@ -1,6 +1,6 @@
 use iced::{
     Alignment, Element,
-    widget::{self, Container, Id, container, image, row, space, text_input},
+    widget::{Container, Id, container, image, row, space, text_input},
 };
 
 use crate::preferences::theme::CustomTheme;

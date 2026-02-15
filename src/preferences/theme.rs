@@ -1,9 +1,7 @@
 use std::ops::Deref;
 use std::str::FromStr;
 
-use iced::theme::Base as IcedBaseTheme;
 use iced::widget::{button, container, rule, scrollable, text, text_input};
-// use iced_layershell::DefaultStyle;
 use serde::{self, Deserialize, Serialize};
 
 const DEFAULT_BACKGROUND_COLOR: &str = "#1F1F1FF2";
@@ -25,8 +23,8 @@ pub struct CustomTheme {
     pub separator: Separator,
 }
 
-impl IcedBaseTheme for CustomTheme {
-    fn default(preference: iced::theme::Mode) -> Self {
+impl iced::theme::Base for CustomTheme {
+    fn default(_: iced::theme::Mode) -> Self {
         CustomTheme {
             ..Default::default()
         }
@@ -223,14 +221,14 @@ pub struct Entry {
     pub background: HexColor,
     pub focus_highlight: HexColor,
     pub hover_highlight: HexColor,
-    pub font_size: u16,
-    pub secondary_font_size: u16,
+    pub font_size: u32,
+    pub secondary_font_size: u32,
     pub main_text: HexColor,
     pub secondary_text: HexColor,
     pub padding: Padding,
     pub height: f32,
     pub border: Border,
-    pub icon_size: u16,
+    pub icon_size: u32,
 }
 
 impl Default for Entry {
@@ -422,16 +420,9 @@ impl scrollable::Catalog for CustomTheme {
             gap: None,
             auto_scroll: scrollable::AutoScroll {
                 background: iced::Background::Color(*self.background),
-                border: iced::Border {
-                    radius: iced::border::radius(5),
-                    ..Default::default()
-                },
-                shadow: iced::Shadow {
-                    color: *self.background,
-                    offset: iced::Vector::new(0.0, 0.0),
-                    blur_radius: 5.0,
-                },
-                icon: iced::Color::WHITE,
+                border: iced::Border::default(),
+                shadow: iced::Shadow::default(),
+                icon: iced::Color::TRANSPARENT,
             },
         }
     }
@@ -451,7 +442,6 @@ impl rule::Catalog for CustomTheme {
     fn style(&self, _class: &Self::Class<'_>) -> rule::Style {
         rule::Style {
             color: *self.separator.color,
-            // width: self.separator.width,
             fill_mode: iced::widget::rule::FillMode::Padded(self.separator.padding),
             radius: self.separator.radius.into(),
             snap: false,

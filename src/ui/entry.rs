@@ -3,7 +3,7 @@ use std::collections::HashMap;
 use fuzzy_matcher::{FuzzyMatcher, skim::SkimMatcherV2};
 use iced::{
     Alignment, Element, Font, Length, font,
-    widget::{Container, button, container, image, row, text},
+    widget::{Container, button, container, image, row, space, text},
 };
 
 use crate::{
@@ -19,7 +19,6 @@ use crate::{
 
 const CTRL_SHORTCUTS: [&str; 5] = ["Ctrl+1", "Ctrl+2", "Ctrl+3", "Ctrl+4", "Ctrl+5"];
 
-// Maybe unnecesarry constant, this is stack based. (but nice to have ergonomic?)
 const FONT_BOLD: Font = Font {
     weight: font::Weight::Bold,
     family: font::Family::SansSerif,
@@ -49,7 +48,7 @@ pub fn display_entry<'a>(
             .class(TextClass::TextDim)
             .into()
     } else {
-        text("").into()
+        space::horizontal().into()
     };
 
     let star_handle = if is_favorite {
@@ -69,23 +68,23 @@ pub fn display_entry<'a>(
         .push(shortcut_label)
         .align_y(Alignment::Center);
     let main = text(&entry.main)
-        .size(style.font_size as u32)
+        .size(style.font_size)
         .width(Length::Fill)
         .font(FONT_BOLD);
     let secondary = entry.secondary.as_ref().map(|desc| {
         text(desc)
-            .size(style.secondary_font_size as u32)
+            .size(style.secondary_font_size)
             .class(TextClass::SecondaryText)
             .into()
     });
     let icon_view: Element<'a, Message, CustomTheme> = match &entry.icon {
         EntryIcon::Handle(handle) => image(handle)
-            .width(style.icon_size as u32)
-            .height(style.icon_size as u32)
+            .width(style.icon_size)
+            .height(style.icon_size)
             .into(),
         EntryIcon::Lazy(_) => image(ICON_PLACEHOLDER.clone())
-            .width(style.icon_size as u32)
-            .height(style.icon_size as u32)
+            .width(style.icon_size)
+            .height(style.icon_size)
             .into(),
     };
 
@@ -157,16 +156,13 @@ impl EntryRegistry {
     where
         I: IntoIterator<Item = Entry>,
     {
-        let mut current_index = self.entries.len();
-
         for entry in entries {
             let id = entry.id.clone();
+            let current_index = self.entries.len();
 
             self.entry_index_map.insert(id, current_index);
             self.entries.push(entry);
             self.entry_indices.push(current_index);
-
-            current_index += 1;
         }
     }
 
