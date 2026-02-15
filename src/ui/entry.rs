@@ -36,14 +36,14 @@ pub const FONT_ITALIC: Font = Font {
 pub fn display_entry<'a>(
     entry: &'a Entry,
     style: &'a EntryStyle,
-    visual_index: usize,
+    index: usize,
     is_selected: bool,
     is_favorite: bool,
 ) -> Element<'a, Message, CustomTheme> {
     let shortcut_label: Element<'a, Message, CustomTheme> = if is_selected {
         image(ENTER.clone()).width(18).height(18).into()
-    } else if visual_index < CTRL_SHORTCUTS.len() {
-        text(CTRL_SHORTCUTS[visual_index])
+    } else if index < CTRL_SHORTCUTS.len() {
+        text(CTRL_SHORTCUTS[index])
             .size(12)
             .class(TextClass::TextDim)
             .into()
@@ -97,7 +97,7 @@ pub fn display_entry<'a>(
         .spacing(12)
         .align_y(iced::Alignment::Center),
     )
-    .on_press(Message::TriggerAction(Action::LaunchEntry(visual_index)))
+    .on_press(Message::TriggerAction(Action::LaunchEntry(index)))
     .padding(iced::Padding::from(&style.padding))
     .height(style.height)
     .width(Length::Fill)
@@ -131,25 +131,25 @@ pub fn section(name: &str) -> Container<'_, Message, CustomTheme> {
 
 #[derive(Default)]
 pub struct EntryRegistry {
-    entries: Vec<Entry>,
-    entry_indices: Vec<usize>,
-    entry_index_map: HashMap<Id, usize>,
+    physical: Vec<Entry>,
+    r#virtual: Vec<usize>,
+    virtual_mapping: HashMap<Id, usize>,
 }
 
 impl EntryRegistry {
     pub fn clear(&mut self) {
-        self.entries.clear();
-        self.entry_indices.clear();
-        self.entry_index_map.clear();
+        self.physical.clear();
+        self.r#virtual.clear();
+        self.virtual_mapping.clear();
     }
 
     #[allow(dead_code)]
     pub fn push(&mut self, entry: Entry) {
         let id = entry.id.clone();
-        let index = self.entries.len();
-        self.entries.push(entry);
-        self.entry_indices.push(index);
-        self.entry_index_map.insert(id, index);
+        let index = self.physical.len();
+        self.physical.push(entry);
+        self.r#virtual.push(index);
+        self.virtual_mapping.insert(id, index);
     }
 
     pub fn extend<I>(&mut self, entries: I)
@@ -158,25 +158,25 @@ impl EntryRegistry {
     {
         for entry in entries {
             let id = entry.id.clone();
-            let current_index = self.entries.len();
+            let current_index = self.physical.len();
 
-            self.entry_index_map.insert(id, current_index);
-            self.entries.push(entry);
-            self.entry_indices.push(current_index);
+            self.virtual_mapping.insert(id, current_index);
+            self.physical.push(entry);
+            self.r#virtual.push(current_index);
         }
     }
 
     pub fn get_by_index(&self, index: usize) -> Option<&Entry> {
-        self.entries.get(index)
+        self.physical.get(index)
     }
 
     pub fn get_mut_by_index(&mut self, index: usize) -> Option<&mut Entry> {
-        self.entries.get_mut(index)
+        self.physical.get_mut(index)
     }
 
     #[allow(dead_code)]
     pub fn get_by_id(&self, id: &Id) -> Option<&Entry> {
-        if let Some(index) = self.entry_index_map.get(id) {
+        if let Some(index) = self.virtual_mapping.get(id) {
             return self.get_by_index(*index);
         }
 
@@ -184,7 +184,7 @@ impl EntryRegistry {
     }
 
     pub fn get_mut_by_id(&mut self, id: &Id) -> Option<&mut Entry> {
-        if let Some(index) = self.entry_index_map.get(id) {
+        if let Some(index) = self.virtual_mapping.get(id) {
             return self.get_mut_by_index(*index);
         }
 
@@ -193,23 +193,27 @@ impl EntryRegistry {
 
     #[allow(dead_code)]
     pub fn len(&self) -> usize {
-        self.entries.len()
+        self.physical.len()
     }
 
     pub fn visible_len(&self) -> usize {
-        self.entry_indices.len()
+        self.r#virtual.len()
     }
 
     pub fn is_empty(&self) -> bool {
-        self.entries.is_empty()
+        self.physical.is_empty()
     }
 
     pub fn is_visibles_empty(&self) -> bool {
-        self.entry_indices.is_empty()
+        self.r#virtual.is_empty()
     }
 
-    pub fn iter_visible(&self) -> impl Iterator<Item = &Entry> {
-        self.entry_indices.iter().map(|&index| &self.entries[index])
+    pub fn iter_visible2(&self) -> impl Iterator<Item = &Entry> {
+        self.r#virtual.iter().map(|&index| &self.physical[index])
+    }
+
+    pub fn iter_visible(&self) -> impl Iterator<Item = &usize> {
+        self.r#virtual.iter()
     }
 
     pub fn sort_by_rank(
@@ -219,7 +223,7 @@ impl EntryRegistry {
         pattern: &str,
     ) {
         let mut ranked: Vec<(i64, usize)> = self
-            .entries
+            .physical
             .iter()
             .enumerate()
             .filter_map(|(index, entry)| {
@@ -229,8 +233,8 @@ impl EntryRegistry {
             .collect();
 
         ranked.sort_by(|(score_a, index_a), (score_b, index_b)| {
-            let entry_a = &self.entries[*index_a];
-            let entry_b = &self.entries[*index_b];
+            let entry_a = &self.physical[*index_a];
+            let entry_b = &self.physical[*index_b];
             let a_is_fav = preferences.favorite_apps.contains(&entry_a.id);
             let b_is_fav = preferences.favorite_apps.contains(&entry_b.id);
 
@@ -241,7 +245,7 @@ impl EntryRegistry {
             }
         });
 
-        self.entry_indices = ranked
+        self.r#virtual = ranked
             .into_iter()
             .map(|(_score, app_index)| app_index)
             .collect();

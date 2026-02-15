@@ -141,11 +141,15 @@ impl Lucien {
     }
 
     fn launch_entry(&self, index: usize) -> Task<Message> {
-        let Some(entry) = self.entry_registry.get_by_index(index) else {
+        let Some(&original_index) = self.entry_registry.iter_visible().nth(index) else {
             return Task::none();
         };
 
-        self.provider.handler().launch(&entry.id)
+        if let Some(ent) = self.entry_registry.get_by_index(original_index) {
+            return self.provider.handler().launch(&ent.id);
+        };
+
+        Task::none()
     }
 
     fn handle_action(&mut self, action: Action) -> Task<Message> {
@@ -358,35 +362,38 @@ impl Lucien {
     pub fn view(&self) -> Container<'_, Message, CustomTheme> {
         let theme = &self.preferences.theme;
         let show_sections = self.prompt.is_empty() && !self.preferences.favorite_apps.is_empty();
+        let item_height = theme.launchpad.entry.height;
+        let style = &self.preferences.theme.launchpad.entry;
 
-        let mut starred_column =
-            Column::new().extend(show_sections.then(|| section("Starred").into()));
-        let mut general_column =
-            Column::new().extend(show_sections.then(|| section("General").into()));
+        // let mut starred_column =
+        //     Column::new().extend(show_sections.then(|| section("Starred").into()));
+        // let mut general_column =
+        //     Column::new().extend(show_sections.then(|| section("General").into()));
 
-        for (visual_index, entry) in self.entry_registry.iter_visible().enumerate() {
+        let mut entries_column = Column::new();
+
+        for (index, entry) in self.entry_registry.iter_visible2().enumerate() {
             let is_favorite = self.preferences.favorite_apps.contains(&entry.id);
-            let is_selected = self.selected_entry == visual_index;
-
-            let item_height = theme.launchpad.entry.height;
-            let style = &self.preferences.theme.launchpad.entry;
+            let is_selected = self.selected_entry == index;
 
             let entry_view = container(entry::display_entry(
-                entry,
+                &entry,
                 style,
-                visual_index,
+                index,
                 is_selected,
                 is_favorite,
             ))
             .height(item_height)
             .width(Length::Fill);
 
-            if is_favorite && self.prompt.is_empty() {
-                starred_column = starred_column.push(entry_view);
-            } else {
-                general_column = general_column.push(entry_view);
-            }
+            entries_column = entries_column.push(entry_view);
         }
+
+        // if is_favorite && self.prompt.is_empty() {
+        //     starred_column = starred_column.push(entry_view);
+        // } else {
+        //     general_column = general_column.push(entry_view);
+        // }
 
         let results_not_found = (self.entry_registry.is_visibles_empty() && self.is_scan_completed)
             .then(|| {
@@ -406,8 +413,9 @@ impl Lucien {
         let show_results = !self.entry_registry.is_empty() || self.is_scan_completed;
 
         let content = Column::new()
-            .push(starred_column)
-            .push(general_column)
+            .push(entries_column)
+            // .push(starred_column)
+            // .push(general_column)
             .extend(results_not_found)
             .padding(theme.launchpad.padding)
             .width(Length::Fill);
