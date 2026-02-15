@@ -12,9 +12,10 @@ use iced::{Subscription, Task, futures::SinkExt, widget::image};
 use resvg::{tiny_skia, usvg};
 
 use crate::providers::Scanner;
+use crate::ui::entry::EntryIcon;
 use crate::{
     launcher::Message,
-    providers::{EntryIcon, Id},
+    providers::Id,
     ui::icon::{APPLICATION_DEFAULT, ICON_EXTENSIONS, ICON_SIZES},
 };
 

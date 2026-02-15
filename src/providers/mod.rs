@@ -1,10 +1,10 @@
+use crate::ui::entry::Entry;
 use std::{io, os::unix::process::CommandExt, path::PathBuf, process};
 
 use iced::futures::SinkExt;
 use iced::futures::channel::mpsc::Sender as FuturesSender;
 use iced::{Subscription, Task};
 
-use crate::preferences::theme::Entry as EntryTheme;
 use crate::{
     launcher::Message,
     providers::{app::AppProvider, file::FileProvider},
@@ -55,36 +55,6 @@ pub trait Provider {
 }
 
 pub type Id = String;
-
-#[derive(Debug, Clone)]
-pub enum EntryIcon {
-    Lazy(Id),
-    Handle(iced::widget::image::Handle),
-}
-
-#[derive(Debug, Clone)]
-pub struct Entry {
-    pub id: Id,
-    pub main: String,
-    pub secondary: Option<String>,
-    pub icon: EntryIcon,
-}
-
-impl Entry {
-    fn new(
-        id: impl Into<String>,
-        main: impl Into<String>,
-        secondary: Option<impl Into<String>>,
-        icon: EntryIcon,
-    ) -> Self {
-        Self {
-            id: id.into(),
-            main: main.into(),
-            secondary: secondary.map(Into::into),
-            icon,
-        }
-    }
-}
 
 // TODO: Move to configuration file
 pub const SCAN_BATCH_SIZE: usize = 10;

@@ -1,4 +1,4 @@
-use iced::{Element, futures::SinkExt, widget};
+use iced::{Element, widget};
 use std::{
     env,
     path::PathBuf,
@@ -23,11 +23,11 @@ use crate::{
         theme::{ContainerClass, CustomTheme, TextClass},
     },
     providers::{
-        EntryIcon, Id, LauncherContext, ProviderKind, ScannerState, app::AppProvider,
-        file::FileProvider,
+        Id, LauncherContext, ProviderKind, ScannerState, app::AppProvider, file::FileProvider,
     },
     ui::{
-        entry::{self, EntryRegistry, FONT_ITALIC, section},
+        self,
+        entry::{EntryIcon, EntryRegistry, FONT_ITALIC, section},
         icon::{CUBE_ACTIVE, CUBE_INACTIVE, FOLDER_ACTIVE, FOLDER_INACTIVE, MAGNIFIER},
         prompt::Prompt,
     },
@@ -141,8 +141,8 @@ impl Lucien {
     }
 
     fn launch_entry(&self, index: usize) -> Task<Message> {
-        if let Some(ent) = &self.entry_registry.get_visible_by_index(index) {
-            return self.provider.handler().launch(&ent.id);
+        if let Some(entry) = &self.entry_registry.get_visible_by_index(index) {
+            return self.provider.handler().launch(&entry.id);
         };
 
         Task::none()
@@ -370,7 +370,7 @@ impl Lucien {
             let is_favorite = self.preferences.favorite_apps.contains(&entry.id);
             let is_selected = self.selected_entry == index;
 
-            let entry_view = container(entry::display_entry(
+            let entry_view = container(ui::entry::display_entry(
                 &entry,
                 style,
                 index,

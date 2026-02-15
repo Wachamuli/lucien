@@ -5,7 +5,6 @@ use std::{
 
 use iced::{
     Subscription, Task,
-    advanced::text::Paragraph,
     futures::{self, SinkExt, StreamExt},
     widget::image,
 };
@@ -13,13 +12,16 @@ use iced::{
 use crate::{
     launcher::Message,
     providers::{AsyncScanner, LauncherContext, SCAN_BATCH_SIZE},
-    ui::icon::{
-        APPLICATION_DEFAULT, AUDIO_GENERIC, FOLDER_DEFAULT, FONT_GENERIC, IMAGE_GENERIC,
-        MODEL_GENERIC, MULTIPART_GENERIC, TEXT_GENERIC, VIDEO_GENERIC,
+    ui::{
+        entry::{Entry, EntryIcon},
+        icon::{
+            APPLICATION_DEFAULT, AUDIO_GENERIC, FOLDER_DEFAULT, FONT_GENERIC, IMAGE_GENERIC,
+            MODEL_GENERIC, MULTIPART_GENERIC, TEXT_GENERIC, VIDEO_GENERIC,
+        },
     },
 };
 
-use super::{Entry, EntryIcon, Provider, ScannerState, spawn_with_new_session};
+use super::{Provider, ScannerState, spawn_with_new_session};
 
 #[derive(Debug, Clone, Copy)]
 pub struct FileProvider;

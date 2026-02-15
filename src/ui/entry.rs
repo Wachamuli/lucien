@@ -13,7 +13,7 @@ use crate::{
         keybindings::Action,
         theme::{ButtonClass, CustomTheme, Entry as EntryStyle, TextClass},
     },
-    providers::{Entry, EntryIcon, Id},
+    providers::Id,
     ui::icon::{ENTER, ICON_PLACEHOLDER, STAR_ACTIVE, STAR_INACTIVE},
 };
 
@@ -32,6 +32,36 @@ pub const FONT_ITALIC: Font = Font {
     style: font::Style::Italic,
     stretch: font::Stretch::Normal,
 };
+
+#[derive(Debug, Clone)]
+pub enum EntryIcon {
+    Lazy(Id),
+    Handle(iced::widget::image::Handle),
+}
+
+#[derive(Debug, Clone)]
+pub struct Entry {
+    pub id: Id,
+    pub main: String,
+    pub secondary: Option<String>,
+    pub icon: EntryIcon,
+}
+
+impl Entry {
+    pub fn new(
+        id: impl Into<String>,
+        main: impl Into<String>,
+        secondary: Option<impl Into<String>>,
+        icon: EntryIcon,
+    ) -> Self {
+        Self {
+            id: id.into(),
+            main: main.into(),
+            secondary: secondary.map(Into::into),
+            icon,
+        }
+    }
+}
 
 pub fn display_entry<'a>(
     entry: &'a Entry,
