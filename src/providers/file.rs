@@ -3,7 +3,12 @@ use std::{
     process,
 };
 
-use iced::{Subscription, Task, widget::image};
+use iced::{
+    Subscription, Task,
+    advanced::text::Paragraph,
+    futures::{self, SinkExt, StreamExt},
+    widget::image,
+};
 
 use crate::{
     launcher::Message,
@@ -14,7 +19,7 @@ use crate::{
     },
 };
 
-use super::{Entry, EntryIcon, Provider, spawn_with_new_session};
+use super::{Entry, EntryIcon, Provider, ScannerState, spawn_with_new_session};
 
 #[derive(Debug, Clone, Copy)]
 pub struct FileProvider;
@@ -24,12 +29,20 @@ impl Provider for FileProvider {
     // as valid file names. Right now, these entries are being skip.
     // In order to fix this, id should be a PathBuf or similar.
     // This funcion call is the culprit: Path::to_str() -> Option<&str>
-    fn scan(&self, _context: LauncherContext) -> Subscription<Message> {
+    fn scan(&self) -> Subscription<Message> {
         iced::Subscription::run(|| {
-            iced::stream::channel(100, async move |output| {
-                AsyncScanner::run(output, SCAN_BATCH_SIZE, async move |scanner| {
-                    let icon_size = 64;
-                    let path = PathBuf::from(env!("HOME"));
+            iced::stream::channel(100, async move |mut output| {
+                let (sender, mut receiver) =
+                    futures::channel::mpsc::channel::<LauncherContext>(100);
+                let _ = output
+                    .send(Message::ScanEvent(ScannerState::Context(sender)))
+                    .await;
+
+                while let Some(context) = receiver.next().await {
+                    let mut scanner = AsyncScanner::new(output.clone(), SCAN_BATCH_SIZE).await;
+                    let path = context.path;
+                    let icon_size = context.icon_size;
+
                     if let Some(parent_directory) = path.parent() {
                         let parent_entry = Entry::new(
                             parent_directory.to_str().unwrap(),
@@ -39,6 +52,7 @@ impl Provider for FileProvider {
                         );
                         scanner.load(parent_entry).await;
                     }
+
                     let mut child_directories = tokio::fs::read_dir(path).await.unwrap();
                     while let Some(child_dir) = child_directories.next_entry().await.unwrap() {
                         let path = child_dir.path();
@@ -52,8 +66,9 @@ impl Provider for FileProvider {
                         );
                         scanner.load(child_entry).await;
                     }
-                })
-                .await;
+
+                    scanner.finish().await
+                }
             })
         })
     }

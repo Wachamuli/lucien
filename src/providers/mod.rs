@@ -33,7 +33,7 @@ impl ProviderKind {
 pub struct LauncherContext {
     pub path: PathBuf,
     pub pattern: String,
-    pub entry_theme: EntryTheme,
+    pub icon_size: u32,
 }
 
 impl LauncherContext {
@@ -48,7 +48,7 @@ impl LauncherContext {
 pub trait Provider {
     // TODO: Maybe I should just return the stream, and make the subscription
     // logic in the subscripiton function
-    fn scan(&self, context: LauncherContext) -> Subscription<Message>;
+    fn scan(&self) -> Subscription<Message>;
     // Maybe, launch could consume self? But I have to get rid of dynamic dispatch first.
     // I could avoid couple clones doing this.
     fn launch(&self, id: &str) -> Task<Message>;
@@ -91,6 +91,8 @@ pub const SCAN_BATCH_SIZE: usize = 10;
 
 #[derive(Debug, Clone)]
 pub enum ScannerState {
+    // Merge context and started: Started(FuturesSender<LauncherContext>)
+    Context(FuturesSender<LauncherContext>),
     Started,
     Found(Vec<Entry>),
     Finished,

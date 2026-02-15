@@ -1,4 +1,4 @@
-use iced::{Element, widget};
+use iced::{Element, futures::SinkExt, widget};
 use std::{
     env,
     path::PathBuf,
@@ -41,6 +41,7 @@ static SCROLLABLE_ID: LazyLock<iced::widget::Id> = LazyLock::new(iced::widget::I
 
 pub struct Lucien {
     entry_registry: EntryRegistry,
+    context: LauncherContext,
     is_scan_completed: bool,
     provider: ProviderKind,
     prompt: String,
@@ -49,7 +50,6 @@ pub struct Lucien {
     selected_entry: usize,
     last_viewport: Option<Viewport>,
     search_handle: Option<iced::task::Handle>,
-    context: LauncherContext,
 }
 
 #[to_layer_message]
@@ -69,7 +69,11 @@ pub enum Message {
 impl Lucien {
     pub fn new(preferences: Preferences) -> (Self, Task<Message>) {
         let default_provider = ProviderKind::App(AppProvider);
-        let context = LauncherContext::with_path(env!("HOME"));
+        let context = LauncherContext {
+            path: PathBuf::from(env!("HOME")),
+            pattern: String::new(),
+            icon_size: preferences.theme.launchpad.entry.icon_size,
+        };
 
         let initial_values = Self {
             entry_registry: EntryRegistry::default(),
@@ -215,28 +219,34 @@ impl Lucien {
 
                 widget::operation::snap_to(SCROLLABLE_ID.clone(), RelativeOffset { x: 0.0, y: 0.0 })
             }
-            Message::ScanEvent(scan_event) => match scan_event {
-                ScannerState::Started => {
-                    self.prompt.clear();
-                    self.entry_registry.clear();
-                    self.is_scan_completed = false;
-                    // TODO: Move to an Init message, because the prompt should be ready
-                    // instantly.
-                    widget::operation::focus(TEXT_INPUT_ID.clone())
+            Message::ScanEvent(scan_event) => {
+                match scan_event {
+                    ScannerState::Started => {
+                        self.prompt.clear();
+                        self.entry_registry.clear();
+                        self.is_scan_completed = false;
+                        // TODO: Move to an Init message, because the prompt should be ready
+                        // instantly.
+                        widget::operation::focus(TEXT_INPUT_ID.clone())
+                    }
+                    ScannerState::Found(batch) => {
+                        self.entry_registry.extend(batch);
+                        Task::none()
+                    }
+                    ScannerState::Finished => {
+                        self.is_scan_completed = true;
+                        Task::none()
+                    }
+                    ScannerState::Errored(id, error) => {
+                        tracing::error!(error = error, "An error ocurred while scanning {id}");
+                        Task::none()
+                    }
+                    ScannerState::Context(mut sender) => {
+                        let _ = sender.try_send(self.context.clone());
+                        Task::none()
+                    }
                 }
-                ScannerState::Found(batch) => {
-                    self.entry_registry.extend(batch);
-                    Task::none()
-                }
-                ScannerState::Finished => {
-                    self.is_scan_completed = true;
-                    Task::none()
-                }
-                ScannerState::Errored(id, error) => {
-                    tracing::error!(error = error, "An error ocurred while scanning {id}");
-                    Task::none()
-                }
-            },
+            }
             Message::IconResolved { id, handle } => {
                 if let Some(entry) = self.entry_registry.get_mut_by_id(&id) {
                     entry.icon = EntryIcon::Handle(handle);
@@ -320,7 +330,7 @@ impl Lucien {
         use iced::{event, keyboard};
 
         Subscription::batch([
-            self.provider.handler().scan(self.context.clone()),
+            self.provider.handler().scan(),
             event::listen_with(move |event, _, _| match event {
                 IcedKeyboardEvent(keyboard::Event::KeyPressed { modifiers, key, .. }) => {
                     let keystrokes = Keystrokes::from_iced_keystrokes(modifiers, key);

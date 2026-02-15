@@ -11,7 +11,7 @@ use iced::futures;
 use iced::{Subscription, Task, futures::SinkExt, widget::image};
 use resvg::{tiny_skia, usvg};
 
-use crate::providers::{LauncherContext, Scanner};
+use crate::providers::Scanner;
 use crate::{
     launcher::Message,
     providers::{EntryIcon, Id},
@@ -24,7 +24,7 @@ use super::{Entry, Provider, SCAN_BATCH_SIZE, spawn_with_new_session};
 pub struct AppProvider;
 
 impl Provider for AppProvider {
-    fn scan(&self, _context: LauncherContext) -> Subscription<Message> {
+    fn scan(&self) -> Subscription<Message> {
         Subscription::run(|| {
             iced::stream::channel(100, async move |output| {
                 let spawn_handler = tokio::runtime::Handle::current();
