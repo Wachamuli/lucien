@@ -1,4 +1,7 @@
-use iced::{Element, widget};
+use iced::{
+    Element,
+    widget::{self, operation::AbsoluteOffset},
+};
 use std::{
     env,
     path::PathBuf,
@@ -22,9 +25,7 @@ use crate::{
         keybindings::{Action, Keystrokes},
         theme::{ContainerClass, CustomTheme, TextClass},
     },
-    providers::{
-        Id, LauncherContext, ProviderKind, ScannerState, app::AppProvider, file::FileProvider,
-    },
+    providers::{Context, Id, ProviderKind, ScannerState, app::AppProvider, file::FileProvider},
     ui::{
         self,
         entry::{EntryIcon, EntryRegistry, FONT_ITALIC, section},
@@ -41,7 +42,7 @@ static SCROLLABLE_ID: LazyLock<iced::widget::Id> = LazyLock::new(iced::widget::I
 
 pub struct Lucien {
     entry_registry: EntryRegistry,
-    context: LauncherContext,
+    context: Context,
     is_scan_completed: bool,
     provider: ProviderKind,
     prompt: String,
@@ -50,14 +51,13 @@ pub struct Lucien {
     selected_entry: usize,
     last_viewport: Option<Viewport>,
     search_handle: Option<iced::task::Handle>,
-    scanner_tx: Option<iced::futures::channel::mpsc::Sender<LauncherContext>>,
+    scanner_tx: Option<iced::futures::channel::mpsc::Sender<Context>>,
 }
 
 #[to_layer_message]
 #[derive(Debug, Clone)]
 pub enum Message {
     ScanEvent(ScannerState),
-    ScannerContextChange(LauncherContext),
     PromptChange(String),
     DebouncedFilter,
     TriggerAction(Action),
@@ -65,13 +65,12 @@ pub enum Message {
     ScrollableViewport(Viewport),
     SaveIntoDisk(Result<PathBuf, Arc<tokio::io::Error>>),
     IconResolved { id: Id, handle: image::Handle },
-    ChangeDir(LauncherContext),
 }
 
 impl Lucien {
     pub fn new(preferences: Preferences) -> (Self, Task<Message>) {
         let default_provider = ProviderKind::App(AppProvider);
-        let context = LauncherContext {
+        let context = Context {
             path: PathBuf::from(env!("HOME")),
             pattern: String::new(),
             icon_size: preferences.theme.launchpad.entry.icon_size,
@@ -216,18 +215,17 @@ impl Lucien {
 
     pub fn update(&mut self, message: Message) -> Task<Message> {
         match message {
-            Message::ScannerContextChange(context) => {
-                self.selected_entry = 0;
-                self.context = context;
-
-                widget::operation::snap_to(SCROLLABLE_ID.clone(), RelativeOffset { x: 0.0, y: 0.0 })
-            }
             Message::ScanEvent(scan_event) => {
                 match scan_event {
-                    ScannerState::Started => {
+                    ScannerState::Started(mut tx) => {
                         self.prompt.clear();
+                        self.selected_entry = 0;
                         self.entry_registry.clear();
+
                         self.is_scan_completed = false;
+                        let _ = tx.try_send(self.context.clone());
+                        self.scanner_tx = Some(tx);
+
                         // TODO: Move to an Init message, because the prompt should be ready
                         // instantly.
                         widget::operation::focus(TEXT_INPUT_ID.clone())
@@ -244,19 +242,25 @@ impl Lucien {
                         tracing::error!(error = error, "An error ocurred while scanning {id}");
                         Task::none()
                     }
-                    ScannerState::Started2(mut sender) => {
-                        let _ = sender.try_send(self.context.clone());
-                        self.scanner_tx = Some(sender);
-                        Task::none()
+                    ScannerState::ContextChange(context) => {
+                        let Some(tx) = &mut self.scanner_tx else {
+                            return Task::none();
+                        };
+
+                        self.context = context;
+
+                        self.entry_registry.clear();
+                        self.selected_entry = 0;
+                        self.prompt = String::new();
+
+                        let _ = tx.try_send(self.context.clone());
+
+                        widget::operation::scroll_to(
+                            SCROLLABLE_ID.clone(),
+                            AbsoluteOffset { x: 0.0, y: 0.0 },
+                        )
                     }
                 }
-            }
-
-            Message::ChangeDir(launcher_context) => {
-                if let Some(context) = &mut self.scanner_tx {
-                    let _ = context.try_send(launcher_context.clone());
-                }
-                Task::none()
             }
             Message::IconResolved { id, handle } => {
                 if let Some(entry) = self.entry_registry.get_mut_by_id(&id) {
@@ -318,7 +322,10 @@ impl Lucien {
                 self.entry_registry
                     .sort_by_rank(&self.preferences, &self.matcher, &self.prompt);
 
-                widget::operation::snap_to(SCROLLABLE_ID.clone(), RelativeOffset { x: 0.0, y: 0.0 })
+                widget::operation::scroll_to(
+                    SCROLLABLE_ID.clone(),
+                    AbsoluteOffset { x: 0.0, y: 0.0 },
+                )
             }
             Message::ScrollableViewport(viewport) => {
                 self.last_viewport = Some(viewport);
@@ -357,9 +364,9 @@ impl Lucien {
 
     pub fn view(&self) -> Container<'_, Message, CustomTheme> {
         let theme = &self.preferences.theme;
-        let show_sections = self.prompt.is_empty() && !self.preferences.favorite_apps.is_empty();
         let item_height = theme.launchpad.entry.height;
         let style = &self.preferences.theme.launchpad.entry;
+        let show_sections = self.prompt.is_empty() && !self.preferences.favorite_apps.is_empty();
 
         let mut starred_column =
             Column::new().extend(show_sections.then(|| section("Starred").into()));

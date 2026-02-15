@@ -1,8 +1,8 @@
 use crate::ui::entry::Entry;
 use std::{io, os::unix::process::CommandExt, path::PathBuf, process};
 
-use iced::futures::SinkExt;
-use iced::futures::channel::mpsc::Sender as FuturesSender;
+use iced::futures::channel::mpsc::{Receiver as FuturesReceiver, Sender as FuturesSender};
+use iced::futures::{SinkExt, StreamExt};
 use iced::{Subscription, Task};
 
 use crate::{
@@ -30,13 +30,13 @@ impl ProviderKind {
 }
 
 #[derive(Debug, Default, Clone)]
-pub struct LauncherContext {
+pub struct Context {
     pub path: PathBuf,
     pub pattern: String,
     pub icon_size: u32,
 }
 
-impl LauncherContext {
+impl Context {
     pub fn with_path(path: impl Into<PathBuf>) -> Self {
         Self {
             path: path.into(),
@@ -61,9 +61,8 @@ pub const SCAN_BATCH_SIZE: usize = 10;
 
 #[derive(Debug, Clone)]
 pub enum ScannerState {
-    // Merge context and started: Started(FuturesSender<LauncherContext>)
-    Started2(FuturesSender<LauncherContext>),
-    Started,
+    ContextChange(Context),
+    Started(FuturesSender<Context>),
     Found(Vec<Entry>),
     Finished,
     Errored(Id, String),
@@ -71,15 +70,18 @@ pub enum ScannerState {
 
 struct Scanner {
     sender: FuturesSender<Message>,
+    // receiver: FuturesReceiver<Context>,
     batch: Vec<Entry>,
     capacity: usize,
 }
 
 impl Scanner {
     pub fn new(mut sender: FuturesSender<Message>, capacity: usize) -> Self {
-        let _ = sender.try_send(Message::ScanEvent(ScannerState::Started));
+        // let (tx, receiver) = iced::futures::channel::mpsc::channel::<Context>(100);
+        // let _ = sender.try_send(Message::ScanEvent(ScannerState::Started(tx)));
         Self {
             sender,
+            // receiver,
             batch: Vec::with_capacity(capacity),
             capacity,
         }
@@ -114,15 +116,20 @@ impl Drop for Scanner {
 
 pub struct AsyncScanner {
     sender: FuturesSender<Message>,
+    receiver: FuturesReceiver<Context>,
     batch: Vec<Entry>,
     capacity: usize,
 }
 
 impl AsyncScanner {
     async fn new(mut sender: FuturesSender<Message>, capacity: usize) -> Self {
-        let _ = sender.send(Message::ScanEvent(ScannerState::Started)).await;
+        let (tx, receiver) = iced::futures::channel::mpsc::channel::<Context>(100);
+        let _ = sender
+            .send(Message::ScanEvent(ScannerState::Started(tx)))
+            .await;
         Self {
             sender,
+            receiver,
             capacity,
             batch: Vec::with_capacity(capacity),
         }
@@ -146,7 +153,7 @@ impl AsyncScanner {
         }
     }
 
-    async fn finish(mut self) {
+    async fn finish(&mut self) {
         self.flush().await;
         let _ = self
             .sender
@@ -156,11 +163,13 @@ impl AsyncScanner {
 
     pub async fn run<F>(sender: FuturesSender<Message>, capacity: usize, f: F)
     where
-        F: AsyncFnOnce(&mut AsyncScanner),
+        F: AsyncFn((Context, &mut AsyncScanner)),
     {
         let mut scanner = Self::new(sender, capacity).await;
-        f(&mut scanner).await;
-        scanner.finish().await;
+        while let Some(context) = scanner.receiver.next().await {
+            f((context, &mut scanner)).await;
+            scanner.finish().await;
+        }
     }
 }
 

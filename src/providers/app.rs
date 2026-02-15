@@ -7,11 +7,11 @@ use std::{
 
 use gio::prelude::{AppInfoExt, IconExt};
 
-use iced::futures;
+use iced::futures::{self, StreamExt};
 use iced::{Subscription, Task, futures::SinkExt, widget::image};
 use resvg::{tiny_skia, usvg};
 
-use crate::providers::Scanner;
+use crate::providers::{Context, Scanner, ScannerState};
 use crate::ui::entry::EntryIcon;
 use crate::{
     launcher::Message,
@@ -29,12 +29,21 @@ impl Provider for AppProvider {
         Subscription::run(|| {
             iced::stream::channel(100, async move |output| {
                 let spawn_handler = tokio::runtime::Handle::current();
+                let (tx, mut rx) = iced::futures::channel::mpsc::channel::<Context>(100);
+
+                // Notify UI that we are ready and give it the sender
+                let _ = output
+                    .clone()
+                    .send(Message::ScanEvent(ScannerState::Started(tx)))
+                    .await;
+
                 tokio::task::spawn_blocking(move || {
                     let xdg_dirs = Arc::new(xdg::BaseDirectories::new());
+                    let mut scanner = Scanner::new(output.clone(), SCAN_BATCH_SIZE);
+
                     let apps = gio::AppInfo::all()
                         .into_iter()
                         .filter(|app| app.should_show());
-                    let mut scanner = Scanner::new(output.clone(), SCAN_BATCH_SIZE);
 
                     for app in apps {
                         let meta = AppMetadata::from(app);
@@ -48,7 +57,8 @@ impl Provider for AppProvider {
                             let output_clone = output.clone();
                             let xdg_dirs_clone = xdg_dirs.clone();
                             spawn_handler.spawn(async move {
-                                resolve_icon(meta.id, icon_name, xdg_dirs_clone, output_clone).await
+                                resolve_icon(meta.id, icon_name, 64, xdg_dirs_clone, output_clone)
+                                    .await
                             });
                         }
                         scanner.load(entry);
@@ -88,11 +98,12 @@ impl Provider for AppProvider {
 async fn resolve_icon(
     id: Id,
     name: String,
+    size: u32,
     xdg_dirs: Arc<xdg::BaseDirectories>,
     mut output: futures::channel::mpsc::Sender<Message>,
 ) {
     if let Some(xdg_path) = get_icon_path_from_xdgicon(name, xdg_dirs.clone()).await {
-        if let Some(handle) = load_raster_icon(xdg_path, 64).await {
+        if let Some(handle) = load_raster_icon(xdg_path, size).await {
             let _ = output.send(Message::IconResolved { id, handle }).await;
             return;
         }
