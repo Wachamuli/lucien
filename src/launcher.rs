@@ -1,11 +1,12 @@
 use iced::{
     Element,
-    widget::{self, operation::AbsoluteOffset},
+    widget::{self, mouse_area, operation::AbsoluteOffset},
 };
 use std::{
     env,
     path::PathBuf,
     sync::{Arc, LazyLock},
+    usize,
 };
 
 use fuzzy_matcher::skim::SkimMatcherV2;
@@ -49,6 +50,7 @@ pub struct Lucien {
     matcher: SkimMatcherV2,
     preferences: Preferences,
     selected_entry: usize,
+    hovered_entry: usize,
     last_viewport: Option<Viewport>,
     search_handle: Option<iced::task::Handle>,
     scanner_tx: Option<iced::futures::channel::mpsc::Sender<Context>>,
@@ -65,6 +67,8 @@ pub enum Message {
     ScrollableViewport(Viewport),
     SaveIntoDisk(Result<PathBuf, Arc<tokio::io::Error>>),
     IconResolved { id: Id, handle: image::Handle },
+    HoveredEntry(usize),
+    HoveredExit(usize),
 }
 
 impl Lucien {
@@ -77,6 +81,8 @@ impl Lucien {
         };
 
         let initial_values = Self {
+            selected_entry: 0,
+            hovered_entry: 0,
             entry_registry: EntryRegistry::default(),
             is_scan_completed: false,
             context,
@@ -84,7 +90,6 @@ impl Lucien {
             prompt: String::new(),
             matcher: SkimMatcherV2::default(),
             preferences,
-            selected_entry: 0,
             last_viewport: None,
             search_handle: None,
             scanner_tx: None,
@@ -98,7 +103,7 @@ impl Lucien {
     }
 
     fn toggle_favorite(&mut self, index: usize) -> Task<Message> {
-        let Some(app) = self.entry_registry.get_by_index(index) else {
+        let Some(app) = self.entry_registry.get_visible_by_index(index) else {
             return Task::none();
         };
 
@@ -331,6 +336,16 @@ impl Lucien {
                 self.last_viewport = Some(viewport);
                 Task::none()
             }
+            Message::HoveredEntry(index) => {
+                self.hovered_entry = index;
+                Task::none()
+            }
+            Message::HoveredExit(index) => {
+                if self.hovered_entry == index {
+                    self.hovered_entry = self.selected_entry;
+                }
+                Task::none()
+            }
             Message::SetInputRegion(_action_callback) => todo!(),
             Message::AnchorChange(_anchor) => todo!(),
             Message::AnchorSizeChange(_anchor, _) => todo!(),
@@ -376,16 +391,22 @@ impl Lucien {
         for (index, entry) in self.entry_registry.iter_visible().enumerate() {
             let is_favorite = self.preferences.favorite_apps.contains(&entry.id);
             let is_selected = self.selected_entry == index;
+            let is_hovered = self.hovered_entry == index;
 
-            let entry_view = container(ui::entry::display_entry(
-                &entry,
-                style,
-                index,
-                is_selected,
-                is_favorite,
-            ))
-            .height(item_height)
-            .width(Length::Fill);
+            let entry_view = mouse_area(
+                container(ui::entry::display_entry(
+                    &entry,
+                    style,
+                    index,
+                    is_selected,
+                    is_hovered,
+                    is_favorite,
+                ))
+                .height(item_height)
+                .width(Length::Fill),
+            )
+            .on_enter(Message::HoveredEntry(index))
+            .on_exit(Message::HoveredExit(index));
 
             if is_favorite && self.prompt.is_empty() {
                 starred_column = starred_column.push(entry_view);

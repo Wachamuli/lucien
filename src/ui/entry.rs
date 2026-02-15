@@ -68,6 +68,7 @@ pub fn display_entry<'a>(
     style: &'a EntryStyle,
     index: usize,
     is_selected: bool,
+    is_hovered: bool,
     is_favorite: bool,
 ) -> Element<'a, Message, CustomTheme> {
     let shortcut_label: Element<'a, Message, CustomTheme> = if is_selected {
@@ -78,7 +79,7 @@ pub fn display_entry<'a>(
             .class(TextClass::TextDim)
             .into()
     } else {
-        space::horizontal().into()
+        space::horizontal().width(0).into()
     };
 
     let star_handle = if is_favorite {
@@ -87,12 +88,13 @@ pub fn display_entry<'a>(
         STAR_INACTIVE.clone()
     };
 
-    let mark_favorite: Option<Element<'a, Message, CustomTheme>> = is_selected.then(|| {
-        button(image(star_handle).width(18).height(18))
-            .on_press(Message::TriggerAction(Action::ToggleFavorite))
-            .class(ButtonClass::Transparent)
-            .into()
-    });
+    let mark_favorite: Option<Element<'a, Message, CustomTheme>> = (is_selected || is_hovered)
+        .then(|| {
+            button(image(star_handle).width(18).height(18))
+                .on_press(Message::TriggerAction(Action::ToggleFavorite))
+                .class(ButtonClass::Transparent)
+                .into()
+        });
     let actions = row![]
         .extend(mark_favorite)
         .push(shortcut_label)

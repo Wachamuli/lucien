@@ -3,11 +3,7 @@ use std::{
     process,
 };
 
-use iced::{
-    Subscription, Task,
-    futures::{self, SinkExt, StreamExt},
-    widget::image,
-};
+use iced::{Subscription, Task, widget::image};
 
 use crate::{
     launcher::Message,
