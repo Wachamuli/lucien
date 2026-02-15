@@ -146,8 +146,8 @@ impl EntryRegistry {
     #[allow(dead_code)]
     pub fn push(&mut self, entry: Entry) {
         let id = entry.id.clone();
-        self.entries.push(entry);
         let index = self.entries.len();
+        self.entries.push(entry);
         self.entry_indices.push(index);
         self.entry_index_map.insert(id, index);
     }
@@ -175,7 +175,7 @@ impl EntryRegistry {
     }
 
     #[allow(dead_code)]
-    pub fn get_by_id(&mut self, id: &Id) -> Option<&Entry> {
+    pub fn get_by_id(&self, id: &Id) -> Option<&Entry> {
         if let Some(index) = self.entry_index_map.get(id) {
             return self.get_by_index(*index);
         }
@@ -209,9 +209,7 @@ impl EntryRegistry {
     }
 
     pub fn iter_visible(&self) -> impl Iterator<Item = &Entry> {
-        self.entry_indices
-            .iter()
-            .filter_map(|&original_idx| self.entries.get(original_idx))
+        self.entry_indices.iter().map(|&index| &self.entries[index])
     }
 
     pub fn sort_by_rank(

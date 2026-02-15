@@ -305,7 +305,7 @@ impl button::Catalog for CustomTheme {
                 ..Default::default()
             },
             (ButtonClass::Itemlist, _) => button::Style {
-                background: Some(iced::Background::Color(*entry_style.background)),
+                background: Some(iced::Background::Color(iced::Color::TRANSPARENT)),
                 text_color: *entry_style.main_text,
                 border: iced::Border::from(&entry_style.border),
                 ..Default::default()
@@ -419,7 +419,7 @@ impl scrollable::Catalog for CustomTheme {
             },
             gap: None,
             auto_scroll: scrollable::AutoScroll {
-                background: iced::Background::Color(*self.background),
+                background: iced::Background::Color(iced::Color::TRANSPARENT),
                 border: iced::Border::default(),
                 shadow: iced::Shadow::default(),
                 icon: iced::Color::TRANSPARENT,
