@@ -70,7 +70,6 @@ pub enum ScannerState {
 
 struct Scanner {
     sender: FuturesSender<Message>,
-    // receiver: FuturesReceiver<Context>,
     batch: Vec<Entry>,
     capacity: usize,
 }
@@ -113,6 +112,29 @@ impl Scanner {
         let _ = self
             .sender
             .try_send(Message::ScanEvent(ScannerState::Finished));
+    }
+
+    fn run<F>(sender: FuturesSender<Message>, f: F)
+    where
+        F: Fn(&Context, &mut Scanner),
+    {
+        // FIXME: maybe block_on can cause a deadlock
+        let context = iced::futures::executor::block_on(async {
+            request_context(sender.clone())
+                .await
+                .select_next_some()
+                .await
+        });
+        let mut scanner = Scanner::new(sender.clone(), context.scan_batch_size);
+        // FIXME: maybe block_on can cause a deadlock
+        let mut context_rx = iced::futures::executor::block_on(request_context(sender.clone()));
+
+        // FIXME: This loop is blocking the Close on out of focus action
+        while let Some(context) = iced::futures::executor::block_on(context_rx.next()) {
+            scanner.start();
+            f(&context, &mut scanner);
+            scanner.finish();
+        }
     }
 }
 
@@ -172,7 +194,7 @@ impl AsyncScanner {
 
     pub async fn run<F>(sender: FuturesSender<Message>, f: F)
     where
-        F: AsyncFn((&Context, &mut AsyncScanner)),
+        F: AsyncFn(&Context, &mut AsyncScanner),
     {
         // I'm using two channels
         // It's a waste of resources knowing that I'm receiving the
@@ -185,7 +207,7 @@ impl AsyncScanner {
         let mut context_receiver = request_context(sender).await;
         while let Some(ref context) = context_receiver.next().await {
             scanner.start().await;
-            f((context, &mut scanner)).await;
+            f(context, &mut scanner).await;
             scanner.finish().await;
         }
     }

@@ -30,7 +30,7 @@ impl Provider for FileProvider {
     fn scan(&self) -> Subscription<Message> {
         iced::Subscription::run(|| {
             iced::stream::channel(100, async |output| {
-                AsyncScanner::run(output, async |(ctx, scanner)| {
+                AsyncScanner::run(output, async |ctx, scanner| {
                     if let Some(parent_directory) = ctx.path.parent() {
                         let parent_entry = Entry::new(
                             parent_directory.to_str().unwrap(),
