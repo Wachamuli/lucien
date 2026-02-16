@@ -17,7 +17,7 @@ use crate::{
     },
 };
 
-use super::{Provider, ScannerState, spawn_with_new_session};
+use super::{Provider, spawn_with_new_session};
 
 #[derive(Debug, Clone, Copy)]
 pub struct FileProvider;
@@ -68,7 +68,7 @@ impl Provider for FileProvider {
 
         if path.is_dir() {
             let new_context = Context::with_path(path);
-            return Task::done(Message::ScanEvent(ScannerState::ContextChange(new_context)));
+            return Task::done(Message::ContextChange(new_context));
         }
 
         let mut command = process::Command::new("xdg-open");

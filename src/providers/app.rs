@@ -11,7 +11,7 @@ use iced::futures::{self, StreamExt};
 use iced::{Subscription, Task, futures::SinkExt, widget::image};
 use resvg::{tiny_skia, usvg};
 
-use crate::providers::{Context, Scanner, ScannerState};
+use crate::providers::{Context, Scanner, ScannerState, request_context};
 use crate::ui::entry::EntryIcon;
 use crate::{
     launcher::Message,
@@ -27,53 +27,74 @@ pub struct AppProvider;
 impl Provider for AppProvider {
     fn scan(&self) -> Subscription<Message> {
         Subscription::run(|| {
-            iced::stream::channel(100, async move |mut output| {
+            iced::stream::channel(100, async move |output| {
                 let spawn_handler = tokio::runtime::Handle::current();
-                let (tx, mut rx) = iced::futures::channel::mpsc::channel::<Context>(100);
-
                 let _ = output
                     .clone()
-                    .send(Message::ScanEvent(ScannerState::Started(tx)))
+                    .send(Message::ScanEvent(ScannerState::Started))
                     .await;
 
                 tokio::task::spawn_blocking(move || {
-                    println!("While out");
-                    while let matcher = rx.try_next() {
-                        if let Ok(Some(context)) = matcher {
-                            let xdg_dirs = Arc::new(xdg::BaseDirectories::new());
-                            let mut scanner = Scanner::new(output.clone(), context.scan_batch_size);
+                    let mut context_receiver = {
+                        let mut sender = output.clone();
+                        let (tx, rec) = iced::futures::channel::mpsc::channel::<Context>(100);
+                        let _ = sender.try_send(Message::RequestContext(tx));
+                        rec
+                    };
 
-                            let apps = gio::AppInfo::all()
-                                .into_iter()
-                                .filter(|app| app.should_show());
+                    // FIXME: This loop is blocking the Close on out of focus action
+                    while let ma = context_receiver.try_next() {
+                        match ma {
+                            Ok(Some(context)) => {
+                                let mut scanner =
+                                    Scanner::new(output.clone(), context.scan_batch_size);
+                                let mut ctx_rx = {
+                                    let mut sender = output.clone();
+                                    let (tx, rec) =
+                                        iced::futures::channel::mpsc::channel::<Context>(100);
+                                    let _ = sender.try_send(Message::RequestContext(tx));
+                                    rec
+                                };
+                                while let matcher = ctx_rx.try_next() {
+                                    if let Ok(Some(context)) = matcher {
+                                        let xdg_dirs = Arc::new(xdg::BaseDirectories::new());
+                                        scanner.start();
 
-                            for app in apps {
-                                let meta = AppMetadata::from(app);
-                                let entry = Entry::new(
-                                    meta.id.clone(),
-                                    meta.name,
-                                    meta.description,
-                                    meta.icon.clone(),
-                                );
-                                if let EntryIcon::Lazy(icon_name) = meta.icon {
-                                    let output_clone = output.clone();
-                                    let xdg_dirs_clone = xdg_dirs.clone();
-                                    spawn_handler.spawn(async move {
-                                        resolve_icon(
-                                            meta.id,
-                                            icon_name,
-                                            64,
-                                            xdg_dirs_clone,
-                                            output_clone,
-                                        )
-                                        .await
-                                    });
+                                        let apps = gio::AppInfo::all()
+                                            .into_iter()
+                                            .filter(|app| app.should_show());
+
+                                        for app in apps {
+                                            let meta = AppMetadata::from(app);
+                                            let entry = Entry::new(
+                                                meta.id.clone(),
+                                                meta.name,
+                                                meta.description,
+                                                meta.icon.clone(),
+                                            );
+                                            if let EntryIcon::Lazy(icon_name) = meta.icon {
+                                                let output_clone = output.clone();
+                                                let xdg_dirs_clone = xdg_dirs.clone();
+                                                spawn_handler.spawn(async move {
+                                                    resolve_icon(
+                                                        meta.id,
+                                                        icon_name,
+                                                        64,
+                                                        xdg_dirs_clone,
+                                                        output_clone,
+                                                    )
+                                                    .await
+                                                });
+                                            }
+                                            scanner.load(entry);
+                                        }
+
+                                        scanner.finish();
+                                    }
                                 }
-                                scanner.load(entry);
                             }
-
-                            scanner.flush();
-                            let _ = output.try_send(Message::ScanEvent(ScannerState::Finished));
+                            Ok(None) => println!("Nothing"),
+                            Err(e) => println!("Error: {e}"),
                         }
                     }
                 });

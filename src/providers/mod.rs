@@ -5,10 +5,7 @@ use iced::futures::channel::mpsc::{Receiver as FuturesReceiver, Sender as Future
 use iced::futures::{SinkExt, StreamExt};
 use iced::{Subscription, Task};
 
-use crate::{
-    launcher::Message,
-    providers::{app::AppProvider, file::FileProvider},
-};
+use crate::{launcher::Message, providers::app::AppProvider, providers::file::FileProvider};
 
 pub mod app;
 pub mod file;
@@ -57,10 +54,15 @@ pub trait Provider {
 
 pub type Id = String;
 
+pub async fn request_context(mut sender: FuturesSender<Message>) -> FuturesReceiver<Context> {
+    let (tx, rx) = iced::futures::channel::mpsc::channel::<Context>(100);
+    let _ = sender.send(Message::RequestContext(tx)).await;
+    rx
+}
+
 #[derive(Debug, Clone)]
 pub enum ScannerState {
-    ContextChange(Context),
-    Started(FuturesSender<Context>),
+    Started,
     Found(Vec<Entry>),
     Finished,
     Errored(Id, String),
@@ -74,15 +76,19 @@ struct Scanner {
 }
 
 impl Scanner {
-    pub fn new(mut sender: FuturesSender<Message>, capacity: usize) -> Self {
-        // let (tx, receiver) = iced::futures::channel::mpsc::channel::<Context>(100);
-        // let _ = sender.try_send(Message::ScanEvent(ScannerState::Started(tx)));
+    pub fn new(sender: FuturesSender<Message>, capacity: usize) -> Self {
         Self {
             sender,
             // receiver,
             batch: Vec::with_capacity(capacity),
             capacity,
         }
+    }
+
+    pub fn start(&mut self) {
+        let _ = self
+            .sender
+            .try_send(Message::ScanEvent(ScannerState::Started));
     }
 
     pub fn load(&mut self, entry: Entry) {
@@ -101,10 +107,8 @@ impl Scanner {
                 .try_send(Message::ScanEvent(ScannerState::Found(ready_batch)));
         }
     }
-}
 
-impl Drop for Scanner {
-    fn drop(&mut self) {
+    fn finish(&mut self) {
         self.flush();
         let _ = self
             .sender
@@ -112,44 +116,45 @@ impl Drop for Scanner {
     }
 }
 
+impl Drop for Scanner {
+    fn drop(&mut self) {
+        self.finish();
+    }
+}
+
 pub struct AsyncScanner {
     sender: FuturesSender<Message>,
-    receiver: FuturesReceiver<Context>,
     batch: Vec<Entry>,
-    capacity: Option<usize>,
+    capacity: usize,
 }
 
 impl AsyncScanner {
-    async fn new(mut sender: FuturesSender<Message>) -> Self {
-        println!("New async scanner");
-        let (tx, receiver) = iced::futures::channel::mpsc::channel::<Context>(100);
-        let _ = sender
-            .send(Message::ScanEvent(ScannerState::Started(tx)))
-            .await;
+    fn new(sender: FuturesSender<Message>, capacity: usize) -> Self {
         Self {
             sender,
-            receiver,
-            capacity: None,
-            batch: Vec::new(),
+            capacity,
+            batch: Vec::with_capacity(capacity),
         }
     }
 
-    async fn set_capcity(&mut self, capacity: usize) {
-        self.capacity = Some(capacity);
+    async fn start(&mut self) {
+        let _ = self
+            .sender
+            .send(Message::ScanEvent(ScannerState::Started))
+            .await;
     }
 
     async fn load(&mut self, entry: Entry) {
         self.batch.push(entry);
 
-        if self.batch.len() >= self.capacity.unwrap() {
+        if self.batch.len() >= self.capacity {
             self.flush().await;
         }
     }
 
     async fn flush(&mut self) {
         if !self.batch.is_empty() {
-            let ready_batch =
-                std::mem::replace(&mut self.batch, Vec::with_capacity(self.capacity.unwrap()));
+            let ready_batch = std::mem::replace(&mut self.batch, Vec::with_capacity(self.capacity));
             let _ = self
                 .sender
                 .send(Message::ScanEvent(ScannerState::Found(ready_batch)))
@@ -169,9 +174,17 @@ impl AsyncScanner {
     where
         F: AsyncFn((&Context, &mut AsyncScanner)),
     {
-        let mut scanner = AsyncScanner::new(sender).await;
-        while let Some(ref context) = scanner.receiver.next().await {
-            scanner.set_capcity(context.scan_batch_size).await;
+        // I'm using two channels
+        // It's a waste of resources knowing that I'm receiving the
+        // same datatype.
+        // One here
+        let mut context_receiver = request_context(sender.clone()).await;
+        let ctx = context_receiver.select_next_some().await;
+        let mut scanner = AsyncScanner::new(sender.clone(), ctx.scan_batch_size);
+        // Second here
+        let mut context_receiver = request_context(sender).await;
+        while let Some(ref context) = context_receiver.next().await {
+            scanner.start().await;
             f((context, &mut scanner)).await;
             scanner.finish().await;
         }

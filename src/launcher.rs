@@ -59,6 +59,8 @@ pub struct Lucien {
 #[to_layer_message]
 #[derive(Debug, Clone)]
 pub enum Message {
+    RequestContext(iced::futures::channel::mpsc::Sender<Context>),
+    ContextChange(Context),
     ScanEvent(ScannerState),
     PromptChange(String),
     DebouncedFilter,
@@ -221,16 +223,40 @@ impl Lucien {
 
     pub fn update(&mut self, message: Message) -> Task<Message> {
         match message {
+            Message::RequestContext(mut sender) => {
+                // This should be async
+                let _ = sender.try_send(self.context.clone());
+                self.scanner_tx = Some(sender);
+                Task::none()
+            }
+            Message::ContextChange(context) => {
+                let Some(tx) = &mut self.scanner_tx else {
+                    return Task::none();
+                };
+
+                self.context = context;
+
+                self.entry_registry.clear();
+                self.selected_entry = 0;
+                self.prompt = String::new();
+
+                let _ = tx.try_send(self.context.clone());
+
+                widget::operation::scroll_to(
+                    SCROLLABLE_ID.clone(),
+                    AbsoluteOffset { x: 0.0, y: 0.0 },
+                )
+            }
             Message::ScanEvent(scan_event) => {
                 match scan_event {
-                    ScannerState::Started(mut tx) => {
+                    ScannerState::Started => {
                         self.prompt.clear();
                         self.selected_entry = 0;
                         self.entry_registry.clear();
 
                         self.is_scan_completed = false;
-                        let _ = tx.try_send(self.context.clone());
-                        self.scanner_tx = Some(tx);
+                        // let _ = tx.try_send(self.context.clone());
+                        // self.scanner_tx = Some(tx);
 
                         // TODO: Move to an Init message, because the prompt should be ready
                         // instantly.
@@ -247,24 +273,6 @@ impl Lucien {
                     ScannerState::Errored(id, error) => {
                         tracing::error!(error = error, "An error ocurred while scanning {id}");
                         Task::none()
-                    }
-                    ScannerState::ContextChange(context) => {
-                        let Some(tx) = &mut self.scanner_tx else {
-                            return Task::none();
-                        };
-
-                        self.context = context;
-
-                        self.entry_registry.clear();
-                        self.selected_entry = 0;
-                        self.prompt = String::new();
-
-                        let _ = tx.try_send(self.context.clone());
-
-                        widget::operation::scroll_to(
-                            SCROLLABLE_ID.clone(),
-                            AbsoluteOffset { x: 0.0, y: 0.0 },
-                        )
                     }
                 }
             }
@@ -471,10 +479,10 @@ impl Lucien {
     }
 
     fn provider_indicator<'a>(&'a self) -> Container<'a, Message, CustomTheme> {
-        let apps_icon = match self.provider {
-            ProviderKind::App(_) => CUBE_ACTIVE.clone(),
-            _ => CUBE_INACTIVE.clone(),
-        };
+        // let apps_icon = match self.provider {
+        //     ProviderKind::App(_) => CUBE_ACTIVE.clone(),
+        //     _ => CUBE_INACTIVE.clone(),
+        // };
         let folder_icon = match self.provider {
             ProviderKind::File(_) => FOLDER_ACTIVE.clone(),
             _ => FOLDER_INACTIVE.clone(),
@@ -482,7 +490,7 @@ impl Lucien {
 
         container(
             row![
-                image(apps_icon).width(18).height(18),
+                // image(apps_icon).width(18).height(18),
                 image(folder_icon).width(18).height(18),
             ]
             .spacing(10),
