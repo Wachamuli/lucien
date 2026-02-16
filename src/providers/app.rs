@@ -19,7 +19,7 @@ use crate::{
     ui::icon::{APPLICATION_DEFAULT, ICON_EXTENSIONS, ICON_SIZES},
 };
 
-use super::{Entry, Provider, SCAN_BATCH_SIZE, spawn_with_new_session};
+use super::{Entry, Provider, spawn_with_new_session};
 
 #[derive(Debug, Clone, Copy)]
 pub struct AppProvider;
@@ -27,45 +27,56 @@ pub struct AppProvider;
 impl Provider for AppProvider {
     fn scan(&self) -> Subscription<Message> {
         Subscription::run(|| {
-            iced::stream::channel(100, async move |output| {
+            iced::stream::channel(100, async move |mut output| {
                 let spawn_handler = tokio::runtime::Handle::current();
                 let (tx, mut rx) = iced::futures::channel::mpsc::channel::<Context>(100);
 
-                // Notify UI that we are ready and give it the sender
                 let _ = output
                     .clone()
                     .send(Message::ScanEvent(ScannerState::Started(tx)))
                     .await;
 
                 tokio::task::spawn_blocking(move || {
-                    let xdg_dirs = Arc::new(xdg::BaseDirectories::new());
-                    let mut scanner = Scanner::new(output.clone(), SCAN_BATCH_SIZE);
+                    println!("While out");
+                    while let matcher = rx.try_next() {
+                        if let Ok(Some(context)) = matcher {
+                            let xdg_dirs = Arc::new(xdg::BaseDirectories::new());
+                            let mut scanner = Scanner::new(output.clone(), context.scan_batch_size);
 
-                    let apps = gio::AppInfo::all()
-                        .into_iter()
-                        .filter(|app| app.should_show());
+                            let apps = gio::AppInfo::all()
+                                .into_iter()
+                                .filter(|app| app.should_show());
 
-                    for app in apps {
-                        let meta = AppMetadata::from(app);
-                        let entry = Entry::new(
-                            meta.id.clone(),
-                            meta.name,
-                            meta.description,
-                            meta.icon.clone(),
-                        );
-                        if let EntryIcon::Lazy(icon_name) = meta.icon {
-                            let output_clone = output.clone();
-                            let xdg_dirs_clone = xdg_dirs.clone();
-                            spawn_handler.spawn(async move {
-                                resolve_icon(meta.id, icon_name, 64, xdg_dirs_clone, output_clone)
-                                    .await
-                            });
+                            for app in apps {
+                                let meta = AppMetadata::from(app);
+                                let entry = Entry::new(
+                                    meta.id.clone(),
+                                    meta.name,
+                                    meta.description,
+                                    meta.icon.clone(),
+                                );
+                                if let EntryIcon::Lazy(icon_name) = meta.icon {
+                                    let output_clone = output.clone();
+                                    let xdg_dirs_clone = xdg_dirs.clone();
+                                    spawn_handler.spawn(async move {
+                                        resolve_icon(
+                                            meta.id,
+                                            icon_name,
+                                            64,
+                                            xdg_dirs_clone,
+                                            output_clone,
+                                        )
+                                        .await
+                                    });
+                                }
+                                scanner.load(entry);
+                            }
+
+                            scanner.flush();
+                            let _ = output.try_send(Message::ScanEvent(ScannerState::Finished));
                         }
-                        scanner.load(entry);
                     }
                 });
-
-                std::future::pending::<()>().await;
             })
         })
     }

@@ -15,7 +15,7 @@ use theme::CustomTheme;
 pub struct Preferences {
     #[serde(skip)]
     pub path: Option<PathBuf>,
-    pub leading_icon_count: usize,
+    pub scan_batch_size: usize,
     pub favorite_apps: HashSet<String>,
     pub theme: CustomTheme,
     pub keybindings: Keybindings,
@@ -25,7 +25,7 @@ impl Default for Preferences {
     fn default() -> Self {
         Self {
             path: None,
-            leading_icon_count: 10,
+            scan_batch_size: 10,
             favorite_apps: HashSet::new(),
             theme: CustomTheme::default(),
             keybindings: default_keybindings(),

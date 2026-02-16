@@ -77,6 +77,7 @@ impl Lucien {
         let context = Context {
             path: PathBuf::from(env!("HOME")),
             pattern: String::new(),
+            scan_batch_size: preferences.scan_batch_size,
             icon_size: preferences.theme.launchpad.entry.icon_size,
         };
 

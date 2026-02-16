@@ -7,7 +7,7 @@ use iced::{Subscription, Task, widget::image};
 
 use crate::{
     launcher::Message,
-    providers::{AsyncScanner, Context, SCAN_BATCH_SIZE},
+    providers::{AsyncScanner, Context},
     ui::{
         entry::{Entry, EntryIcon},
         icon::{
@@ -30,7 +30,7 @@ impl Provider for FileProvider {
     fn scan(&self) -> Subscription<Message> {
         iced::Subscription::run(|| {
             iced::stream::channel(100, async |output| {
-                AsyncScanner::run(output, SCAN_BATCH_SIZE, async |(ctx, scanner)| {
+                AsyncScanner::run(output, async |(ctx, scanner)| {
                     if let Some(parent_directory) = ctx.path.parent() {
                         let parent_entry = Entry::new(
                             parent_directory.to_str().unwrap(),
@@ -44,7 +44,7 @@ impl Provider for FileProvider {
                         scanner.load(parent_entry).await;
                     }
 
-                    let mut child_directories = tokio::fs::read_dir(ctx.path).await.unwrap();
+                    let mut child_directories = tokio::fs::read_dir(&ctx.path).await.unwrap();
                     while let Some(child_dir) = child_directories.next_entry().await.unwrap() {
                         let path = child_dir.path();
                         let id_str = path.to_string_lossy();
@@ -85,7 +85,7 @@ impl Provider for FileProvider {
     }
 }
 
-fn get_icon_from_mimetype(path: &Path, size: u32) -> image::Handle {
+fn get_icon_from_mimetype(path: &Path, _size: u32) -> image::Handle {
     if path.is_dir() {
         return FOLDER_DEFAULT.clone();
     }

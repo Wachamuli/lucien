@@ -1,6 +1,6 @@
 # Move this file to $XDG_CONFIG_HOME/lucien/preferences.toml
 # to apply this configuration.
-leading_icon_count = 10
+scan_batch_size = 10
 favorite_apps = []
 
 # Available modifiers: , `alt`, `shift`, and `control`.
