@@ -74,7 +74,8 @@ pub enum Message {
 }
 
 impl Lucien {
-    pub fn new(preferences: Preferences) -> (Self, Task<Message>) {
+    pub fn new() -> (Self, Task<Message>) {
+        let preferences = Preferences::safe_load();
         let default_provider = ProviderKind::App(AppProvider);
         let context = Context {
             path: PathBuf::from(env!("HOME")),
@@ -479,10 +480,10 @@ impl Lucien {
     }
 
     fn provider_indicator<'a>(&'a self) -> Container<'a, Message, CustomTheme> {
-        // let apps_icon = match self.provider {
-        //     ProviderKind::App(_) => CUBE_ACTIVE.clone(),
-        //     _ => CUBE_INACTIVE.clone(),
-        // };
+        let apps_icon = match self.provider {
+            ProviderKind::App(_) => CUBE_ACTIVE.clone(),
+            _ => CUBE_INACTIVE.clone(),
+        };
         let folder_icon = match self.provider {
             ProviderKind::File(_) => FOLDER_ACTIVE.clone(),
             _ => FOLDER_INACTIVE.clone(),
@@ -490,7 +491,7 @@ impl Lucien {
 
         container(
             row![
-                // image(apps_icon).width(18).height(18),
+                image(apps_icon).width(18).height(18),
                 image(folder_icon).width(18).height(18),
             ]
             .spacing(10),
@@ -498,6 +499,7 @@ impl Lucien {
     }
 }
 
+// FIXME: This can panic under certain conditions. Refactor.
 fn wrapped_index(index: usize, array_len: usize, step: isize) -> usize {
     if array_len == 0 {
         return 0;
