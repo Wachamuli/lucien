@@ -22,7 +22,7 @@ use iced_layershell::to_layer_message;
 
 use crate::{
     preferences::{
-        self, Preferences,
+        self, InspectLogExt, Preferences,
         keybindings::{Action, Keystrokes},
         theme::{ContainerClass, CustomTheme, TextClass},
     },
@@ -75,7 +75,7 @@ pub enum Message {
 
 impl Lucien {
     pub fn new() -> (Self, Task<Message>) {
-        let preferences = Preferences::safe_load();
+        let preferences = Preferences::load().inspect_err_to_log().unwrap_or_default();
         let default_provider = ProviderKind::App(AppProvider);
         let context = Context {
             path: PathBuf::from(env!("HOME")),

@@ -1,4 +1,4 @@
-use std::{collections::HashSet, env, path::PathBuf, sync::Arc};
+use std::{collections::HashSet, env, fmt::Display, path::PathBuf, sync::Arc};
 
 use serde::{Deserialize, Serialize};
 use tokio::io;
@@ -57,6 +57,29 @@ impl Preferences {
         }
 
         toml_edit::Array::from_iter(&self.favorite_apps)
+    }
+}
+
+pub trait InspectLogExt<T, E> {
+    // TODO: Declare other functions for the rest of the levels.
+    // By the way, you can't pass the level as an argument, because
+    // the event! expects a literal.
+    fn inspect_err_to_log(self) -> Result<T, E>;
+    #[allow(dead_code)]
+    fn inspect_to_info_log(self) -> Result<T, E>;
+}
+
+impl<T, E> InspectLogExt<T, E> for Result<T, E>
+where
+    T: std::fmt::Debug,
+    E: Display,
+{
+    fn inspect_to_info_log(self) -> Result<T, E> {
+        self.inspect(|value| tracing::info!(?value, "Inspection"))
+    }
+
+    fn inspect_err_to_log(self) -> Result<T, E> {
+        self.inspect_err(|error| tracing::error!(%error, "Inspection"))
     }
 }
 
