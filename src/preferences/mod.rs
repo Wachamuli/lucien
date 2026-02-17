@@ -1,4 +1,4 @@
-use std::{collections::HashSet, env, fmt::Display, path::PathBuf, sync::Arc};
+use std::{collections::HashSet, env, path::PathBuf, sync::Arc};
 
 use serde::{Deserialize, Serialize};
 use tokio::io;
@@ -10,7 +10,7 @@ pub mod theme;
 use keybindings::{Keybindings, default_keybindings, extend_keybindings};
 use theme::CustomTheme;
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(default)]
 pub struct Preferences {
     #[serde(skip)]
@@ -34,13 +34,16 @@ impl Default for Preferences {
 }
 
 impl Preferences {
-    pub fn load() -> io::Result<Self> {
+    // TODO (Dependency injection): I should pass the preferences file path
+    // as an argument. Support a --preference-path="arbitrary/file/path.toml".
+    // Also, it's going to be easier to test.
+    pub async fn load() -> Result<Self, Arc<io::Error>> {
         let package_name = env!("CARGO_PKG_NAME");
         let settings_file_name = "preferences.toml";
         let xdg_dirs = xdg::BaseDirectories::with_prefix(package_name);
         let settings_file_path = xdg_dirs.place_config_file(settings_file_name)?;
 
-        let settings_file_string = std::fs::read_to_string(&settings_file_path).unwrap_or_default();
+        let settings_file_string = tokio::fs::read_to_string(&settings_file_path).await?;
         let mut preferences = toml::from_str::<Preferences>(&settings_file_string)
             .map_err(|e| io::Error::new(io::ErrorKind::InvalidInput, e))?;
 
@@ -57,29 +60,6 @@ impl Preferences {
         }
 
         toml_edit::Array::from_iter(&self.favorite_apps)
-    }
-}
-
-pub trait InspectLogExt<T, E> {
-    // TODO: Declare other functions for the rest of the levels.
-    // By the way, you can't pass the level as an argument, because
-    // the event! expects a literal.
-    fn inspect_err_to_log(self) -> Result<T, E>;
-    #[allow(dead_code)]
-    fn inspect_to_info_log(self) -> Result<T, E>;
-}
-
-impl<T, E> InspectLogExt<T, E> for Result<T, E>
-where
-    T: std::fmt::Debug,
-    E: Display,
-{
-    fn inspect_to_info_log(self) -> Result<T, E> {
-        self.inspect(|value| tracing::info!(?value, "Inspection"))
-    }
-
-    fn inspect_err_to_log(self) -> Result<T, E> {
-        self.inspect_err(|error| tracing::error!(%error, "Inspection"))
     }
 }
 

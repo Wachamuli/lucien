@@ -3,7 +3,6 @@ use iced::{
     widget::{self, mouse_area, operation::AbsoluteOffset},
 };
 use std::{
-    env,
     path::PathBuf,
     sync::{Arc, LazyLock},
     usize,
@@ -22,7 +21,7 @@ use iced_layershell::to_layer_message;
 
 use crate::{
     preferences::{
-        self, InspectLogExt, Preferences,
+        self, Preferences,
         keybindings::{Action, Keystrokes},
         theme::{ContainerClass, CustomTheme, TextClass},
     },
@@ -71,19 +70,15 @@ pub enum Message {
     IconResolved { id: Id, handle: image::Handle },
     HoveredEntry(usize),
     HoveredExit(usize),
+    PreferencesLoaded(Result<Preferences, Arc<tokio::io::Error>>),
 }
 
 impl Lucien {
     pub fn new() -> (Self, Task<Message>) {
-        let preferences = Preferences::load().inspect_err_to_log().unwrap_or_default();
+        let preferences = Preferences::default();
         let default_provider = ProviderKind::App(AppProvider);
-        let context = Context {
-            path: PathBuf::from(env!("HOME")),
-            pattern: String::new(),
-            scan_batch_size: preferences.scan_batch_size,
-            icon_size: preferences.theme.launchpad.entry.icon_size,
-        };
-
+        let context = Context::create(&preferences);
+        let load_preferences_task = Task::perform(Preferences::load(), Message::PreferencesLoaded);
         let initial_values = Self {
             selected_entry: 0,
             hovered_entry: 0,
@@ -99,7 +94,7 @@ impl Lucien {
             scanner_tx: None,
         };
 
-        (initial_values, Task::none())
+        (initial_values, load_preferences_task)
     }
 
     pub fn theme(&self) -> CustomTheme {
@@ -224,6 +219,25 @@ impl Lucien {
 
     pub fn update(&mut self, message: Message) -> Task<Message> {
         match message {
+            Message::PreferencesLoaded(result) => {
+                match result {
+                    Ok(preferences) => {
+                        tracing::debug!("Running under user-defined preferences.");
+                        self.preferences = preferences;
+                    }
+                    Err(e) if e.kind() == std::io::ErrorKind::InvalidInput => {
+                        tracing::error!(diagnostic = %e, "Invalid preferences syntax");
+                    }
+                    Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
+                        tracing::error!(diagnostic = %e, "Preferences file not found");
+                    }
+                    Err(e) => {
+                        tracing::error!(error = %e, "Failed to load preferences");
+                    }
+                }
+
+                widget::operation::focus(TEXT_INPUT_ID.clone())
+            }
             Message::RequestContext(mut sender) => {
                 // This should be async
                 let _ = sender.try_send(self.context.clone());
@@ -248,35 +262,28 @@ impl Lucien {
                     AbsoluteOffset { x: 0.0, y: 0.0 },
                 )
             }
-            Message::ScanEvent(scan_event) => {
-                match scan_event {
-                    ScannerState::Started => {
-                        self.prompt.clear();
-                        self.selected_entry = 0;
-                        self.entry_registry.clear();
+            Message::ScanEvent(scan_event) => match scan_event {
+                ScannerState::Started => {
+                    self.prompt.clear();
+                    self.selected_entry = 0;
+                    self.entry_registry.clear();
 
-                        self.is_scan_completed = false;
-                        // let _ = tx.try_send(self.context.clone());
-                        // self.scanner_tx = Some(tx);
-
-                        // TODO: Move to an Init message, because the prompt should be ready
-                        // instantly.
-                        widget::operation::focus(TEXT_INPUT_ID.clone())
-                    }
-                    ScannerState::Found(batch) => {
-                        self.entry_registry.extend(batch);
-                        Task::none()
-                    }
-                    ScannerState::Finished => {
-                        self.is_scan_completed = true;
-                        Task::none()
-                    }
-                    ScannerState::Errored(id, error) => {
-                        tracing::error!(error = error, "An error ocurred while scanning {id}");
-                        Task::none()
-                    }
+                    self.is_scan_completed = false;
+                    Task::none()
                 }
-            }
+                ScannerState::Found(batch) => {
+                    self.entry_registry.extend(batch);
+                    Task::none()
+                }
+                ScannerState::Finished => {
+                    self.is_scan_completed = true;
+                    Task::none()
+                }
+                ScannerState::Errored(id, error) => {
+                    tracing::error!(error = error, "An error ocurred while scanning {id}");
+                    Task::none()
+                }
+            },
             Message::IconResolved { id, handle } => {
                 if let Some(entry) = self.entry_registry.get_mut_by_id(&id) {
                     entry.icon = EntryIcon::Handle(handle);
