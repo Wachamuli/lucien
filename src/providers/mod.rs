@@ -1,3 +1,4 @@
+use crate::preferences::Preferences;
 use crate::ui::entry::Entry;
 use std::{io, os::unix::process::CommandExt, path::PathBuf, process};
 
@@ -35,6 +36,15 @@ pub struct Context {
 }
 
 impl Context {
+    pub fn create(preferences: &Preferences) -> Self {
+        Self {
+            path: PathBuf::from(env!("HOME")),
+            pattern: String::new(),
+            scan_batch_size: preferences.scan_batch_size,
+            icon_size: preferences.theme.launchpad.entry.icon_size,
+        }
+    }
+
     pub fn with_path(path: impl Into<PathBuf>) -> Self {
         Self {
             path: path.into(),
@@ -114,23 +124,17 @@ impl Scanner {
             .try_send(Message::ScanEvent(ScannerState::Finished));
     }
 
-    fn run<F>(sender: FuturesSender<Message>, f: F)
+    async fn run<F>(sender: FuturesSender<Message>, f: F)
     where
         F: Fn(&Context, &mut Scanner),
     {
-        // FIXME: maybe block_on can cause a deadlock
-        let context = iced::futures::executor::block_on(async {
-            request_context(sender.clone())
-                .await
-                .select_next_some()
-                .await
-        });
+        let context = request_context(sender.clone())
+            .await
+            .select_next_some()
+            .await;
         let mut scanner = Scanner::new(sender.clone(), context.scan_batch_size);
-        // FIXME: maybe block_on can cause a deadlock
-        let mut context_rx = iced::futures::executor::block_on(request_context(sender.clone()));
-
-        // FIXME: This loop is blocking the Close on out of focus action
-        while let Some(context) = iced::futures::executor::block_on(context_rx.next()) {
+        let mut context_rx = request_context(sender.clone()).await;
+        while let Some(context) = context_rx.next().await {
             scanner.start();
             f(&context, &mut scanner);
             scanner.finish();

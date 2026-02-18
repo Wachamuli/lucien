@@ -77,6 +77,9 @@ impl Lucien {
     pub fn new() -> (Self, Task<Message>) {
         let preferences = Preferences::default();
         let default_provider = ProviderKind::App(AppProvider);
+        // TODO: Context shouldn't be created by using the
+        // default Preferences instance. Create the context once
+        // the user-defined preferences are loaded.
         let context = Context::create(&preferences);
         let load_preferences_task = Task::perform(Preferences::load(), Message::PreferencesLoaded);
         let initial_values = Self {
