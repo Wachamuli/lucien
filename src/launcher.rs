@@ -25,7 +25,10 @@ use crate::{
         keybindings::{Action, Keystrokes},
         theme::{ContainerClass, CustomTheme, TextClass},
     },
-    providers::{Context, Id, ProviderKind, ScannerState, app::AppProvider, file::FileProvider},
+    providers::{
+        Context, ContextSealed, Id, ProviderKind, ScannerState, app::AppProvider,
+        file::FileProvider,
+    },
     ui::{
         self,
         entry::{EntryIcon, EntryRegistry, FONT_ITALIC, section},
@@ -42,7 +45,7 @@ static SCROLLABLE_ID: LazyLock<iced::widget::Id> = LazyLock::new(iced::widget::I
 
 pub struct Lucien {
     entry_registry: EntryRegistry,
-    context: Context,
+    context: ContextSealed,
     is_scan_completed: bool,
     provider: ProviderKind,
     prompt: String,
@@ -52,14 +55,14 @@ pub struct Lucien {
     hovered_entry: usize,
     last_viewport: Option<Viewport>,
     search_handle: Option<iced::task::Handle>,
-    scanner_tx: Option<iced::futures::channel::mpsc::Sender<Context>>,
+    scanner_tx: Option<iced::futures::channel::mpsc::Sender<ContextSealed>>,
 }
 
 #[to_layer_message]
 #[derive(Debug, Clone)]
 pub enum Message {
-    RequestContext(iced::futures::channel::mpsc::Sender<Context>),
-    ContextChange(Context),
+    RequestContext(iced::futures::channel::mpsc::Sender<ContextSealed>),
+    ContextChange(ContextSealed),
     ScanEvent(ScannerState),
     PromptChange(String),
     DebouncedFilter,
@@ -80,14 +83,13 @@ impl Lucien {
         // TODO: Context shouldn't be created by using the
         // default Preferences instance. Create the context once
         // the user-defined preferences are loaded.
-        let context = Context::create(&preferences);
         let load_preferences_task = Task::perform(Preferences::load(), Message::PreferencesLoaded);
         let initial_values = Self {
             selected_entry: 0,
             hovered_entry: 0,
             entry_registry: EntryRegistry::default(),
             is_scan_completed: false,
-            context,
+            context: Context::create(&preferences),
             provider: default_provider,
             prompt: String::new(),
             matcher: SkimMatcherV2::default(),
@@ -148,7 +150,7 @@ impl Lucien {
 
     fn launch_entry(&self, index: usize) -> Task<Message> {
         if let Some(entry) = &self.entry_registry.get_visible_by_index(index) {
-            return self.provider.handler().launch(&entry.id);
+            return self.provider.handler().launch(&entry.id, &self.context);
         };
 
         Task::none()

@@ -7,7 +7,7 @@ use iced::{Subscription, Task, widget::image};
 
 use crate::{
     launcher::Message,
-    providers::{AsyncScanner, Context},
+    providers::{AsyncScanner, ContextSealed},
     ui::{
         entry::{Entry, EntryIcon},
         icon::{
@@ -63,11 +63,11 @@ impl Provider for FileProvider {
         })
     }
 
-    fn launch(&self, id: &str) -> Task<Message> {
+    fn launch(&self, id: &str, context: &ContextSealed) -> Task<Message> {
         let path = PathBuf::from(id);
 
         if path.is_dir() {
-            let new_context = Context::with_path(path);
+            let new_context = context.with_path(path);
             return Task::done(Message::ContextChange(new_context));
         }
 

@@ -11,7 +11,7 @@ use iced::futures;
 use iced::{Subscription, Task, futures::SinkExt, widget::image};
 use resvg::{tiny_skia, usvg};
 
-use crate::providers::Scanner;
+use crate::providers::{ContextSealed, Scanner};
 use crate::ui::entry::EntryIcon;
 use crate::{
     launcher::Message,
@@ -28,9 +28,8 @@ impl Provider for AppProvider {
     fn scan(&self) -> Subscription<Message> {
         Subscription::run(|| {
             iced::stream::channel(100, async move |output| {
-                let handle = tokio::runtime::Handle::current();
+                let xdg_dirs = Arc::new(xdg::BaseDirectories::new());
                 Scanner::run(output.clone(), |ctx, scanner| {
-                    let xdg_dirs = Arc::new(xdg::BaseDirectories::new());
                     let apps = gio::AppInfo::all()
                         .into_iter()
                         .filter(|app| app.should_show());
@@ -43,15 +42,12 @@ impl Provider for AppProvider {
                             meta.icon.clone(),
                         );
                         if let EntryIcon::Lazy(icon_name) = meta.icon {
-                            let output_clone = output.clone();
-                            let xdg_dirs_clone = xdg_dirs.clone();
-                            let icon_size = ctx.icon_size;
-                            handle.spawn(resolve_icon(
+                            tokio::spawn(resolve_icon(
                                 meta.id,
                                 icon_name,
-                                icon_size,
-                                xdg_dirs_clone,
-                                output_clone,
+                                ctx.icon_size,
+                                xdg_dirs.clone(),
+                                output.clone(),
                             ));
                         }
                         scanner.load(entry);
@@ -62,7 +58,7 @@ impl Provider for AppProvider {
         })
     }
 
-    fn launch(&self, id: &str) -> Task<Message> {
+    fn launch(&self, id: &str, _: &ContextSealed) -> Task<Message> {
         let raw_command_without_placeholders = id
             .split_whitespace()
             .filter(|arg| !arg.starts_with('%'))
@@ -178,7 +174,7 @@ impl From<gio::AppInfo> for AppMetadata {
             .unwrap_or_default();
         let name = app.name().to_string();
         let description = app.description().map(|d| d.to_string());
-        let icon_type = app
+        let icon = app
             .icon()
             .and_then(|i| i.to_string())
             .map(|s| EntryIcon::Lazy(s.to_string()))
@@ -188,7 +184,7 @@ impl From<gio::AppInfo> for AppMetadata {
             id,
             name,
             description,
-            icon: icon_type,
+            icon,
         }
     }
 }

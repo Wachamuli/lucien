@@ -27,7 +27,7 @@ impl ProviderKind {
     }
 }
 
-#[derive(Debug, Default, Clone)]
+#[derive(Debug, Clone)]
 pub struct Context {
     pub path: PathBuf,
     pub scan_batch_size: usize,
@@ -35,20 +35,30 @@ pub struct Context {
     pub icon_size: u32,
 }
 
+#[derive(Debug, Clone)]
+pub struct ContextSealed {
+    path: PathBuf,
+    scan_batch_size: usize,
+    pattern: String,
+    icon_size: u32,
+}
+
 impl Context {
-    pub fn create(preferences: &Preferences) -> Self {
-        Self {
+    pub fn create(preferences: &Preferences) -> ContextSealed {
+        ContextSealed {
             path: PathBuf::from(env!("HOME")),
             pattern: String::new(),
             scan_batch_size: preferences.scan_batch_size,
             icon_size: preferences.theme.launchpad.entry.icon_size,
         }
     }
+}
 
-    pub fn with_path(path: impl Into<PathBuf>) -> Self {
+impl ContextSealed {
+    pub fn with_path(&self, path: impl Into<PathBuf>) -> Self {
         Self {
             path: path.into(),
-            ..Default::default()
+            ..self.clone()
         }
     }
 }
@@ -59,13 +69,13 @@ pub trait Provider {
     fn scan(&self) -> Subscription<Message>;
     // Maybe, launch could consume self? But I have to get rid of dynamic dispatch first.
     // I could avoid couple clones doing this.
-    fn launch(&self, id: &str) -> Task<Message>;
+    fn launch(&self, id: &str, context: &ContextSealed) -> Task<Message>;
 }
 
 pub type Id = String;
 
-pub async fn request_context(mut sender: FuturesSender<Message>) -> FuturesReceiver<Context> {
-    let (tx, rx) = iced::futures::channel::mpsc::channel::<Context>(100);
+pub async fn request_context(mut sender: FuturesSender<Message>) -> FuturesReceiver<ContextSealed> {
+    let (tx, rx) = iced::futures::channel::mpsc::channel::<ContextSealed>(100);
     let _ = sender.send(Message::RequestContext(tx)).await;
     rx
 }
@@ -126,7 +136,7 @@ impl Scanner {
 
     async fn run<F>(sender: FuturesSender<Message>, f: F)
     where
-        F: Fn(&Context, &mut Scanner),
+        F: Fn(&ContextSealed, &mut Scanner),
     {
         let mut context_rx = request_context(sender.clone()).await;
         let mut scanner_opt: Option<Scanner> = None;
@@ -196,7 +206,7 @@ impl AsyncScanner {
 
     pub async fn run<F>(sender: FuturesSender<Message>, f: F)
     where
-        F: AsyncFn(&Context, &mut AsyncScanner),
+        F: AsyncFn(&ContextSealed, &mut AsyncScanner),
     {
         let mut context_receiver = request_context(sender.clone()).await;
         let mut scanner_opt: Option<AsyncScanner> = None;
