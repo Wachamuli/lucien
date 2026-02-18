@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::{borrow::Cow, collections::HashMap};
 
 use fuzzy_matcher::{FuzzyMatcher, skim::SkimMatcherV2};
 use iced::{
@@ -103,8 +103,8 @@ pub fn display_entry<'a>(
         .size(style.font_size)
         .width(Length::Fill)
         .font(FONT_BOLD);
-    let secondary = entry.secondary.as_ref().map(|desc| {
-        text(desc)
+    let secondary = entry.secondary.as_deref().map(|desc| {
+        text(truncate_with_elipsis(desc, 95))
             .size(style.secondary_font_size)
             .class(TextClass::SecondaryText)
             .into()
@@ -139,6 +139,16 @@ pub fn display_entry<'a>(
         ButtonClass::Itemlist
     })
     .into()
+}
+
+fn truncate_with_elipsis(text: &str, limit: usize) -> Cow<'_, str> {
+    if text.len() < limit {
+        return Cow::Borrowed(text);
+    }
+
+    let mut text = text.to_string();
+    text.truncate(limit);
+    Cow::Owned(format!("{text}..."))
 }
 
 pub fn section(name: &str) -> Container<'_, Message, CustomTheme> {
