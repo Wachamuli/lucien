@@ -128,13 +128,11 @@ impl Scanner {
     where
         F: Fn(&Context, &mut Scanner),
     {
-        let context = request_context(sender.clone())
-            .await
-            .select_next_some()
-            .await;
-        let mut scanner = Scanner::new(sender.clone(), context.scan_batch_size);
         let mut context_rx = request_context(sender.clone()).await;
+        let mut scanner_opt: Option<Scanner> = None;
         while let Some(context) = context_rx.next().await {
+            let mut scanner = scanner_opt
+                .get_or_insert_with(|| Scanner::new(sender.clone(), context.scan_batch_size));
             scanner.start();
             f(&context, &mut scanner);
             scanner.finish();
@@ -200,16 +198,11 @@ impl AsyncScanner {
     where
         F: AsyncFn(&Context, &mut AsyncScanner),
     {
-        // I'm using two channels
-        // It's a waste of resources knowing that I'm receiving the
-        // same datatype.
-        // One here
         let mut context_receiver = request_context(sender.clone()).await;
-        let ctx = context_receiver.select_next_some().await;
-        let mut scanner = AsyncScanner::new(sender.clone(), ctx.scan_batch_size);
-        // Second here
-        let mut context_receiver = request_context(sender).await;
+        let mut scanner_opt: Option<AsyncScanner> = None;
         while let Some(ref context) = context_receiver.next().await {
+            let mut scanner = scanner_opt
+                .get_or_insert_with(|| AsyncScanner::new(sender.clone(), context.scan_batch_size));
             scanner.start().await;
             f(context, &mut scanner).await;
             scanner.finish().await;
