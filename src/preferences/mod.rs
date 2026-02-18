@@ -10,12 +10,12 @@ pub mod theme;
 use keybindings::{Keybindings, default_keybindings, extend_keybindings};
 use theme::CustomTheme;
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(default)]
 pub struct Preferences {
     #[serde(skip)]
     pub path: Option<PathBuf>,
-    pub leading_icon_count: usize,
+    pub scan_batch_size: usize,
     pub favorite_apps: HashSet<String>,
     pub theme: CustomTheme,
     pub keybindings: Keybindings,
@@ -25,7 +25,7 @@ impl Default for Preferences {
     fn default() -> Self {
         Self {
             path: None,
-            leading_icon_count: 10,
+            scan_batch_size: 10,
             favorite_apps: HashSet::new(),
             theme: CustomTheme::default(),
             keybindings: default_keybindings(),
@@ -34,13 +34,16 @@ impl Default for Preferences {
 }
 
 impl Preferences {
-    pub fn load() -> io::Result<Self> {
+    // TODO (Dependency injection): I should pass the preferences file path
+    // as an argument. Support a --preference-path="arbitrary/file/path.toml".
+    // Also, it's going to be easier to test.
+    pub async fn load() -> Result<Self, Arc<io::Error>> {
         let package_name = env!("CARGO_PKG_NAME");
         let settings_file_name = "preferences.toml";
         let xdg_dirs = xdg::BaseDirectories::with_prefix(package_name);
         let settings_file_path = xdg_dirs.place_config_file(settings_file_name)?;
 
-        let settings_file_string = std::fs::read_to_string(&settings_file_path).unwrap_or_default();
+        let settings_file_string = tokio::fs::read_to_string(&settings_file_path).await?;
         let mut preferences = toml::from_str::<Preferences>(&settings_file_string)
             .map_err(|e| io::Error::new(io::ErrorKind::InvalidInput, e))?;
 

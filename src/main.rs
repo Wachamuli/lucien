@@ -3,7 +3,7 @@ use std::{
     path::PathBuf,
 };
 
-use crate::{launcher::Lucien, preferences::Preferences};
+use crate::launcher::Lucien;
 
 mod launcher;
 mod preferences;
@@ -43,8 +43,6 @@ fn main() -> anyhow::Result<()> {
     let _log_guard = setup_tracing_subscriber(xdg_cache_directory, "logs")?;
     tracing::info!("Running {package_name} v.{package_version}...");
 
-    let preferences = load_application_preferences()?;
-
     let layershell_settings = LayerShellSettings {
         size: Some((700, 500)),
         anchor: Anchor::empty(),
@@ -53,28 +51,19 @@ fn main() -> anyhow::Result<()> {
         ..Default::default()
     };
 
-    iced_layershell::build_pattern::application(package_name, Lucien::update, Lucien::view)
-        .subscription(Lucien::subscription)
-        .theme(Lucien::theme)
-        .layer_settings(layershell_settings)
-        .antialiasing(true)
-        .run_with(|| Lucien::new(preferences))?;
+    iced_layershell::build_pattern::application(
+        Lucien::new,
+        package_name,
+        Lucien::update,
+        Lucien::view,
+    )
+    .subscription(Lucien::subscription)
+    .theme(Lucien::theme)
+    .layer_settings(layershell_settings)
+    .antialiasing(true)
+    .run()?;
 
     Ok(())
-}
-
-fn load_application_preferences() -> anyhow::Result<Preferences> {
-    match Preferences::load() {
-        Ok(p) => {
-            tracing::debug!("Running under user-defined preferences.");
-            Ok(p)
-        }
-        Err(e) if e.kind() == std::io::ErrorKind::InvalidInput => {
-            tracing::warn!(diagnostic = %e, "Invalid preferences syntax, using defaults.");
-            Ok(Preferences::default())
-        }
-        Err(e) => Err(e).context("Failed to load preferences"),
-    }
 }
 
 fn setup_tracing_subscriber(

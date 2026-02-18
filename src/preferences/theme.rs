@@ -1,19 +1,58 @@
 use std::ops::Deref;
+use std::str::FromStr;
 
-use iced::widget::{button, container, rule, scrollable, text, text_input};
-use iced_layershell::DefaultStyle;
+use iced::{
+    color,
+    widget::{button, container, rule, scrollable, text, text_input},
+};
 use serde::{self, Deserialize, Serialize};
 
-const DEFAULT_BACKGROUND_COLOR: &str = "#1F1F1FF2";
-const DEFAULT_FOCUS_HIGHLIGHT_COLOR: &str = "#FFFFFF1F";
-const DEFAULT_HOVER_HIGHLIGHT_COLOR: &str = "#FFFFFF14";
-const DEFAULT_BORDER_COLOR: &str = "#A6A6A61A";
-const DEFAULT_MAIN_TEXT: &str = "#F2F2F2FF";
-const DEFAULT_SECONDARY_TEXT: &str = "#FFFFFF80";
-const DEFAULT_DIM_TEXT: &str = "#FFFFFF80";
-const TRANSPARENT: &str = "#00000000";
+const DEFAULT_BACKGROUND_COLOR: iced::Color = color!(0x1F1F1F, 0.95);
+const DEFAULT_FOCUS_HIGHLIGHT_COLOR: iced::Color = color!(0xFFFFFF, 0.12);
+const DEFAULT_HOVER_HIGHLIGHT_COLOR: iced::Color = color!(0xFFFFFF, 0.08);
+const DEFAULT_BORDER_COLOR: iced::Color = color!(0xA6A6A6, 0.10);
+const DEFAULT_MAIN_TEXT: iced::Color = color!(0xF2F2F2);
+const DEFAULT_SECONDARY_TEXT: iced::Color = color!(0xFFFFFF, 0.5);
+const DEFAULT_DIM_TEXT: iced::Color = color!(0xFFFFFF, 0.5);
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
+#[serde(default)]
+pub struct CustomTheme {
+    pub background: HexColor,
+    pub border: Border,
+    pub prompt: Prompt,
+    pub launchpad: Launchpad,
+    pub separator: Separator,
+}
+
+impl iced::theme::Base for CustomTheme {
+    fn default(_: iced::theme::Mode) -> Self {
+        CustomTheme {
+            ..Default::default()
+        }
+    }
+
+    fn mode(&self) -> iced::theme::Mode {
+        iced::theme::Mode::None
+    }
+
+    fn base(&self) -> iced::theme::Style {
+        iced::theme::Style {
+            background_color: iced::Color::TRANSPARENT,
+            text_color: Default::default(),
+        }
+    }
+
+    fn palette(&self) -> Option<iced::theme::Palette> {
+        None
+    }
+
+    fn name(&self) -> &str {
+        "Lucien"
+    }
+}
+
+#[derive(Debug, Serialize, Copy, Deserialize, Clone)]
 #[serde(default)]
 pub struct Border {
     pub color: HexColor,
@@ -34,7 +73,7 @@ impl Default for Border {
 impl From<&Border> for iced::Border {
     fn from(value: &Border) -> iced::Border {
         iced::Border {
-            color: *value.color,
+            color: value.color.into(),
             width: value.width,
             radius: iced::border::Radius {
                 top_left: value.radius[0],
@@ -46,16 +85,43 @@ impl From<&Border> for iced::Border {
     }
 }
 
-#[derive(Debug, Clone)]
+impl From<Border> for iced::Border {
+    fn from(value: Border) -> iced::Border {
+        iced::Border {
+            color: value.color.into(),
+            width: value.width,
+            radius: iced::border::Radius {
+                top_left: value.radius[0],
+                top_right: value.radius[1],
+                bottom_right: value.radius[2],
+                bottom_left: value.radius[3],
+            },
+        }
+    }
+}
+
+#[derive(Debug, Copy, Clone)]
 pub struct HexColor(pub iced::Color);
 
-impl From<&str> for HexColor {
-    // FIXME: Not very idiomatic because it might fail.
-    fn from(value: &str) -> HexColor {
-        HexColor(
-            iced::Color::parse(value)
-                .expect("Invalid color. Use #RGB, #RRGGBB, #RGBA, or #RRGGBBAA format instead."),
-        )
+impl From<iced::Color> for HexColor {
+    fn from(value: iced::Color) -> Self {
+        HexColor(iced::Color {
+            r: value.r,
+            g: value.g,
+            b: value.b,
+            a: value.a,
+        })
+    }
+}
+
+impl From<HexColor> for iced::Color {
+    fn from(value: HexColor) -> Self {
+        iced::Color {
+            r: value.0.r,
+            g: value.0.g,
+            b: value.0.b,
+            a: value.0.a,
+        }
     }
 }
 
@@ -90,11 +156,7 @@ impl<'de> Deserialize<'de> for HexColor {
         D: serde::Deserializer<'de>,
     {
         let color = String::deserialize(deserializer)?;
-        let converted_color = iced::Color::parse(&color).ok_or_else(|| {
-            serde::de::Error::custom(
-                "Invalid color. Use #RGB, #RRGGBB, #RGBA, or #RRGGBBAA format instead.",
-            )
-        })?;
+        let converted_color = iced::Color::from_str(&color).map_err(serde::de::Error::custom)?;
 
         Ok(HexColor(converted_color))
     }
@@ -147,12 +209,12 @@ impl From<&Padding> for iced::Padding {
 impl Default for Prompt {
     fn default() -> Self {
         Self {
-            background: TRANSPARENT.into(),
+            background: iced::Color::TRANSPARENT.into(),
             font_size: 18,
             icon_size: 28,
             padding: Padding::from([8., 8., 8., 8.]),
             border: Border {
-                color: TRANSPARENT.into(),
+                color: iced::Color::TRANSPARENT.into(),
                 ..Default::default()
             },
             placeholder_color: DEFAULT_DIM_TEXT.into(),
@@ -188,14 +250,14 @@ pub struct Entry {
     pub background: HexColor,
     pub focus_highlight: HexColor,
     pub hover_highlight: HexColor,
-    pub font_size: u16,
-    pub secondary_font_size: u16,
+    pub font_size: u32,
+    pub secondary_font_size: u32,
     pub main_text: HexColor,
     pub secondary_text: HexColor,
     pub padding: Padding,
     pub height: f32,
     pub border: Border,
-    pub icon_size: u16,
+    pub icon_size: u32,
 }
 
 impl Default for Entry {
@@ -212,7 +274,7 @@ impl Default for Entry {
             secondary_text: DEFAULT_SECONDARY_TEXT.into(),
             padding: Padding::from([10., 10., 10., 10.]),
             border: Border {
-                color: TRANSPARENT.into(),
+                color: iced::Color::TRANSPARENT.into(),
                 width: 0.0,
                 radius: [20., 20., 20., 20.],
             },
@@ -232,25 +294,6 @@ impl Default for Launchpad {
         Self {
             padding: 10.,
             entry: Entry::default(),
-        }
-    }
-}
-
-#[derive(Debug, Serialize, Deserialize, Clone)]
-#[serde(default)]
-pub struct CustomTheme {
-    pub background: HexColor,
-    pub border: Border,
-    pub prompt: Prompt,
-    pub launchpad: Launchpad,
-    pub separator: Separator,
-}
-
-impl DefaultStyle for CustomTheme {
-    fn default_style(&self) -> iced_layershell::Appearance {
-        iced_layershell::Appearance {
-            background_color: iced::Color::TRANSPARENT,
-            text_color: Default::default(),
         }
     }
 }
@@ -285,21 +328,21 @@ impl button::Catalog for CustomTheme {
 
         match (class, status) {
             (ButtonClass::Itemlist, button::Status::Hovered) => button::Style {
-                background: Some(iced::Background::Color(*entry_style.hover_highlight)),
-                text_color: *entry_style.main_text,
-                border: iced::Border::from(&entry_style.border),
+                background: Some(iced::Background::Color(entry_style.hover_highlight.into())),
+                text_color: entry_style.main_text.into(),
+                border: entry_style.border.into(),
                 ..Default::default()
             },
             (ButtonClass::Itemlist, _) => button::Style {
-                background: Some(iced::Background::Color(*entry_style.background)),
-                text_color: *entry_style.main_text,
-                border: iced::Border::from(&entry_style.border),
+                background: Some(iced::Background::Color(iced::Color::TRANSPARENT)),
+                text_color: entry_style.main_text.into(),
+                border: entry_style.border.into(),
                 ..Default::default()
             },
             (ButtonClass::ItemlistSelected, _) => button::Style {
-                background: Some(iced::Background::Color(*entry_style.focus_highlight)),
-                text_color: *entry_style.main_text,
-                border: iced::Border::from(&entry_style.border),
+                background: Some(iced::Background::Color(entry_style.focus_highlight.into())),
+                text_color: entry_style.main_text.into(),
+                border: entry_style.border.into(),
                 ..Default::default()
             },
             (ButtonClass::Transparent, _) => button::Style {
@@ -326,8 +369,8 @@ impl container::Catalog for CustomTheme {
         match class {
             ContainerClass::Default => container::Style::default(),
             ContainerClass::MainContainer => container::Style {
-                background: Some(iced::Background::Color(*self.background)),
-                border: iced::Border::from(&self.border),
+                background: Some(iced::Background::Color(self.background.into())),
+                border: self.border.into(),
                 ..Default::default()
             },
         }
@@ -351,10 +394,10 @@ impl text::Catalog for CustomTheme {
         match item {
             TextClass::Default => text::Style::default(),
             TextClass::TextDim => text::Style {
-                color: Some(*self.prompt.placeholder_color),
+                color: Some(self.prompt.placeholder_color.into()),
             },
             TextClass::SecondaryText => text::Style {
-                color: Some(*self.launchpad.entry.secondary_text),
+                color: Some(self.launchpad.entry.secondary_text.into()),
             },
         }
     }
@@ -384,7 +427,7 @@ impl scrollable::Catalog for CustomTheme {
             vertical_rail: iced::widget::scrollable::Rail {
                 background: Some(iced::Background::Color(iced::Color::TRANSPARENT)),
                 scroller: scrollable::Scroller {
-                    color: iced::Color::TRANSPARENT,
+                    background: iced::Background::Color(iced::Color::TRANSPARENT),
                     border: iced::Border {
                         width: 0.0,
                         ..Default::default()
@@ -395,7 +438,7 @@ impl scrollable::Catalog for CustomTheme {
             horizontal_rail: iced::widget::scrollable::Rail {
                 background: None,
                 scroller: scrollable::Scroller {
-                    color: *self.background,
+                    background: iced::Background::Color(self.background.into()),
                     border: iced::Border {
                         radius: iced::border::radius(5),
                         ..Default::default()
@@ -404,6 +447,12 @@ impl scrollable::Catalog for CustomTheme {
                 border: iced::Border::default(),
             },
             gap: None,
+            auto_scroll: scrollable::AutoScroll {
+                background: iced::Background::Color(iced::Color::TRANSPARENT),
+                border: iced::Border::default(),
+                shadow: iced::Shadow::default(),
+                icon: iced::Color::TRANSPARENT,
+            },
         }
     }
 }
@@ -421,10 +470,10 @@ impl rule::Catalog for CustomTheme {
 
     fn style(&self, _class: &Self::Class<'_>) -> rule::Style {
         rule::Style {
-            color: *self.separator.color,
-            width: self.separator.width,
+            color: self.separator.color.into(),
             fill_mode: iced::widget::rule::FillMode::Padded(self.separator.padding),
             radius: self.separator.radius.into(),
+            snap: false,
         }
     }
 }
@@ -442,12 +491,12 @@ impl text_input::Catalog for CustomTheme {
 
     fn style(&self, _class: &Self::Class<'_>, _status: text_input::Status) -> text_input::Style {
         text_input::Style {
-            background: iced::Background::Color(*self.prompt.background),
-            border: iced::Border::from(&self.prompt.border),
-            icon: *self.prompt.placeholder_color,
-            placeholder: *self.prompt.placeholder_color,
-            value: *self.prompt.text_color,
-            selection: *self.launchpad.entry.focus_highlight,
+            background: iced::Background::Color(self.prompt.background.into()),
+            border: self.prompt.border.into(),
+            icon: self.prompt.placeholder_color.into(),
+            placeholder: self.prompt.placeholder_color.into(),
+            value: self.prompt.text_color.into(),
+            selection: self.launchpad.entry.focus_highlight.into(),
         }
     }
 }

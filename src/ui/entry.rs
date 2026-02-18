@@ -1,9 +1,9 @@
-use std::collections::HashMap;
+use std::{borrow::Cow, collections::HashMap};
 
 use fuzzy_matcher::{FuzzyMatcher, skim::SkimMatcherV2};
 use iced::{
     Alignment, Element, Font, Length, font,
-    widget::{Container, button, container, horizontal_space, image, row, text},
+    widget::{Container, button, container, image, row, space, text},
 };
 
 use crate::{
@@ -13,13 +13,12 @@ use crate::{
         keybindings::Action,
         theme::{ButtonClass, CustomTheme, Entry as EntryStyle, TextClass},
     },
-    providers::{Entry, EntryIcon, Id},
-    ui::icon::BakedIcons,
+    providers::Id,
+    ui::icon::{ENTER, ICON_PLACEHOLDER, STAR_ACTIVE, STAR_INACTIVE},
 };
 
 const CTRL_SHORTCUTS: [&str; 5] = ["Ctrl+1", "Ctrl+2", "Ctrl+3", "Ctrl+4", "Ctrl+5"];
 
-// Maybe unnecesarry constant, this is stack based. (but nice to have ergonomic?)
 const FONT_BOLD: Font = Font {
     weight: font::Weight::Bold,
     family: font::Family::SansSerif,
@@ -34,56 +33,88 @@ pub const FONT_ITALIC: Font = Font {
     stretch: font::Stretch::Normal,
 };
 
+#[derive(Debug, Clone)]
+pub enum EntryIcon {
+    Lazy(Id),
+    Handle(iced::widget::image::Handle),
+}
+
+#[derive(Debug, Clone)]
+pub struct Entry {
+    pub id: Id,
+    pub main: String,
+    pub secondary: Option<String>,
+    pub icon: EntryIcon,
+}
+
+impl Entry {
+    pub fn new(
+        id: impl Into<String>,
+        main: impl Into<String>,
+        secondary: Option<impl Into<String>>,
+        icon: EntryIcon,
+    ) -> Self {
+        Self {
+            id: id.into(),
+            main: main.into(),
+            secondary: secondary.map(Into::into),
+            icon,
+        }
+    }
+}
+
 pub fn display_entry<'a>(
     entry: &'a Entry,
-    baked_icons: &'a BakedIcons,
     style: &'a EntryStyle,
-    visual_index: usize,
+    index: usize,
     is_selected: bool,
+    is_hovered: bool,
     is_favorite: bool,
 ) -> Element<'a, Message, CustomTheme> {
     let shortcut_label: Element<'a, Message, CustomTheme> = if is_selected {
-        image(&baked_icons.enter).width(18).height(18).into()
-    } else if visual_index < CTRL_SHORTCUTS.len() {
-        text(CTRL_SHORTCUTS[visual_index])
+        image(ENTER.clone()).width(18).height(18).into()
+    } else if index < CTRL_SHORTCUTS.len() {
+        text(CTRL_SHORTCUTS[index])
             .size(12)
             .class(TextClass::TextDim)
             .into()
     } else {
-        text("").into()
+        space::horizontal().width(0).into()
     };
 
     let star_handle = if is_favorite {
-        &baked_icons.star_active
+        STAR_ACTIVE.clone()
     } else {
-        &baked_icons.star_inactive
+        STAR_INACTIVE.clone()
     };
 
-    let mark_favorite: Option<Element<'a, Message, CustomTheme>> = is_selected.then(|| {
-        button(image(star_handle).width(18).height(18))
-            .on_press(Message::TriggerAction(Action::ToggleFavorite))
-            .class(ButtonClass::Transparent)
-            .into()
-    });
+    let mark_favorite: Option<Element<'a, Message, CustomTheme>> = (is_selected || is_hovered)
+        .then(|| {
+            button(image(star_handle).width(18).height(18))
+                .on_press(Message::TriggerAction(Action::ToggleFavorite))
+                .class(ButtonClass::Transparent)
+                .into()
+        });
     let actions = row![]
-        .push_maybe(mark_favorite)
+        .extend(mark_favorite)
         .push(shortcut_label)
         .align_y(Alignment::Center);
     let main = text(&entry.main)
         .size(style.font_size)
         .width(Length::Fill)
         .font(FONT_BOLD);
-    let secondary = entry.secondary.as_ref().map(|desc| {
-        text(desc)
+    let secondary = entry.secondary.as_deref().map(|desc| {
+        text(truncate_with_elipsis(desc, 95))
             .size(style.secondary_font_size)
             .class(TextClass::SecondaryText)
+            .into()
     });
     let icon_view: Element<'a, Message, CustomTheme> = match &entry.icon {
         EntryIcon::Handle(handle) => image(handle)
             .width(style.icon_size)
             .height(style.icon_size)
             .into(),
-        EntryIcon::Lazy(_) => image(&baked_icons.icon_placeholder)
+        EntryIcon::Lazy(_) => image(ICON_PLACEHOLDER.clone())
             .width(style.icon_size)
             .height(style.icon_size)
             .into(),
@@ -92,13 +123,13 @@ pub fn display_entry<'a>(
     button(
         row![
             icon_view,
-            iced::widget::column![main].push_maybe(secondary).spacing(2),
+            iced::widget::column![main].extend(secondary).spacing(2),
             actions
         ]
         .spacing(12)
         .align_y(iced::Alignment::Center),
     )
-    .on_press(Message::TriggerAction(Action::LaunchEntry(visual_index)))
+    .on_press(Message::TriggerAction(Action::LaunchEntry(index)))
     .padding(iced::Padding::from(&style.padding))
     .height(style.height)
     .width(Length::Fill)
@@ -108,6 +139,16 @@ pub fn display_entry<'a>(
         ButtonClass::Itemlist
     })
     .into()
+}
+
+fn truncate_with_elipsis(text: &str, limit: usize) -> Cow<'_, str> {
+    if text.len() < limit {
+        return Cow::Borrowed(text);
+    }
+
+    let mut text = text.to_string();
+    text.truncate(limit);
+    Cow::Owned(format!("{text}..."))
 }
 
 pub fn section(name: &str) -> Container<'_, Message, CustomTheme> {
@@ -133,41 +174,43 @@ pub fn section(name: &str) -> Container<'_, Message, CustomTheme> {
 #[derive(Default)]
 pub struct EntryRegistry {
     entries: Vec<Entry>,
-    entry_indices: Vec<usize>,
-    entry_index_map: HashMap<Id, usize>,
+    projection: Vec<usize>,
+    registry: HashMap<Id, usize>,
 }
 
 impl EntryRegistry {
     pub fn clear(&mut self) {
         self.entries.clear();
-        self.entry_indices.clear();
-        self.entry_index_map.clear();
+        self.projection.clear();
+        self.registry.clear();
     }
 
     #[allow(dead_code)]
     pub fn push(&mut self, entry: Entry) {
         let id = entry.id.clone();
-        self.entries.push(entry);
         let index = self.entries.len();
-        self.entry_indices.push(index);
-        self.entry_index_map.insert(id, index);
+        self.entries.push(entry);
+        self.projection.push(index);
+        self.registry.insert(id, index);
     }
 
     pub fn extend<I>(&mut self, entries: I)
     where
         I: IntoIterator<Item = Entry>,
     {
-        let mut current_index = self.entries.len();
-
         for entry in entries {
             let id = entry.id.clone();
+            let current_index = self.entries.len();
 
-            self.entry_index_map.insert(id, current_index);
+            self.registry.insert(id, current_index);
             self.entries.push(entry);
-            self.entry_indices.push(current_index);
-
-            current_index += 1;
+            self.projection.push(current_index);
         }
+    }
+
+    pub fn get_visible_by_index(&self, visual_index: usize) -> Option<&Entry> {
+        let &original_index = self.projection.get(visual_index)?;
+        self.entries.get(original_index)
     }
 
     pub fn get_by_index(&self, index: usize) -> Option<&Entry> {
@@ -179,8 +222,8 @@ impl EntryRegistry {
     }
 
     #[allow(dead_code)]
-    pub fn get_by_id(&mut self, id: &Id) -> Option<&Entry> {
-        if let Some(index) = self.entry_index_map.get(id) {
+    pub fn get_by_id(&self, id: &Id) -> Option<&Entry> {
+        if let Some(index) = self.registry.get(id) {
             return self.get_by_index(*index);
         }
 
@@ -188,7 +231,7 @@ impl EntryRegistry {
     }
 
     pub fn get_mut_by_id(&mut self, id: &Id) -> Option<&mut Entry> {
-        if let Some(index) = self.entry_index_map.get(id) {
+        if let Some(index) = self.registry.get(id) {
             return self.get_mut_by_index(*index);
         }
 
@@ -201,7 +244,7 @@ impl EntryRegistry {
     }
 
     pub fn visible_len(&self) -> usize {
-        self.entry_indices.len()
+        self.projection.len()
     }
 
     pub fn is_empty(&self) -> bool {
@@ -209,13 +252,11 @@ impl EntryRegistry {
     }
 
     pub fn is_visibles_empty(&self) -> bool {
-        self.entry_indices.is_empty()
+        self.projection.is_empty()
     }
 
     pub fn iter_visible(&self) -> impl Iterator<Item = &Entry> {
-        self.entry_indices
-            .iter()
-            .filter_map(|&original_idx| self.entries.get(original_idx))
+        self.projection.iter().map(|&index| &self.entries[index])
     }
 
     pub fn sort_by_rank(
@@ -247,7 +288,7 @@ impl EntryRegistry {
             }
         });
 
-        self.entry_indices = ranked
+        self.projection = ranked
             .into_iter()
             .map(|(_score, app_index)| app_index)
             .collect();

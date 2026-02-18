@@ -1,46 +1,57 @@
+use std::sync::LazyLock;
+
+use iced::widget::image;
+
 pub const ICON_SIZES: [&str; 7] = [
     "512x512", "256x256", "128x128", "96x96", "64x64", "48x48", "32x32",
 ];
 
 pub const ICON_EXTENSIONS: [&str; 2] = ["svg", "png"];
 
+macro_rules! bake_icon {
+    ($path:expr) => {
+        LazyLock::new(|| iced::widget::image::Handle::from_bytes(include_bytes!($path).as_slice()))
+    };
+}
+
 // #EBECF2 - Active icons color
 // #808080 - Inactive icons color
 
-// UI Icons
-pub static MAGNIFIER: &[u8] = include_bytes!("../../assets/icons/magnifier.png");
-pub static ENTER: &[u8] = include_bytes!("../../assets/icons/enter.png");
+// --- UI Icons ---
+pub static MAGNIFIER: LazyLock<image::Handle> = bake_icon!("../../assets/icons/magnifier.png");
+pub static ENTER: LazyLock<image::Handle> = bake_icon!("../../assets/icons/enter.png");
 
-pub static STAR_ACTIVE: &[u8] = include_bytes!("../../assets/icons/star-fill.png");
-pub static CUBE_ACTIVE: &[u8] = include_bytes!("../../assets/icons/tabler--cube-active.png");
-pub static FOLDER_ACTIVE: &[u8] = include_bytes!("../../assets/icons/proicons--folder.png");
-pub static ICON_PLACEHOLDER: &[u8] = include_bytes!("../../assets/icons/icon-placeholder.png");
+pub static STAR_ACTIVE: LazyLock<image::Handle> = bake_icon!("../../assets/icons/star-fill.png");
+pub static STAR_INACTIVE: LazyLock<image::Handle> = bake_icon!("../../assets/icons/star-line.png");
 
-pub static CUBE_INACTIVE: &[u8] = include_bytes!("../../assets/icons/tabler--cube.png");
-pub static FOLDER_INACTIVE: &[u8] =
-    include_bytes!("../../assets/icons/proicons--folder-inactive.png");
-pub static STAR_INACTIVE: &[u8] = include_bytes!("../../assets/icons/star-line.png");
-// static CLIPBOARD_INACTIVE: &[u8] = include_bytes!("../assets/icons/tabler--clipboard.png");
+pub static CUBE_ACTIVE: LazyLock<image::Handle> =
+    bake_icon!("../../assets/icons/tabler--cube-active.png");
+pub static CUBE_INACTIVE: LazyLock<image::Handle> =
+    bake_icon!("../../assets/icons/tabler--cube.png");
 
-// TODO: Convert every image to raster image formats
-pub static APPLICATION_DEFAULT: &[u8] =
-    include_bytes!("../../assets/mimetypes/application-x-executable.png");
-pub static FOLDER_DEFAULT: &[u8] = include_bytes!("../../assets/mimetypes/inode-directory.png");
-pub static TEXT_GENERIC: &[u8] = include_bytes!("../../assets/mimetypes/text-x-generic.png");
-pub static IMAGE_GENERIC: &[u8] = include_bytes!("../../assets/mimetypes/image-x-generic.png");
-pub static AUDIO_GENERIC: &[u8] = include_bytes!("../../assets/mimetypes/audio-x-generic.png");
-pub static VIDEO_GENERIC: &[u8] = include_bytes!("../../assets/mimetypes/video-x-generic.png");
-pub static FONT_GENERIC: &[u8] = include_bytes!("../../assets/mimetypes/font-x-generic.png");
-pub static MULTIPART_GENERIC: &[u8] =
-    include_bytes!("../../assets/mimetypes/package-x-generic.png");
-pub static MODEL_GENERIC: &[u8] = include_bytes!("../../assets/mimetypes/model.png");
+pub static FOLDER_ACTIVE: LazyLock<image::Handle> =
+    bake_icon!("../../assets/icons/proicons--folder.png");
+pub static FOLDER_INACTIVE: LazyLock<image::Handle> =
+    bake_icon!("../../assets/icons/proicons--folder-inactive.png");
 
-// TODO: I should have this struct declared and use in one place
-#[derive(Debug, Clone)]
-pub struct BakedIcons {
-    pub magnifier: iced::widget::image::Handle,
-    pub star_active: iced::widget::image::Handle,
-    pub star_inactive: iced::widget::image::Handle,
-    pub enter: iced::widget::image::Handle,
-    pub icon_placeholder: iced::widget::image::Handle,
-}
+pub static ICON_PLACEHOLDER: LazyLock<image::Handle> =
+    bake_icon!("../../assets/icons/icon-placeholder.png");
+
+// --- Mimetypes / Generic Icons ---
+pub static APPLICATION_DEFAULT: LazyLock<image::Handle> =
+    bake_icon!("../../assets/mimetypes/application-x-executable.png");
+pub static FOLDER_DEFAULT: LazyLock<image::Handle> =
+    bake_icon!("../../assets/mimetypes/inode-directory.png");
+pub static TEXT_GENERIC: LazyLock<image::Handle> =
+    bake_icon!("../../assets/mimetypes/text-x-generic.png");
+pub static IMAGE_GENERIC: LazyLock<image::Handle> =
+    bake_icon!("../../assets/mimetypes/image-x-generic.png");
+pub static AUDIO_GENERIC: LazyLock<image::Handle> =
+    bake_icon!("../../assets/mimetypes/audio-x-generic.png");
+pub static VIDEO_GENERIC: LazyLock<image::Handle> =
+    bake_icon!("../../assets/mimetypes/video-x-generic.png");
+pub static FONT_GENERIC: LazyLock<image::Handle> =
+    bake_icon!("../../assets/mimetypes/font-x-generic.png");
+pub static MULTIPART_GENERIC: LazyLock<image::Handle> =
+    bake_icon!("../../assets/mimetypes/package-x-generic.png");
+pub static MODEL_GENERIC: LazyLock<image::Handle> = bake_icon!("../../assets/mimetypes/model.png");

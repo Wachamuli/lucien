@@ -11,53 +11,54 @@ use iced::futures;
 use iced::{Subscription, Task, futures::SinkExt, widget::image};
 use resvg::{tiny_skia, usvg};
 
-use crate::providers::{LauncherContext, Scanner};
+use crate::providers::{ContextSealed, Scanner};
+use crate::ui::entry::EntryIcon;
 use crate::{
     launcher::Message,
-    providers::{EntryIcon, Id},
+    providers::Id,
     ui::icon::{APPLICATION_DEFAULT, ICON_EXTENSIONS, ICON_SIZES},
 };
 
-use super::{Entry, Provider, SCAN_BATCH_SIZE, spawn_with_new_session};
+use super::{Entry, Provider, spawn_with_new_session};
 
 #[derive(Debug, Clone, Copy)]
 pub struct AppProvider;
 
 impl Provider for AppProvider {
-    fn scan(&self, _context: LauncherContext) -> Subscription<Message> {
-        let stream = iced::stream::channel(100, |output| async move {
-            let spawn_handler = tokio::runtime::Handle::current();
-            tokio::task::spawn_blocking(move || {
+    fn scan(&self) -> Subscription<Message> {
+        Subscription::run(|| {
+            iced::stream::channel(100, async move |output| {
                 let xdg_dirs = Arc::new(xdg::BaseDirectories::new());
-                let apps = gio::AppInfo::all()
-                    .into_iter()
-                    .filter(|app| app.should_show());
-                let mut scanner = Scanner::new(output.clone(), SCAN_BATCH_SIZE);
-
-                for app in apps {
-                    let meta = AppMetadata::from(app);
-                    let entry = Entry::new(
-                        meta.id.clone(),
-                        meta.name,
-                        meta.description,
-                        meta.icon.clone(),
-                    );
-                    if let EntryIcon::Lazy(icon_name) = meta.icon {
-                        let output_clone = output.clone();
-                        let xdg_dirs_clone = xdg_dirs.clone();
-                        spawn_handler.spawn(async move {
-                            resolve_icon(meta.id, icon_name, xdg_dirs_clone, output_clone).await
-                        });
+                Scanner::run(output.clone(), |ctx, scanner| {
+                    let apps = gio::AppInfo::all()
+                        .into_iter()
+                        .filter(|app| app.should_show());
+                    for app in apps {
+                        let meta = AppMetadata::from(app);
+                        let entry = Entry::new(
+                            meta.id.clone(),
+                            meta.name,
+                            meta.description,
+                            meta.icon.clone(),
+                        );
+                        if let EntryIcon::Lazy(icon_name) = meta.icon {
+                            tokio::spawn(resolve_icon(
+                                meta.id,
+                                icon_name,
+                                ctx.icon_size,
+                                xdg_dirs.clone(),
+                                output.clone(),
+                            ));
+                        }
+                        scanner.load(entry);
                     }
-                    scanner.load(entry);
-                }
-            });
-        });
-
-        iced::Subscription::run_with_id("app-provider-scan", stream)
+                })
+                .await;
+            })
+        })
     }
 
-    fn launch(&self, id: &str) -> Task<Message> {
+    fn launch(&self, id: &str, _: &ContextSealed) -> Task<Message> {
         let raw_command_without_placeholders = id
             .split_whitespace()
             .filter(|arg| !arg.starts_with('%'))
@@ -85,63 +86,79 @@ impl Provider for AppProvider {
 async fn resolve_icon(
     id: Id,
     name: String,
+    size: u32,
     xdg_dirs: Arc<xdg::BaseDirectories>,
     mut output: futures::channel::mpsc::Sender<Message>,
 ) {
-    if let Some(xdg_path) = get_icon_path_from_xdgicon(name, xdg_dirs.clone()).await {
-        if let Some(handle) = load_raster_icon(xdg_path, 64).await {
-            let _ = output.send(Message::IconResolved { id, handle }).await;
-            return;
-        }
-    }
+    let handle = get_icon_path_from_xdgicon(name, xdg_dirs)
+        .and_then(|path| load_raster_icon(path, size))
+        .unwrap_or_else(|| APPLICATION_DEFAULT.clone());
 
-    let _ = output
-        .send(Message::IconResolved {
-            id,
-            handle: image::Handle::from_bytes(APPLICATION_DEFAULT),
-        })
-        .await;
+    let _ = output.send(Message::IconResolved { id, handle }).await;
 }
 
-pub async fn get_icon_path_from_xdgicon(
+pub fn get_icon_path_from_xdgicon(
     icon_name: String,
     xdg_dirs: Arc<xdg::BaseDirectories>,
 ) -> Option<PathBuf> {
-    tokio::task::spawn_blocking(move || {
-        let path_iconname = Path::new(&icon_name);
-        if path_iconname.is_absolute() && path_iconname.exists() {
-            return Some(path_iconname.to_path_buf());
+    let path_iconname = Path::new(&icon_name);
+    if path_iconname.is_absolute() && path_iconname.exists() {
+        return Some(path_iconname.to_path_buf());
+    }
+
+    let mut path_str = String::with_capacity(128);
+
+    write!(path_str, "icons/hicolor/scalable/apps/{}.svg", icon_name).ok()?;
+    if let Some(found_path) = xdg_dirs.find_data_file(&path_str) {
+        return Some(found_path);
+    }
+
+    for size in ICON_SIZES {
+        path_str.clear();
+        write!(path_str, "icons/hicolor/{}/apps/{}.png", size, icon_name).ok()?;
+        if let Some(path) = xdg_dirs.find_data_file(&path_str) {
+            return Some(path);
         }
+    }
 
-        let mut path_str = String::with_capacity(128);
-
-        write!(path_str, "icons/hicolor/scalable/apps/{}.svg", icon_name).ok()?;
-        if let Some(found_path) = xdg_dirs.find_data_file(&path_str) {
-            return Some(found_path);
+    for ext in ICON_EXTENSIONS {
+        path_str.clear();
+        write!(path_str, "pixmaps/{}.{}", icon_name, ext).ok()?;
+        if let Some(path) = xdg_dirs.find_data_file(&path_str) {
+            return Some(path);
         }
+    }
 
-        for size in ICON_SIZES {
-            path_str.clear();
-            write!(path_str, "icons/hicolor/{}/apps/{}.png", size, icon_name).ok()?;
-            if let Some(path) = xdg_dirs.find_data_file(&path_str) {
-                return Some(path);
-            }
-        }
-
-        for ext in ICON_EXTENSIONS {
-            path_str.clear();
-            write!(path_str, "pixmaps/{}.{}", icon_name, ext).ok()?;
-            if let Some(path) = xdg_dirs.find_data_file(&path_str) {
-                return Some(path);
-            }
-        }
-
-        None
-    })
-    .await
-    .ok()
-    .flatten()
+    None
 }
+
+fn rasterize_svg(path: PathBuf, size: u32) -> Option<tiny_skia::Pixmap> {
+    let svg_data = std::fs::read(path).ok()?;
+    let tree = usvg::Tree::from_data(&svg_data, &usvg::Options::default()).ok()?;
+
+    let mut pixmap = tiny_skia::Pixmap::new(size, size)?;
+    let transform = tiny_skia::Transform::from_scale(
+        size as f32 / tree.size().width(),
+        size as f32 / tree.size().height(),
+    );
+
+    resvg::render(&tree, transform, &mut pixmap.as_mut());
+    Some(pixmap)
+}
+
+fn load_raster_icon(path: PathBuf, size: u32) -> Option<image::Handle> {
+    let extension = path.extension()?.to_str()?;
+
+    match extension {
+        "svg" => {
+            let pixmap = rasterize_svg(path, size)?;
+            Some(image::Handle::from_rgba(size, size, pixmap.data().to_vec()))
+        }
+        "png" => Some(image::Handle::from_path(path)),
+        _ => None,
+    }
+}
+
 pub struct AppMetadata {
     pub id: String,
     pub name: String,
@@ -157,49 +174,17 @@ impl From<gio::AppInfo> for AppMetadata {
             .unwrap_or_default();
         let name = app.name().to_string();
         let description = app.description().map(|d| d.to_string());
-        let icon_type = app
+        let icon = app
             .icon()
             .and_then(|i| i.to_string())
             .map(|s| EntryIcon::Lazy(s.to_string()))
-            .unwrap_or_else(|| EntryIcon::Handle(image::Handle::from_bytes(APPLICATION_DEFAULT)));
+            .unwrap_or_else(|| EntryIcon::Handle(APPLICATION_DEFAULT.clone()));
 
         Self {
             id,
             name,
             description,
-            icon: icon_type,
+            icon,
         }
-    }
-}
-
-async fn rasterize_svg(path: PathBuf, size: u32) -> Option<tiny_skia::Pixmap> {
-    tokio::task::spawn_blocking(move || {
-        let svg_data = std::fs::read(path).ok()?;
-        let tree = usvg::Tree::from_data(&svg_data, &usvg::Options::default()).ok()?;
-
-        let mut pixmap = tiny_skia::Pixmap::new(size, size)?;
-        let transform = tiny_skia::Transform::from_scale(
-            size as f32 / tree.size().width(),
-            size as f32 / tree.size().height(),
-        );
-
-        resvg::render(&tree, transform, &mut pixmap.as_mut());
-        Some(pixmap)
-    })
-    .await
-    .ok()
-    .flatten()
-}
-
-async fn load_raster_icon(path: PathBuf, size: u32) -> Option<image::Handle> {
-    let extension = path.extension()?.to_str()?;
-
-    match extension {
-        "svg" => {
-            let pixmap = rasterize_svg(path, size).await?;
-            Some(image::Handle::from_rgba(size, size, pixmap.data().to_vec()))
-        }
-        "png" => Some(image::Handle::from_path(path)),
-        _ => None,
     }
 }

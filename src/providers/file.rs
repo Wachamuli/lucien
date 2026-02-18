@@ -7,14 +7,17 @@ use iced::{Subscription, Task, widget::image};
 
 use crate::{
     launcher::Message,
-    providers::{AsyncScanner, LauncherContext, SCAN_BATCH_SIZE},
-    ui::icon::{
-        APPLICATION_DEFAULT, AUDIO_GENERIC, FOLDER_DEFAULT, FONT_GENERIC, IMAGE_GENERIC,
-        MODEL_GENERIC, MULTIPART_GENERIC, TEXT_GENERIC, VIDEO_GENERIC,
+    providers::{AsyncScanner, ContextSealed},
+    ui::{
+        entry::{Entry, EntryIcon},
+        icon::{
+            APPLICATION_DEFAULT, AUDIO_GENERIC, FOLDER_DEFAULT, FONT_GENERIC, IMAGE_GENERIC,
+            MODEL_GENERIC, MULTIPART_GENERIC, TEXT_GENERIC, VIDEO_GENERIC,
+        },
     },
 };
 
-use super::{Entry, EntryIcon, Provider, spawn_with_new_session};
+use super::{Provider, spawn_with_new_session};
 
 #[derive(Debug, Clone, Copy)]
 pub struct FileProvider;
@@ -24,48 +27,48 @@ impl Provider for FileProvider {
     // as valid file names. Right now, these entries are being skip.
     // In order to fix this, id should be a PathBuf or similar.
     // This funcion call is the culprit: Path::to_str() -> Option<&str>
-    fn scan(&self, context: LauncherContext) -> Subscription<Message> {
-        let path = context.path.to_string_lossy().into_owned();
+    fn scan(&self) -> Subscription<Message> {
+        iced::Subscription::run(|| {
+            iced::stream::channel(100, async |output| {
+                AsyncScanner::run(output, async |ctx, scanner| {
+                    if let Some(parent_directory) = ctx.path.parent() {
+                        let parent_entry = Entry::new(
+                            parent_directory.to_str().unwrap(),
+                            "..",
+                            Some(parent_directory.to_string_lossy()),
+                            EntryIcon::Handle(get_icon_from_mimetype(
+                                &parent_directory,
+                                ctx.icon_size,
+                            )),
+                        );
+                        scanner.load(parent_entry).await;
+                    }
 
-        let stream = iced::stream::channel(100, async move |output| {
-            AsyncScanner::run(output, SCAN_BATCH_SIZE, async move |scanner| {
-                let icon_size = context.entry_theme.icon_size as u32;
-                if let Some(parent_directory) = context.path.parent() {
-                    let parent_entry = Entry::new(
-                        parent_directory.to_str().unwrap(),
-                        "..",
-                        Some(parent_directory.to_string_lossy()),
-                        EntryIcon::Handle(get_icon_from_mimetype(&parent_directory, icon_size)),
-                    );
-                    scanner.load(parent_entry).await;
-                }
-                let mut child_directories = tokio::fs::read_dir(&context.path).await.unwrap();
-                while let Some(child_dir) = child_directories.next_entry().await.unwrap() {
-                    let path = child_dir.path();
-                    let id_str = path.to_string_lossy();
-                    let main_display = path.file_name().unwrap().to_string_lossy();
-                    let child_entry = Entry::new(
-                        id_str.clone(),
-                        main_display,
-                        Some(id_str),
-                        EntryIcon::Handle(get_icon_from_mimetype(&path, icon_size)),
-                    );
-                    scanner.load(child_entry).await;
-                }
+                    let mut child_directories = tokio::fs::read_dir(&ctx.path).await.unwrap();
+                    while let Some(child_dir) = child_directories.next_entry().await.unwrap() {
+                        let path = child_dir.path();
+                        let id_str = path.to_string_lossy();
+                        let main_display = path.file_name().unwrap().to_string_lossy();
+                        let child_entry = Entry::new(
+                            id_str.clone(),
+                            main_display,
+                            Some(id_str),
+                            EntryIcon::Handle(get_icon_from_mimetype(&path, ctx.icon_size)),
+                        );
+                        scanner.load(child_entry).await;
+                    }
+                })
+                .await
             })
-            .await;
-        });
-
-        iced::Subscription::run_with_id(format!("file-provider-scan:{path}"), stream)
+        })
     }
 
-    fn launch(&self, id: &str) -> Task<Message> {
+    fn launch(&self, id: &str, context: &ContextSealed) -> Task<Message> {
         let path = PathBuf::from(id);
 
         if path.is_dir() {
-            return Task::done(Message::ScannerContextChange(LauncherContext::with_path(
-                path,
-            )));
+            let new_context = context.with_path(path);
+            return Task::done(Message::ContextChange(new_context));
         }
 
         let mut command = process::Command::new("xdg-open");
@@ -82,9 +85,9 @@ impl Provider for FileProvider {
     }
 }
 
-fn get_icon_from_mimetype(path: &Path, size: u32) -> image::Handle {
+fn get_icon_from_mimetype(path: &Path, _size: u32) -> image::Handle {
     if path.is_dir() {
-        return image::Handle::from_bytes(FOLDER_DEFAULT);
+        return FOLDER_DEFAULT.clone();
     }
 
     let file_extension = path
@@ -129,18 +132,16 @@ impl MimeType {
     }
 
     fn get_icon_from_type(&self) -> image::Handle {
-        let icon_bytes = match self {
-            MimeType::Text => TEXT_GENERIC,
-            MimeType::Application => APPLICATION_DEFAULT,
-            MimeType::Image => IMAGE_GENERIC,
-            MimeType::Audio => AUDIO_GENERIC,
-            MimeType::Video => VIDEO_GENERIC,
-            MimeType::Font => FONT_GENERIC,
-            MimeType::Multipart => MULTIPART_GENERIC,
-            MimeType::Model => MODEL_GENERIC,
-            MimeType::Unknown => TEXT_GENERIC,
-        };
-
-        image::Handle::from_bytes(icon_bytes)
+        match self {
+            MimeType::Text => TEXT_GENERIC.clone(),
+            MimeType::Application => APPLICATION_DEFAULT.clone(),
+            MimeType::Image => IMAGE_GENERIC.clone(),
+            MimeType::Audio => AUDIO_GENERIC.clone(),
+            MimeType::Video => VIDEO_GENERIC.clone(),
+            MimeType::Font => FONT_GENERIC.clone(),
+            MimeType::Multipart => MULTIPART_GENERIC.clone(),
+            MimeType::Model => MODEL_GENERIC.clone(),
+            MimeType::Unknown => TEXT_GENERIC.clone(),
+        }
     }
 }

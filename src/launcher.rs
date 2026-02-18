@@ -1,7 +1,11 @@
+use iced::{
+    Element,
+    widget::{self, mouse_area, operation::AbsoluteOffset},
+};
 use std::{
-    env,
     path::PathBuf,
     sync::{Arc, LazyLock},
+    usize,
 };
 
 use fuzzy_matcher::skim::SkimMatcherV2;
@@ -9,8 +13,8 @@ use iced::{
     Alignment, Length, Subscription, Task,
     widget::{
         Column, Container, container, image, row,
-        scrollable::{self, RelativeOffset, Viewport},
-        text, text_input,
+        scrollable::{RelativeOffset, Viewport},
+        text,
     },
 };
 use iced_layershell::to_layer_message;
@@ -22,15 +26,13 @@ use crate::{
         theme::{ContainerClass, CustomTheme, TextClass},
     },
     providers::{
-        EntryIcon, Id, LauncherContext, ProviderKind, ScannerState, app::AppProvider,
+        Context, ContextSealed, Id, ProviderKind, ScannerState, app::AppProvider,
         file::FileProvider,
     },
     ui::{
-        entry::{self, EntryRegistry, FONT_ITALIC, section},
-        icon::{
-            BakedIcons, CUBE_ACTIVE, CUBE_INACTIVE, ENTER, FOLDER_ACTIVE, FOLDER_INACTIVE,
-            ICON_PLACEHOLDER, MAGNIFIER, STAR_ACTIVE, STAR_INACTIVE,
-        },
+        self,
+        entry::{EntryIcon, EntryRegistry, FONT_ITALIC, section},
+        icon::{CUBE_ACTIVE, CUBE_INACTIVE, FOLDER_ACTIVE, FOLDER_INACTIVE, MAGNIFIER},
         prompt::Prompt,
     },
 };
@@ -38,28 +40,30 @@ use crate::{
 // TODO: Remove this constant
 pub const SECTION_HEIGHT: f32 = 36.0;
 
-static TEXT_INPUT_ID: LazyLock<text_input::Id> = LazyLock::new(text_input::Id::unique);
-static SCROLLABLE_ID: LazyLock<scrollable::Id> = LazyLock::new(scrollable::Id::unique);
+static TEXT_INPUT_ID: LazyLock<iced::widget::Id> = LazyLock::new(iced::widget::Id::unique);
+static SCROLLABLE_ID: LazyLock<iced::widget::Id> = LazyLock::new(iced::widget::Id::unique);
 
 pub struct Lucien {
     entry_registry: EntryRegistry,
+    context: ContextSealed,
     is_scan_completed: bool,
     provider: ProviderKind,
     prompt: String,
     matcher: SkimMatcherV2,
     preferences: Preferences,
     selected_entry: usize,
+    hovered_entry: usize,
     last_viewport: Option<Viewport>,
     search_handle: Option<iced::task::Handle>,
-    baked_icons: BakedIcons,
-    context: LauncherContext,
+    scanner_tx: Option<iced::futures::channel::mpsc::Sender<ContextSealed>>,
 }
 
 #[to_layer_message]
 #[derive(Debug, Clone)]
 pub enum Message {
+    RequestContext(iced::futures::channel::mpsc::Sender<ContextSealed>),
+    ContextChange(ContextSealed),
     ScanEvent(ScannerState),
-    ScannerContextChange(LauncherContext),
     PromptChange(String),
     DebouncedFilter,
     TriggerAction(Action),
@@ -67,38 +71,35 @@ pub enum Message {
     ScrollableViewport(Viewport),
     SaveIntoDisk(Result<PathBuf, Arc<tokio::io::Error>>),
     IconResolved { id: Id, handle: image::Handle },
+    HoveredEntry(usize),
+    HoveredExit(usize),
+    PreferencesLoaded(Result<Preferences, Arc<tokio::io::Error>>),
 }
 
 impl Lucien {
-    pub fn new(preferences: Preferences) -> (Self, Task<Message>) {
-        let auto_focus_prompt_task = text_input::focus(TEXT_INPUT_ID.clone());
+    pub fn new() -> (Self, Task<Message>) {
+        let preferences = Preferences::default();
         let default_provider = ProviderKind::App(AppProvider);
-
-        let baked_icons = BakedIcons {
-            enter: image::Handle::from_bytes(ENTER),
-            magnifier: image::Handle::from_bytes(MAGNIFIER),
-            star_active: image::Handle::from_bytes(STAR_ACTIVE),
-            star_inactive: image::Handle::from_bytes(STAR_INACTIVE),
-            icon_placeholder: image::Handle::from_bytes(ICON_PLACEHOLDER),
-        };
-
-        let context = LauncherContext::with_path(env!("HOME"));
-
+        // TODO: Context shouldn't be created by using the
+        // default Preferences instance. Create the context once
+        // the user-defined preferences are loaded.
+        let load_preferences_task = Task::perform(Preferences::load(), Message::PreferencesLoaded);
         let initial_values = Self {
+            selected_entry: 0,
+            hovered_entry: 0,
             entry_registry: EntryRegistry::default(),
             is_scan_completed: false,
-            context,
+            context: Context::create(&preferences),
             provider: default_provider,
             prompt: String::new(),
             matcher: SkimMatcherV2::default(),
             preferences,
-            selected_entry: 0,
             last_viewport: None,
             search_handle: None,
-            baked_icons,
+            scanner_tx: None,
         };
 
-        (initial_values, auto_focus_prompt_task)
+        (initial_values, load_preferences_task)
     }
 
     pub fn theme(&self) -> CustomTheme {
@@ -106,7 +107,7 @@ impl Lucien {
     }
 
     fn toggle_favorite(&mut self, index: usize) -> Task<Message> {
-        let Some(app) = self.entry_registry.get_by_index(index) else {
+        let Some(app) = self.entry_registry.get_visible_by_index(index) else {
             return Task::none();
         };
 
@@ -141,18 +142,18 @@ impl Lucien {
 
         if old_pos != self.selected_entry {
             let layout = AppLayout::new(&self.preferences, &self.prompt);
-            return self.snap_if_needed(&layout);
+            return self.snap_to_entry(&layout);
         }
 
         Task::none()
     }
 
     fn launch_entry(&self, index: usize) -> Task<Message> {
-        let Some(entry) = self.entry_registry.get_by_index(index) else {
-            return Task::none();
+        if let Some(entry) = &self.entry_registry.get_visible_by_index(index) {
+            return self.provider.handler().launch(&entry.id, &self.context);
         };
 
-        self.provider.handler().launch(&entry.id)
+        Task::none()
     }
 
     fn handle_action(&mut self, action: Action) -> Task<Message> {
@@ -166,7 +167,7 @@ impl Lucien {
         }
     }
 
-    pub fn snap_if_needed(&self, layout: &AppLayout) -> Task<Message> {
+    pub fn snap_to_entry(&self, layout: &AppLayout) -> Task<Message> {
         let Some(viewport) = &self.last_viewport else {
             return Task::none();
         };
@@ -212,7 +213,7 @@ impl Lucien {
             return Task::none();
         };
 
-        scrollable::snap_to(
+        widget::operation::snap_to(
             SCROLLABLE_ID.clone(),
             RelativeOffset {
                 x: 0.0,
@@ -223,32 +224,71 @@ impl Lucien {
 
     pub fn update(&mut self, message: Message) -> Task<Message> {
         match message {
-            Message::ScannerContextChange(context) => {
-                self.selected_entry = 0;
-                self.context = context;
-
-                scrollable::snap_to(SCROLLABLE_ID.clone(), RelativeOffset { x: 0.0, y: 0.0 })
-            }
-            Message::ScanEvent(scan_event) => {
-                match scan_event {
-                    ScannerState::Started => {
-                        self.prompt.clear();
-                        self.entry_registry.clear();
-                        self.is_scan_completed = false;
+            Message::PreferencesLoaded(result) => {
+                match result {
+                    Ok(preferences) => {
+                        tracing::debug!("Running under user-defined preferences.");
+                        self.preferences = preferences;
                     }
-                    ScannerState::Found(batch) => {
-                        self.entry_registry.extend(batch);
+                    Err(e) if e.kind() == std::io::ErrorKind::InvalidInput => {
+                        tracing::error!(diagnostic = %e, "Invalid preferences syntax");
                     }
-                    ScannerState::Finished => {
-                        self.is_scan_completed = true;
+                    Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
+                        tracing::error!(diagnostic = %e, "Preferences file not found");
                     }
-                    ScannerState::Errored(id, error) => {
-                        tracing::error!(error = error, "An error ocurred while scanning {id}");
+                    Err(e) => {
+                        tracing::error!(error = %e, "Failed to load preferences");
                     }
                 }
 
+                widget::operation::focus(TEXT_INPUT_ID.clone())
+            }
+            Message::RequestContext(mut sender) => {
+                // This should be async
+                let _ = sender.try_send(self.context.clone());
+                self.scanner_tx = Some(sender);
                 Task::none()
             }
+            Message::ContextChange(context) => {
+                let Some(tx) = &mut self.scanner_tx else {
+                    return Task::none();
+                };
+
+                self.context = context;
+
+                self.entry_registry.clear();
+                self.selected_entry = 0;
+                self.prompt = String::new();
+
+                let _ = tx.try_send(self.context.clone());
+
+                widget::operation::scroll_to(
+                    SCROLLABLE_ID.clone(),
+                    AbsoluteOffset { x: 0.0, y: 0.0 },
+                )
+            }
+            Message::ScanEvent(scan_event) => match scan_event {
+                ScannerState::Started => {
+                    self.prompt.clear();
+                    self.selected_entry = 0;
+                    self.entry_registry.clear();
+
+                    self.is_scan_completed = false;
+                    Task::none()
+                }
+                ScannerState::Found(batch) => {
+                    self.entry_registry.extend(batch);
+                    Task::none()
+                }
+                ScannerState::Finished => {
+                    self.is_scan_completed = true;
+                    Task::none()
+                }
+                ScannerState::Errored(id, error) => {
+                    tracing::error!(error = error, "An error ocurred while scanning {id}");
+                    Task::none()
+                }
+            },
             Message::IconResolved { id, handle } => {
                 if let Some(entry) = self.entry_registry.get_mut_by_id(&id) {
                     entry.icon = EntryIcon::Handle(handle);
@@ -309,10 +349,23 @@ impl Lucien {
                 self.entry_registry
                     .sort_by_rank(&self.preferences, &self.matcher, &self.prompt);
 
-                scrollable::snap_to(SCROLLABLE_ID.clone(), RelativeOffset { x: 0.0, y: 0.0 })
+                widget::operation::scroll_to(
+                    SCROLLABLE_ID.clone(),
+                    AbsoluteOffset { x: 0.0, y: 0.0 },
+                )
             }
             Message::ScrollableViewport(viewport) => {
                 self.last_viewport = Some(viewport);
+                Task::none()
+            }
+            Message::HoveredEntry(index) => {
+                self.hovered_entry = index;
+                Task::none()
+            }
+            Message::HoveredExit(index) => {
+                if self.hovered_entry == index {
+                    self.hovered_entry = self.selected_entry;
+                }
                 Task::none()
             }
             Message::SetInputRegion(_action_callback) => todo!(),
@@ -322,6 +375,7 @@ impl Lucien {
             Message::MarginChange(_) => todo!(),
             Message::SizeChange(_) => todo!(),
             Message::VirtualKeyboardPressed { .. } => todo!(),
+            Message::ExclusiveZoneChange(_) => todo!(),
         }
     }
 
@@ -331,7 +385,7 @@ impl Lucien {
         use iced::{event, keyboard};
 
         Subscription::batch([
-            self.provider.handler().scan(self.context.clone()),
+            self.provider.handler().scan(),
             event::listen_with(move |event, _, _| match event {
                 IcedKeyboardEvent(keyboard::Event::KeyPressed { modifiers, key, .. }) => {
                     let keystrokes = Keystrokes::from_iced_keystrokes(modifiers, key);
@@ -347,31 +401,34 @@ impl Lucien {
 
     pub fn view(&self) -> Container<'_, Message, CustomTheme> {
         let theme = &self.preferences.theme;
+        let item_height = theme.launchpad.entry.height;
+        let style = &self.preferences.theme.launchpad.entry;
         let show_sections = self.prompt.is_empty() && !self.preferences.favorite_apps.is_empty();
 
         let mut starred_column =
-            Column::new().push_maybe(show_sections.then(|| section("Starred")));
+            Column::new().extend(show_sections.then(|| section("Starred").into()));
         let mut general_column =
-            Column::new().push_maybe(show_sections.then(|| section("General")));
+            Column::new().extend(show_sections.then(|| section("General").into()));
 
-        for (visual_index, entry) in self.entry_registry.iter_visible().enumerate() {
+        for (index, entry) in self.entry_registry.iter_visible().enumerate() {
             let is_favorite = self.preferences.favorite_apps.contains(&entry.id);
-            let is_selected = self.selected_entry == visual_index;
+            let is_selected = self.selected_entry == index;
+            let is_hovered = self.hovered_entry == index;
 
-            let item_height = theme.launchpad.entry.height;
-            let style = &self.preferences.theme.launchpad.entry;
-
-            // TODO widget::lazy entries?
-            let entry_view = container(entry::display_entry(
-                entry,
-                &self.baked_icons,
-                style,
-                visual_index,
-                is_selected,
-                is_favorite,
-            ))
-            .height(item_height)
-            .width(Length::Fill);
+            let entry_view = mouse_area(
+                container(ui::entry::display_entry(
+                    &entry,
+                    style,
+                    index,
+                    is_selected,
+                    is_hovered,
+                    is_favorite,
+                ))
+                .height(item_height)
+                .width(Length::Fill),
+            )
+            .on_enter(Message::HoveredEntry(index))
+            .on_exit(Message::HoveredExit(index));
 
             if is_favorite && self.prompt.is_empty() {
                 starred_column = starred_column.push(entry_view);
@@ -380,8 +437,8 @@ impl Lucien {
             }
         }
 
-        let results_not_found: Option<Container<Message, CustomTheme>> =
-            (self.entry_registry.is_visibles_empty() && self.is_scan_completed).then(|| {
+        let results_not_found = (self.entry_registry.is_visibles_empty() && self.is_scan_completed)
+            .then(|| {
                 container(
                     text("No Results Found")
                         .size(14)
@@ -392,29 +449,33 @@ impl Lucien {
                         .font(FONT_ITALIC),
                 )
                 .padding(19.8)
-            });
+            })
+            .map(Element::from);
 
-        // Maybe the first bool is unnecessary.
         let show_results = !self.entry_registry.is_empty() || self.is_scan_completed;
 
         let content = Column::new()
             .push(starred_column)
             .push(general_column)
-            .push_maybe(results_not_found)
+            .extend(results_not_found)
             .padding(theme.launchpad.padding)
             .width(Length::Fill);
 
-        let results = show_results.then(|| {
-            iced::widget::scrollable(content)
-                .on_scroll(Message::ScrollableViewport)
-                .id(SCROLLABLE_ID.clone())
-        });
+        let results = show_results
+            .then(|| {
+                iced::widget::scrollable(content)
+                    .on_scroll(Message::ScrollableViewport)
+                    .id(SCROLLABLE_ID.clone())
+            })
+            .map(Element::from);
 
-        let horizontal_rule = show_results.then(|| iced::widget::horizontal_rule(1));
+        let horizontal_rule = show_results
+            .then(|| widget::rule::horizontal(1))
+            .map(Element::from);
 
         let prompt = Prompt::new(&self.prompt, &self.preferences.theme)
             .indicator(self.provider_indicator())
-            .magnifier(&self.baked_icons.magnifier)
+            .magnifier(MAGNIFIER.clone())
             .id(TEXT_INPUT_ID.clone())
             .on_input(Message::PromptChange)
             .on_submit(Message::TriggerAction(Action::LaunchEntry(
@@ -424,36 +485,33 @@ impl Lucien {
 
         container(
             iced::widget::column![prompt]
-                .push_maybe(horizontal_rule)
-                .push_maybe(results),
+                .extend(horizontal_rule)
+                .extend(results),
         )
         .class(ContainerClass::MainContainer)
     }
 
     fn provider_indicator<'a>(&'a self) -> Container<'a, Message, CustomTheme> {
-        let launcher_icon = match self.provider {
-            ProviderKind::App(_) => CUBE_ACTIVE,
-            _ => CUBE_INACTIVE,
+        let apps_icon = match self.provider {
+            ProviderKind::App(_) => CUBE_ACTIVE.clone(),
+            _ => CUBE_INACTIVE.clone(),
         };
-        let terminal_icon = match self.provider {
-            ProviderKind::File(_) => FOLDER_ACTIVE,
-            _ => FOLDER_INACTIVE,
+        let folder_icon = match self.provider {
+            ProviderKind::File(_) => FOLDER_ACTIVE.clone(),
+            _ => FOLDER_INACTIVE.clone(),
         };
 
         container(
             row![
-                image(image::Handle::from_bytes(launcher_icon))
-                    .width(18)
-                    .height(18),
-                image(image::Handle::from_bytes(terminal_icon))
-                    .width(18)
-                    .height(18),
+                image(apps_icon).width(18).height(18),
+                image(folder_icon).width(18).height(18),
             ]
             .spacing(10),
         )
     }
 }
 
+// FIXME: This can panic under certain conditions. Refactor.
 fn wrapped_index(index: usize, array_len: usize, step: isize) -> usize {
     if array_len == 0 {
         return 0;
