@@ -26,7 +26,7 @@ impl Provider for FileProvider {
     // FIXME: Unix-like systems accept non-UTF-8 valid sequences
     // as valid file names. Right now, these entries are being skip.
     // In order to fix this, id should be a PathBuf or similar.
-    // This funcion call is the culprit: Path::to_str() -> Option<&str>
+    // This function call is the culprit: Path::to_str() -> Option<&str>
     fn scan(&self) -> Subscription<Message> {
         iced::Subscription::run(|| {
             iced::stream::channel(100, async |output| {

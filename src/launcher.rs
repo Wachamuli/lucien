@@ -285,7 +285,7 @@ impl Lucien {
                     Task::none()
                 }
                 ScannerState::Errored(id, error) => {
-                    tracing::error!(error = error, "An error ocurred while scanning {id}");
+                    tracing::error!(error = error, "An error occurred while scanning {id}");
                     Task::none()
                 }
             },

@@ -4,8 +4,6 @@ use gio::glib::bitflags::bitflags;
 use serde::{self, Deserializer, Serializer};
 use serde::{Deserialize, Serialize};
 
-use crate::providers::Id;
-
 const KEYSTROKE_SEPARATOR: &str = "-";
 
 bitflags! {
