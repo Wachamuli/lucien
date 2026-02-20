@@ -4,8 +4,6 @@ use gio::glib::bitflags::bitflags;
 use serde::{self, Deserializer, Serializer};
 use serde::{Deserialize, Serialize};
 
-use crate::providers::Id;
-
 const KEYSTROKE_SEPARATOR: &str = "-";
 
 bitflags! {
@@ -101,10 +99,10 @@ impl FromStr for Key {
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         let mut chars = s.chars();
 
-        if let (Some(c), None) = (chars.next(), chars.next()) {
-            if c.is_alphanumeric() {
-                return Ok(Key::Character(c));
-            }
+        if let (Some(c), None) = (chars.next(), chars.next())
+            && c.is_alphanumeric()
+        {
+            return Ok(Key::Character(c));
         }
 
         match s {

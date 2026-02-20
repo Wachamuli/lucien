@@ -5,7 +5,6 @@ use iced::{
 use std::{
     path::PathBuf,
     sync::{Arc, LazyLock},
-    usize,
 };
 
 use fuzzy_matcher::skim::SkimMatcherV2;
@@ -417,7 +416,7 @@ impl Lucien {
 
             let entry_view = mouse_area(
                 container(ui::entry::display_entry(
-                    &entry,
+                    entry,
                     style,
                     index,
                     is_selected,

@@ -37,7 +37,7 @@ impl Provider for FileProvider {
                             "..",
                             Some(parent_directory.to_string_lossy()),
                             EntryIcon::Handle(get_icon_from_mimetype(
-                                &parent_directory,
+                                parent_directory,
                                 ctx.icon_size,
                             )),
                         );
