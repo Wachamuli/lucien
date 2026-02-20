@@ -141,10 +141,10 @@ impl Scanner {
         let mut context_rx = request_context(sender.clone()).await;
         let mut scanner_opt: Option<Scanner> = None;
         while let Some(context) = context_rx.next().await {
-            let mut scanner = scanner_opt
+            let scanner = scanner_opt
                 .get_or_insert_with(|| Scanner::new(sender.clone(), context.scan_batch_size));
             scanner.start();
-            f(&context, &mut scanner);
+            f(&context, scanner);
             scanner.finish();
         }
     }
