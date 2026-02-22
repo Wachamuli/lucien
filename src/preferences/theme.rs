@@ -25,6 +25,18 @@ pub struct CustomTheme {
     pub separator: Separator,
 }
 
+impl Default for CustomTheme {
+    fn default() -> Self {
+        Self {
+            background: DEFAULT_BACKGROUND_COLOR.into(),
+            border: Border::default(),
+            prompt: Prompt::default(),
+            separator: Separator::default(),
+            launchpad: Launchpad::default(),
+        }
+    }
+}
+
 impl iced::theme::Base for CustomTheme {
     fn default(_: iced::theme::Mode) -> Self {
         CustomTheme {
@@ -294,18 +306,6 @@ impl Default for Launchpad {
         Self {
             padding: 10.,
             entry: Entry::default(),
-        }
-    }
-}
-
-impl Default for CustomTheme {
-    fn default() -> Self {
-        Self {
-            background: DEFAULT_BACKGROUND_COLOR.into(),
-            border: Border::default(),
-            prompt: Prompt::default(),
-            separator: Separator::default(),
-            launchpad: Launchpad::default(),
         }
     }
 }

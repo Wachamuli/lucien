@@ -3,7 +3,7 @@ use std::{
     process,
 };
 
-use iced::{Subscription, Task, widget::image};
+use iced::{Subscription, Task, widget::image, window};
 
 use crate::{
     launcher::Message,
@@ -81,7 +81,7 @@ impl Provider for FileProvider {
             tracing::info!(binary = ?command.get_program(), "Process launched successfully.");
         }
 
-        iced::exit()
+        window::latest().and_then(window::close)
     }
 }
 

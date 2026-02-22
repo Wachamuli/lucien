@@ -1,6 +1,7 @@
 use iced::{
     Element,
-    widget::{self, mouse_area, operation::AbsoluteOffset},
+    widget::{self, mouse_area},
+    window,
 };
 use std::{
     path::PathBuf,
@@ -17,7 +18,6 @@ use iced::{
         text,
     },
 };
-use iced_layershell::to_layer_message;
 
 use crate::{
     preferences::{
@@ -58,7 +58,6 @@ pub struct Lucien {
     scanner_tx: Option<iced::futures::channel::mpsc::Sender<ContextSealed>>,
 }
 
-#[to_layer_message]
 #[derive(Debug, Clone)]
 pub enum Message {
     RequestContext(iced::futures::channel::mpsc::Sender<ContextSealed>),
@@ -80,15 +79,16 @@ impl Lucien {
     pub fn new() -> (Self, Task<Message>) {
         let preferences = Preferences::default();
         let default_provider = ProviderKind::App(AppProvider);
-        // TODO: Context shouldn't be created by using the
-        // default Preferences instance. Create the context once
-        // the user-defined preferences are loaded.
         let load_preferences_task = Task::perform(Preferences::load(), Message::PreferencesLoaded);
+
         let initial_values = Self {
             selected_entry: 0,
             hovered_entry: 0,
             entry_registry: EntryRegistry::default(),
             is_scan_completed: false,
+            // TODO: Context shouldn't be created by using the
+            // default Preferences instance. Create the context once
+            // the user-defined preferences are loaded.
             context: Context::create(&preferences),
             provider: default_provider,
             prompt: String::new(),
@@ -159,7 +159,7 @@ impl Lucien {
     fn handle_action(&mut self, action: Action) -> Task<Message> {
         tracing::debug!(?action, "Action triggered");
         match action {
-            Action::Close => iced::exit(),
+            Action::Close => window::latest().and_then(window::close),
             Action::NextEntry => self.go_to_entry(1),
             Action::PreviousEntry => self.go_to_entry(-1),
             Action::ToggleFavorite => self.toggle_favorite(self.selected_entry),
@@ -262,10 +262,7 @@ impl Lucien {
 
                 let _ = tx.try_send(self.context.clone());
 
-                widget::operation::scroll_to(
-                    SCROLLABLE_ID.clone(),
-                    AbsoluteOffset { x: 0.0, y: 0.0 },
-                )
+                widget::operation::snap_to(SCROLLABLE_ID.clone(), RelativeOffset::START)
             }
             Message::ScanEvent(scan_event) => match scan_event {
                 ScannerState::Started => {
@@ -349,10 +346,7 @@ impl Lucien {
                 self.entry_registry
                     .sort_by_rank(&self.preferences, &self.matcher, &self.prompt);
 
-                widget::operation::scroll_to(
-                    SCROLLABLE_ID.clone(),
-                    AbsoluteOffset { x: 0.0, y: 0.0 },
-                )
+                widget::operation::snap_to(SCROLLABLE_ID.clone(), RelativeOffset::START)
             }
             Message::ScrollableViewport(viewport) => {
                 self.last_viewport = Some(viewport);
@@ -368,20 +362,11 @@ impl Lucien {
                 }
                 Task::none()
             }
-            Message::SetInputRegion(_action_callback) => todo!(),
-            Message::AnchorChange(_anchor) => todo!(),
-            Message::AnchorSizeChange(_anchor, _) => todo!(),
-            Message::LayerChange(_layer) => todo!(),
-            Message::MarginChange(_) => todo!(),
-            Message::SizeChange(_) => todo!(),
-            Message::VirtualKeyboardPressed { .. } => todo!(),
-            Message::ExclusiveZoneChange(_) => todo!(),
         }
     }
 
     pub fn subscription(&self) -> Subscription<Message> {
         use iced::Event::{Keyboard as IcedKeyboardEvent, Window as IcedWindowEvent};
-        use iced::window;
         use iced::{event, keyboard};
 
         Subscription::batch([
