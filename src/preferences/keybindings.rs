@@ -359,16 +359,20 @@ pub fn default_keybindings() -> HashMap<Keystrokes, Action> {
 pub fn extend_keybindings(extended_keybindings: Keybindings) -> Keybindings {
     let mut base_keybindings = default_keybindings();
 
-    for extended_keystroke in extended_keybindings.keys() {
-        if base_keybindings.contains_key(extended_keystroke) {
-            let old_action = base_keybindings[extended_keystroke];
-            let new_action = extended_keybindings[extended_keystroke];
-            tracing::warn!(
-                "Overriding default keybinding '{extended_keystroke}': '{old_action:?}' -> '{new_action:?}'"
-            );
-        }
+    if tracing::enabled!(tracing::Level::DEBUG) {
+        check_keybinding_overrides(&base_keybindings, &extended_keybindings);
     }
 
     base_keybindings.extend(extended_keybindings);
     base_keybindings
+}
+
+fn check_keybinding_overrides(base_keybindings: &Keybindings, extended_keybindings: &Keybindings) {
+    for (keystroke, new_action) in extended_keybindings.iter() {
+        if let Some(old_action) = base_keybindings.get(&keystroke) {
+            tracing::debug!(
+                "Overriding default keybinding '{keystroke}': '{old_action:?}' -> '{new_action:?}'"
+            );
+        }
+    }
 }
