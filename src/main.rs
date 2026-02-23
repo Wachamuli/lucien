@@ -11,10 +11,6 @@ mod providers;
 mod ui;
 
 use anyhow::Context;
-use iced_layershell::{
-    reexport::{Anchor, KeyboardInteractivity, Layer},
-    settings::LayerShellSettings,
-};
 use nix::sys::socket::{self, AddressFamily, SockFlag, SockType, UnixAddr};
 use tracing::Level;
 use tracing_subscriber::{EnvFilter, fmt, prelude::*};
@@ -43,25 +39,18 @@ fn main() -> anyhow::Result<()> {
     let _log_guard = setup_tracing_subscriber(xdg_cache_directory, "logs")?;
     tracing::info!("Running {package_name} v.{package_version}...");
 
-    let layershell_settings = LayerShellSettings {
-        size: Some((700, 500)),
-        anchor: Anchor::empty(),
-        keyboard_interactivity: KeyboardInteractivity::OnDemand,
-        layer: Layer::Overlay,
-        ..Default::default()
-    };
-
-    iced_layershell::build_pattern::application(
-        Lucien::new,
-        package_name,
-        Lucien::update,
-        Lucien::view,
-    )
-    .subscription(Lucien::subscription)
-    .theme(Lucien::theme)
-    .layer_settings(layershell_settings)
-    .antialiasing(true)
-    .run()?;
+    iced::application(Lucien::new, Lucien::update, Lucien::view)
+        .subscription(Lucien::subscription)
+        .theme(Lucien::theme)
+        .level(iced::window::Level::AlwaysOnTop)
+        .centered()
+        .window_size((700, 500))
+        .decorations(false)
+        .resizable(false)
+        .exit_on_close_request(true)
+        .transparent(true)
+        .antialiasing(false)
+        .run()?;
 
     Ok(())
 }
@@ -78,6 +67,7 @@ fn setup_tracing_subscriber(
         .add_directive("usvg=error".parse()?)
         .add_directive("wgpu_hal=error".parse()?)
         .add_directive("wgpu_core=error".parse()?)
+        .add_directive("iced_winit=error".parse()?)
         .add_directive("calloop=error".parse()?);
 
     tracing_subscriber::registry()

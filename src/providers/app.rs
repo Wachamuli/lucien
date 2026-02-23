@@ -7,8 +7,8 @@ use std::{
 
 use gio::prelude::{AppInfoExt, IconExt};
 
-use iced::futures;
 use iced::{Subscription, Task, futures::SinkExt, widget::image};
+use iced::{futures, window};
 use resvg::{tiny_skia, usvg};
 
 use crate::providers::{ContextSealed, Scanner};
@@ -79,7 +79,7 @@ impl Provider for AppProvider {
         }
 
         tracing::info!(binary = %binary, "Process launched successfully.");
-        iced::exit()
+        window::latest().and_then(window::close)
     }
 }
 
