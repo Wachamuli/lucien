@@ -142,7 +142,7 @@ pub fn display_entry<'a>(
 }
 
 fn truncate_with_elipsis(text: &str, limit: usize) -> Cow<'_, str> {
-    if text.len() < limit {
+    if text.len() <= limit {
         return Cow::Borrowed(text);
     }
     Cow::Owned(format!("{}...", &text[..text.floor_char_boundary(limit)]))
