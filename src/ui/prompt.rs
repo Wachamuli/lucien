@@ -69,7 +69,7 @@ where
         };
 
         let mut input = text_input("Search...", self.prompt)
-            .padding(8)
+            .padding(12)
             .size(self.style.prompt.font_size as u32)
             .font(iced::Font {
                 weight: iced::font::Weight::Bold,
@@ -97,7 +97,7 @@ where
             .into();
 
         container(prompt)
-            .padding(iced::Padding::from(&self.style.prompt.margin))
+            .padding(&self.style.prompt.margin)
             .align_y(Alignment::Center)
     }
 }
