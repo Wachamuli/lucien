@@ -10,7 +10,7 @@ use serde::{self, Deserialize, Serialize};
 const DEFAULT_BACKGROUND_COLOR: iced::Color = color!(0x1F1F1F, 0.95);
 const DEFAULT_FOCUS_HIGHLIGHT_COLOR: iced::Color = color!(0xFFFFFF, 0.12);
 const DEFAULT_HOVER_HIGHLIGHT_COLOR: iced::Color = color!(0xFFFFFF, 0.08);
-const DEFAULT_BORDER_COLOR: iced::Color = color!(0xA6A6A6, 0.10);
+const DEFAULT_BORDER_COLOR: iced::Color = color!(0xA6A6A6, 0.1);
 const DEFAULT_MAIN_TEXT: iced::Color = color!(0xF2F2F2);
 const DEFAULT_SECONDARY_TEXT: iced::Color = color!(0xFFFFFF, 0.5);
 const DEFAULT_DIM_TEXT: iced::Color = color!(0xFFFFFF, 0.5);
@@ -77,7 +77,7 @@ impl Default for Border {
         Self {
             color: DEFAULT_BORDER_COLOR.into(),
             width: 1.0,
-            radius: [20.0, 20.0, 20.0, 20.0],
+            radius: [30.0, 30.0, 30.0, 30.0],
         }
     }
 }
@@ -223,7 +223,7 @@ impl Default for Prompt {
         Self {
             background: iced::Color::TRANSPARENT.into(),
             font_size: 18,
-            icon_size: 28,
+            icon_size: 32,
             padding: Padding::from([8., 8., 8., 8.]),
             border: Border {
                 color: iced::Color::TRANSPARENT.into(),
@@ -419,7 +419,7 @@ impl scrollable::Catalog for CustomTheme {
             container: iced::widget::container::Style {
                 background: Some(iced::Background::Color(iced::Color::TRANSPARENT)),
                 border: iced::Border {
-                    radius: iced::border::radius(20),
+                    radius: iced::border::radius(30),
                     ..Default::default()
                 },
                 ..Default::default()
