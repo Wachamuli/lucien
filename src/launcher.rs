@@ -25,10 +25,7 @@ use crate::{
         keybindings::{Action, Keystrokes},
         theme::{ContainerClass, CustomTheme, TextClass},
     },
-    providers::{
-        Context, ContextSealed, Id, ProviderKind, ScannerState, app::AppProvider,
-        file::FileProvider,
-    },
+    providers::{Id, ProviderKind, ScanRequest, ScannerState},
     ui::{
         self,
         entry::{EntryIcon, EntryRegistry, FONT_ITALIC, section},
@@ -45,7 +42,6 @@ static SCROLLABLE_ID: LazyLock<iced::widget::Id> = LazyLock::new(iced::widget::I
 
 pub struct Lucien {
     entry_registry: EntryRegistry,
-    context: ContextSealed,
     is_scan_completed: bool,
     provider: ProviderKind,
     prompt: String,
@@ -55,13 +51,11 @@ pub struct Lucien {
     hovered_entry: usize,
     last_viewport: Option<Viewport>,
     search_handle: Option<iced::task::Handle>,
-    scanner_tx: Option<iced::futures::channel::mpsc::Sender<ContextSealed>>,
+    path: PathBuf,
 }
 
 #[derive(Debug, Clone)]
 pub enum Message {
-    RequestContext(iced::futures::channel::mpsc::Sender<ContextSealed>),
-    ContextChange(ContextSealed),
     ScanEvent(ScannerState),
     PromptChange(String),
     DebouncedFilter,
@@ -73,12 +67,11 @@ pub enum Message {
     HoveredEntry(usize),
     HoveredExit(usize),
     PreferencesLoaded(Result<Preferences, Arc<tokio::io::Error>>),
+    ChangePath(PathBuf),
 }
 
 impl Lucien {
     pub fn new() -> (Self, Task<Message>) {
-        let preferences = Preferences::default();
-        let default_provider = ProviderKind::App(AppProvider);
         let load_preferences_task = Task::perform(Preferences::load(), Message::PreferencesLoaded);
 
         let initial_values = Self {
@@ -86,17 +79,13 @@ impl Lucien {
             hovered_entry: 0,
             entry_registry: EntryRegistry::default(),
             is_scan_completed: false,
-            // TODO: Context shouldn't be created by using the
-            // default Preferences instance. Create the context once
-            // the user-defined preferences are loaded.
-            context: Context::create(&preferences),
-            provider: default_provider,
+            provider: ProviderKind::App,
             prompt: String::new(),
             matcher: SkimMatcherV2::default(),
-            preferences,
+            preferences: Preferences::default(),
             last_viewport: None,
             search_handle: None,
-            scanner_tx: None,
+            path: PathBuf::from(env!("HOME")),
         };
 
         (initial_values, load_preferences_task)
@@ -150,7 +139,7 @@ impl Lucien {
 
     fn launch_entry(&self, index: usize) -> Task<Message> {
         if let Some(entry) = &self.entry_registry.get_visible_by_index(index) {
-            return self.provider.handler().launch(&entry.id, &self.context);
+            return self.provider.launch(&entry);
         };
 
         Task::none()
@@ -243,27 +232,6 @@ impl Lucien {
 
                 widget::operation::focus(TEXT_INPUT_ID.clone())
             }
-            Message::RequestContext(mut sender) => {
-                // This should be async
-                let _ = sender.try_send(self.context.clone());
-                self.scanner_tx = Some(sender);
-                Task::none()
-            }
-            Message::ContextChange(context) => {
-                let Some(tx) = &mut self.scanner_tx else {
-                    return Task::none();
-                };
-
-                self.context = context;
-
-                self.entry_registry.clear();
-                self.selected_entry = 0;
-                self.prompt = String::new();
-
-                let _ = tx.try_send(self.context.clone());
-
-                widget::operation::snap_to(SCROLLABLE_ID.clone(), RelativeOffset::START)
-            }
             Message::ScanEvent(scan_event) => match scan_event {
                 ScannerState::Started => {
                     self.prompt.clear();
@@ -321,14 +289,8 @@ impl Lucien {
                 }
 
                 match self.prompt.as_str() {
-                    "@" => {
-                        self.prompt.clear();
-                        self.provider = ProviderKind::App(AppProvider)
-                    }
-                    "/" => {
-                        self.prompt.clear();
-                        self.provider = ProviderKind::File(FileProvider)
-                    }
+                    "@" => self.provider = ProviderKind::App,
+                    "/" => self.provider = ProviderKind::File,
                     _ => {}
                 };
 
@@ -362,6 +324,10 @@ impl Lucien {
                 }
                 Task::none()
             }
+            Message::ChangePath(path) => {
+                self.path = path;
+                Task::none()
+            }
         }
     }
 
@@ -369,8 +335,14 @@ impl Lucien {
         use iced::Event::{Keyboard as IcedKeyboardEvent, Window as IcedWindowEvent};
         use iced::{event, keyboard};
 
+        let scan_request = ScanRequest {
+            path: self.path.clone(),
+            provider: self.provider,
+            preferences: self.preferences.clone(),
+        };
+
         Subscription::batch([
-            self.provider.handler().scan(),
+            scan_request.subscribe(),
             event::listen_with(move |event, _, _| match event {
                 IcedKeyboardEvent(keyboard::Event::KeyPressed { modifiers, key, .. }) => {
                     let keystrokes = Keystrokes::from_iced_keystrokes(modifiers, key);
@@ -478,11 +450,11 @@ impl Lucien {
 
     fn provider_indicator<'a>(&'a self) -> Container<'a, Message, CustomTheme> {
         let apps_icon = match self.provider {
-            ProviderKind::App(_) => CUBE_ACTIVE.clone(),
+            ProviderKind::App => CUBE_ACTIVE.clone(),
             _ => CUBE_INACTIVE.clone(),
         };
         let folder_icon = match self.provider {
-            ProviderKind::File(_) => FOLDER_ACTIVE.clone(),
+            ProviderKind::File => FOLDER_ACTIVE.clone(),
             _ => FOLDER_INACTIVE.clone(),
         };
 
