@@ -29,6 +29,10 @@ impl Provider for AppProvider {
         Subscription::run(|| {
             iced::stream::channel(100, async move |output| {
                 let xdg_dirs = Arc::new(xdg::BaseDirectories::new());
+                let svg_options = Arc::new(usvg::Options {
+                    fontdb: std::sync::Arc::new(usvg::fontdb::Database::new()),
+                    ..Default::default()
+                });
                 Scanner::run(output.clone(), |ctx, scanner| {
                     let apps = gio::AppInfo::all()
                         .into_iter()
@@ -47,6 +51,7 @@ impl Provider for AppProvider {
                                 icon_name,
                                 ctx.icon_size,
                                 xdg_dirs.clone(),
+                                svg_options.clone(),
                                 output.clone(),
                             ));
                         }
@@ -88,10 +93,11 @@ async fn resolve_icon(
     name: String,
     size: u32,
     xdg_dirs: Arc<xdg::BaseDirectories>,
+    opts: Arc<usvg::Options<'_>>,
     mut output: futures::channel::mpsc::Sender<Message>,
 ) {
     let handle = get_icon_path_from_xdgicon(name, xdg_dirs)
-        .and_then(|path| load_raster_icon(path, size))
+        .and_then(|path| load_raster_icon(path, size, &opts))
         .unwrap_or_else(|| APPLICATION_DEFAULT.clone());
 
     let _ = output.send(Message::IconResolved { id, handle }).await;
@@ -132,9 +138,9 @@ pub fn get_icon_path_from_xdgicon(
     None
 }
 
-fn rasterize_svg(path: PathBuf, size: u32) -> Option<tiny_skia::Pixmap> {
+fn rasterize_svg(path: PathBuf, size: u32, opts: &usvg::Options) -> Option<tiny_skia::Pixmap> {
     let svg_data = std::fs::read(path).ok()?;
-    let tree = usvg::Tree::from_data(&svg_data, &usvg::Options::default()).ok()?;
+    let tree = usvg::Tree::from_data(&svg_data, &opts).ok()?;
 
     let mut pixmap = tiny_skia::Pixmap::new(size, size)?;
     let transform = tiny_skia::Transform::from_scale(
@@ -146,12 +152,12 @@ fn rasterize_svg(path: PathBuf, size: u32) -> Option<tiny_skia::Pixmap> {
     Some(pixmap)
 }
 
-fn load_raster_icon(path: PathBuf, size: u32) -> Option<image::Handle> {
+fn load_raster_icon(path: PathBuf, size: u32, opts: &usvg::Options) -> Option<image::Handle> {
     let extension = path.extension()?.to_str()?;
 
     match extension {
         "svg" => {
-            let pixmap = rasterize_svg(path, size)?;
+            let pixmap = rasterize_svg(path, size, &opts)?;
             Some(image::Handle::from_rgba(size, size, pixmap.data().to_vec()))
         }
         "png" => Some(image::Handle::from_path(path)),
