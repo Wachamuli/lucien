@@ -99,6 +99,10 @@ impl Lucien {
             scanner_tx: None,
         };
 
+        if std::env::var("BENCHMARK").is_ok() {
+            std::process::exit(0);
+        }
+
         (initial_values, load_preferences_task)
     }
 
