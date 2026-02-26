@@ -452,6 +452,10 @@ impl Lucien {
         .class(ContainerClass::MainContainer)
     }
 
+    pub fn scale_factor(&self) -> f32 {
+        self.preferences.scale_factor
+    }
+
     fn provider_indicator<'a>(&'a self) -> Container<'a, Message, CustomTheme> {
         let apps_icon = match self.provider {
             ProviderKind::App => CUBE_ACTIVE.clone(),

@@ -42,6 +42,7 @@ fn main() -> anyhow::Result<()> {
     iced::application(Lucien::new, Lucien::update, Lucien::view)
         .subscription(Lucien::subscription)
         .theme(Lucien::theme)
+        .scale_factor(Lucien::scale_factor)
         .level(iced::window::Level::AlwaysOnTop)
         .centered()
         .window_size((700, 500))
