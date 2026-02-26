@@ -68,6 +68,7 @@ fn setup_tracing_subscriber(
         .add_directive("wgpu_hal=error".parse()?)
         .add_directive("wgpu_core=error".parse()?)
         .add_directive("iced_winit=error".parse()?)
+        .add_directive("resvg=error".parse()?)
         .add_directive("calloop=error".parse()?);
 
     tracing_subscriber::registry()
