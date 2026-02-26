@@ -7,11 +7,12 @@ use std::{
 
 use gio::prelude::{AppInfoExt, IconExt};
 
-use iced::{Subscription, Task, futures::SinkExt, widget::image};
+use iced::futures::Stream;
+use iced::{Task, futures::SinkExt, widget::image};
 use iced::{futures, window};
 use resvg::{tiny_skia, usvg};
 
-use crate::providers::{ContextSealed, Scanner};
+use crate::providers::{ScanRequest, Scanner};
 use crate::ui::entry::EntryIcon;
 use crate::{
     launcher::Message,
@@ -25,43 +26,42 @@ use super::{Entry, Provider, spawn_with_new_session};
 pub struct AppProvider;
 
 impl Provider for AppProvider {
-    fn scan(&self) -> Subscription<Message> {
-        Subscription::run(|| {
-            iced::stream::channel(100, async move |output| {
-                let xdg_dirs = Arc::new(xdg::BaseDirectories::new());
-                let svg_options = Arc::new(usvg::Options::default());
-                Scanner::run(output.clone(), |ctx, scanner| {
-                    let apps = gio::AppInfo::all()
-                        .into_iter()
-                        .filter(|app| app.should_show());
-                    for app in apps {
-                        let meta = AppMetadata::from(app);
-                        let entry = Entry::new(
-                            meta.id.clone(),
-                            meta.name,
-                            meta.description,
-                            meta.icon.clone(),
-                        );
-                        if let EntryIcon::Lazy(icon_name) = meta.icon {
-                            tokio::spawn(resolve_icon(
-                                meta.id,
-                                icon_name,
-                                ctx.icon_size,
-                                xdg_dirs.clone(),
-                                svg_options.clone(),
-                                output.clone(),
-                            ));
-                        }
-                        scanner.load(entry);
+    fn scan(request: ScanRequest) -> impl Stream<Item = Message> {
+        iced::stream::channel(100, async move |output| {
+            let xdg_dirs = Arc::new(xdg::BaseDirectories::new());
+            let svg_options = Arc::new(usvg::Options::default());
+            Scanner::run(request, output.clone(), |req, scanner| {
+                let apps = gio::AppInfo::all()
+                    .into_iter()
+                    .filter(|app| app.should_show());
+                for app in apps {
+                    let meta = AppMetadata::from(app);
+                    let entry = Entry::new(
+                        meta.id.clone(),
+                        meta.name,
+                        meta.description,
+                        meta.icon.clone(),
+                    );
+                    if let EntryIcon::Lazy(icon_name) = meta.icon {
+                        tokio::spawn(resolve_icon(
+                            meta.id,
+                            icon_name,
+                            req.preferences.theme.launchpad.entry.icon_size,
+                            xdg_dirs.clone(),
+                            svg_options.clone(),
+                            output.clone(),
+                        ));
                     }
-                })
-                .await;
+                    scanner.load(entry);
+                }
             })
+            .await;
         })
     }
 
-    fn launch(&self, id: &str, _: &ContextSealed) -> Task<Message> {
-        let raw_command_without_placeholders = id
+    fn launch(entry: &Entry) -> Task<Message> {
+        let raw_command_without_placeholders = entry
+            .id
             .split_whitespace()
             .filter(|arg| !arg.starts_with('%'))
             .collect::<Vec<_>>();

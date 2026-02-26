@@ -3,11 +3,11 @@ use std::{
     process,
 };
 
-use iced::{Subscription, Task, widget::image, window};
+use iced::{Task, futures::Stream, widget::image, window};
 
 use crate::{
     launcher::Message,
-    providers::{AsyncScanner, ContextSealed},
+    providers::{AsyncScanner, ScanRequest},
     ui::{
         entry::{Entry, EntryIcon},
         icon::{
@@ -27,50 +27,44 @@ impl Provider for FileProvider {
     // as valid file names. Right now, these entries are being skip.
     // In order to fix this, id should be a PathBuf or similar.
     // This funcion call is the culprit: Path::to_str() -> Option<&str>
-    fn scan(&self) -> Subscription<Message> {
-        iced::Subscription::run(|| {
-            iced::stream::channel(100, async |output| {
-                AsyncScanner::run(output, async |ctx, scanner| {
-                    if let Some(parent_directory) = ctx.path.parent() {
-                        let parent_entry = Entry::new(
-                            parent_directory.to_str().unwrap(),
-                            "..",
-                            Some(parent_directory.to_string_lossy()),
-                            EntryIcon::Handle(get_icon_from_mimetype(
-                                &parent_directory,
-                                ctx.icon_size,
-                            )),
-                        );
-                        scanner.load(parent_entry).await;
-                    }
+    fn scan(ctx: ScanRequest) -> impl Stream<Item = Message> {
+        iced::stream::channel(100, async move |output| {
+            AsyncScanner::run(ctx.clone(), output, async move |ctx, scanner| {
+                let icon_size = ctx.preferences.theme.launchpad.entry.icon_size;
+                if let Some(parent_directory) = ctx.path.parent() {
+                    let parent_entry = Entry::new(
+                        parent_directory.to_str().unwrap(),
+                        "..",
+                        Some(parent_directory.to_string_lossy()),
+                        EntryIcon::Handle(get_icon_from_mimetype(&parent_directory, icon_size)),
+                    );
+                    scanner.load(parent_entry).await;
+                }
 
-                    let mut child_directories = tokio::fs::read_dir(&ctx.path).await.unwrap();
-                    while let Some(child_dir) = child_directories.next_entry().await.unwrap() {
-                        let path = child_dir.path();
-                        let id_str = path.to_string_lossy();
-                        let main_display = path.file_name().unwrap().to_string_lossy();
-                        let child_entry = Entry::new(
-                            id_str.clone(),
-                            main_display,
-                            Some(id_str),
-                            EntryIcon::Handle(get_icon_from_mimetype(&path, ctx.icon_size)),
-                        );
-                        scanner.load(child_entry).await;
-                    }
-                })
-                .await
+                let mut child_directories = tokio::fs::read_dir(&ctx.path).await.unwrap();
+                while let Some(child_dir) = child_directories.next_entry().await.unwrap() {
+                    let path = child_dir.path();
+                    let id_str = path.to_string_lossy();
+                    let main_display = path.file_name().unwrap().to_string_lossy();
+                    let child_entry = Entry::new(
+                        id_str.clone(),
+                        main_display,
+                        Some(id_str),
+                        EntryIcon::Handle(get_icon_from_mimetype(&path, icon_size)),
+                    );
+                    scanner.load(child_entry).await;
+                }
             })
+            .await
         })
     }
 
-    fn launch(&self, id: &str, context: &ContextSealed) -> Task<Message> {
-        let path = PathBuf::from(id);
+    fn launch(entry: &Entry) -> Task<Message> {
+        let path = PathBuf::from(&entry.id);
 
         if path.is_dir() {
-            let new_context = context.with_path(path);
-            return Task::done(Message::ContextChange(new_context));
+            return Task::done(Message::ChangePath(path));
         }
-
         let mut command = process::Command::new("xdg-open");
         command.arg(&path);
         tracing::info!(binary = ?command.get_program(), arg = ?path, "Attempting to launch detached process.");

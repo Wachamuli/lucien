@@ -1,84 +1,65 @@
 use crate::preferences::Preferences;
+use crate::providers::app::AppProvider;
+use crate::providers::file::FileProvider;
 use crate::ui::entry::Entry;
+use std::hash::{Hash, Hasher};
 use std::{io, os::unix::process::CommandExt, path::PathBuf, process};
 
-use iced::futures::channel::mpsc::{Receiver as FuturesReceiver, Sender as FuturesSender};
-use iced::futures::{SinkExt, StreamExt};
+use iced::futures::channel::mpsc::Sender as FuturesSender;
+use iced::futures::{SinkExt, Stream};
 use iced::{Subscription, Task};
 
-use crate::{launcher::Message, providers::app::AppProvider, providers::file::FileProvider};
+use crate::launcher::Message;
 
 pub mod app;
 pub mod file;
 
-#[derive(Debug, Clone, Copy)]
+pub trait Provider {
+    fn scan(request: ScanRequest) -> impl Stream<Item = Message>;
+    fn launch(entry: &Entry) -> Task<Message>;
+}
+
+#[derive(Debug, Clone, Copy, Hash)]
 pub enum ProviderKind {
-    App(AppProvider),
-    File(FileProvider),
+    App,
+    File,
 }
 
 impl ProviderKind {
-    // TODO: Replace dynamic dispatch with monomorphization
-    pub fn handler(&self) -> &dyn Provider {
+    pub fn launch(&self, entry: &Entry) -> Task<Message> {
         match self {
-            ProviderKind::App(p) => p,
-            ProviderKind::File(p) => p,
+            ProviderKind::App => AppProvider::launch(entry),
+            ProviderKind::File => FileProvider::launch(entry),
         }
     }
 }
 
-#[derive(Debug, Clone)]
-pub struct Context {
+#[derive(Clone)]
+pub struct ScanRequest {
     pub path: PathBuf,
-    pub scan_batch_size: usize,
-    pub pattern: String,
-    pub icon_size: u32,
+    pub provider: ProviderKind,
+    pub preferences: Preferences,
 }
 
-#[derive(Debug, Clone)]
-pub struct ContextSealed {
-    path: PathBuf,
-    scan_batch_size: usize,
-    pattern: String,
-    icon_size: u32,
-}
-
-impl Context {
-    pub fn create(preferences: &Preferences) -> ContextSealed {
-        ContextSealed {
-            path: PathBuf::from(env!("HOME")),
-            pattern: String::new(),
-            scan_batch_size: preferences.scan_batch_size,
-            icon_size: preferences.theme.launchpad.entry.icon_size,
-        }
+impl Hash for ScanRequest {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        self.path.hash(state);
+        self.provider.hash(state);
     }
 }
 
-impl ContextSealed {
-    pub fn with_path(&self, path: impl Into<PathBuf>) -> Self {
-        Self {
-            path: path.into(),
-            ..self.clone()
+impl ScanRequest {
+    pub fn subscribe(self) -> Subscription<Message> {
+        match self.provider {
+            ProviderKind::App => Subscription::run_with(self, |ctx| AppProvider::scan(ctx.clone())),
+            ProviderKind::File => {
+                Subscription::run_with(self, |ctx| FileProvider::scan(ctx.clone()))
+            }
         }
     }
-}
-
-pub trait Provider {
-    // TODO: Maybe I should just return the stream, and make the subscription
-    // logic in the subscripiton function
-    fn scan(&self) -> Subscription<Message>;
-    // Maybe, launch could consume self? But I have to get rid of dynamic dispatch first.
-    // I could avoid couple clones doing this.
-    fn launch(&self, id: &str, context: &ContextSealed) -> Task<Message>;
 }
 
 pub type Id = String;
-
-pub async fn request_context(mut sender: FuturesSender<Message>) -> FuturesReceiver<ContextSealed> {
-    let (tx, rx) = iced::futures::channel::mpsc::channel::<ContextSealed>(100);
-    let _ = sender.send(Message::RequestContext(tx)).await;
-    rx
-}
 
 #[derive(Debug, Clone)]
 pub enum ScannerState {
@@ -134,19 +115,14 @@ impl Scanner {
             .try_send(Message::ScanEvent(ScannerState::Finished));
     }
 
-    async fn run<F>(sender: FuturesSender<Message>, f: F)
+    async fn run<F>(request: ScanRequest, sender: FuturesSender<Message>, f: F)
     where
-        F: Fn(&ContextSealed, &mut Scanner),
+        F: Fn(&ScanRequest, &mut Scanner),
     {
-        let mut context_rx = request_context(sender.clone()).await;
-        let mut scanner_opt: Option<Scanner> = None;
-        while let Some(context) = context_rx.next().await {
-            let mut scanner = scanner_opt
-                .get_or_insert_with(|| Scanner::new(sender.clone(), context.scan_batch_size));
-            scanner.start();
-            f(&context, &mut scanner);
-            scanner.finish();
-        }
+        let mut scanner = Scanner::new(sender, request.preferences.scan_batch_size);
+        scanner.start();
+        f(&request, &mut scanner);
+        scanner.finish();
     }
 }
 
@@ -204,19 +180,14 @@ impl AsyncScanner {
             .await;
     }
 
-    pub async fn run<F>(sender: FuturesSender<Message>, f: F)
+    pub async fn run<F>(request: ScanRequest, sender: FuturesSender<Message>, f: F)
     where
-        F: AsyncFn(&ContextSealed, &mut AsyncScanner),
+        F: AsyncFn(&ScanRequest, &mut AsyncScanner),
     {
-        let mut context_receiver = request_context(sender.clone()).await;
-        let mut scanner_opt: Option<AsyncScanner> = None;
-        while let Some(ref context) = context_receiver.next().await {
-            let mut scanner = scanner_opt
-                .get_or_insert_with(|| AsyncScanner::new(sender.clone(), context.scan_batch_size));
-            scanner.start().await;
-            f(context, &mut scanner).await;
-            scanner.finish().await;
-        }
+        let mut scanner = AsyncScanner::new(sender, request.preferences.scan_batch_size);
+        scanner.start().await;
+        f(&request, &mut scanner).await;
+        scanner.finish().await;
     }
 }
 
