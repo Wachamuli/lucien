@@ -366,10 +366,12 @@ impl Lucien {
         let style = &self.preferences.theme.launchpad.entry;
         let show_sections = self.prompt.is_empty() && !self.preferences.favorite_apps.is_empty();
 
-        let mut starred_column =
-            Column::new().extend(show_sections.then(|| section("Starred").into()));
-        let mut general_column =
-            Column::new().extend(show_sections.then(|| section("General").into()));
+        let mut starred_column = Column::new()
+            .spacing(item_height * 0.1)
+            .extend(show_sections.then(|| section("Starred").into()));
+        let mut general_column = Column::new()
+            .spacing(item_height * 0.1)
+            .extend(show_sections.then(|| section("General").into()));
 
         for (index, entry) in self.entry_registry.iter_visible().enumerate() {
             let is_favorite = self.preferences.favorite_apps.contains(&entry.id);
@@ -492,12 +494,12 @@ fn wrapped_index(index: usize, array_len: usize, step: isize) -> usize {
 
 pub struct AppLayout {
     pub item_height: f32,
+    pub spacing: f32,
     pub padding: f32,
     pub fav_count: usize,
     pub is_filtered: bool,
     pub has_favorites: bool,
     pub starred_start_y: f32,
-    pub starred_end_y: f32,
     pub general_start_y: f32,
 }
 
@@ -505,11 +507,11 @@ impl AppLayout {
     pub fn new(preferences: &Preferences, prompt: &str) -> Self {
         let style = &preferences.theme.launchpad;
         let item_height = style.entry.height;
+        let spacing = item_height * 0.1;
         let fav_count = preferences.favorite_apps.len();
         let is_filtered = !prompt.is_empty();
         let has_favorites = fav_count > 0;
 
-        // If filtered, headers disappear (height = 0)
         let header_h = if !is_filtered && has_favorites {
             SECTION_HEIGHT
         } else {
@@ -517,32 +519,37 @@ impl AppLayout {
         };
 
         let starred_start_y = style.padding + header_h;
-        let starred_end_y = starred_start_y + (fav_count as f32 * item_height);
-        let general_start_y = starred_end_y + header_h;
+
+        let starred_total_height = if fav_count > 0 {
+            (fav_count as f32 * item_height) + ((fav_count - 1) as f32 * spacing)
+        } else {
+            0.0
+        };
+
+        let general_start_y = starred_start_y + starred_total_height + header_h;
 
         Self {
             item_height,
+            spacing,
             padding: style.padding,
             fav_count,
             is_filtered,
             has_favorites,
             starred_start_y,
-            starred_end_y,
             general_start_y,
         }
     }
 
-    /// Maps a global list index to its top Y coordinate
     pub fn y_for_index(&self, index: usize, is_favorite: bool) -> f32 {
         if !self.is_filtered && self.has_favorites {
             if is_favorite {
-                self.starred_start_y + (index as f32 * self.item_height)
+                self.starred_start_y + (index as f32 * (self.item_height + self.spacing))
             } else {
                 let local_idx = index - self.fav_count;
-                self.general_start_y + (local_idx as f32 * self.item_height)
+                self.general_start_y + (local_idx as f32 * (self.item_height + self.spacing))
             }
         } else {
-            self.padding + (index as f32 * self.item_height)
+            self.padding + (index as f32 * (self.item_height + self.spacing))
         }
     }
 }
