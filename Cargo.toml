@@ -10,19 +10,19 @@ codegen-units = 1
 # debug = true
 
 [dependencies]
-iced = {version = "0.14.0", features = ["image", "svg", "tokio", "advanced", "lazy"]}
+iced = { version = "0.14.0", default-features = false, features = ["image", "tokio", "advanced", "lazy", "wgpu", "wayland"] }
 gio = "0.21.5"
 xdg = "3.0.0"
 fuzzy-matcher = "0.3.7"
 resvg = "0.45.1"
 tracing = "0.1.44"
-tracing-subscriber = {version = "0.3.22", features = ["env-filter"]}
+tracing-subscriber = { version = "0.3.22", features = ["env-filter"] }
 tracing-appender = "0.2.4"
-nix = {version = "0.30.1", features = ["process", "socket"]}
-serde = "1.0.228"
+nix = { version = "0.30.1", features = ["process", "socket"] }
+serde = { version = "1.0.228", features = ["derive"] }
 toml = "0.9.11"
 toml_edit = "0.24.0"
-tokio = {version = "1.49.0", features = ["fs", "rt", "macros", "rt-multi-thread", "sync"]}
+tokio = { version = "1.49.0", features = ["fs", "rt", "macros", "rt-multi-thread", "sync"] }
 anyhow = "1.0.100"
 dhat = { version = "0.3.3", optional = true }
 
