@@ -29,10 +29,7 @@ impl Provider for AppProvider {
         Subscription::run(|| {
             iced::stream::channel(100, async move |output| {
                 let xdg_dirs = Arc::new(xdg::BaseDirectories::new());
-                let svg_options = Arc::new(usvg::Options {
-                    fontdb: std::sync::Arc::new(usvg::fontdb::Database::new()),
-                    ..Default::default()
-                });
+                let svg_options = Arc::new(usvg::Options::default());
                 Scanner::run(output.clone(), |ctx, scanner| {
                     let apps = gio::AppInfo::all()
                         .into_iter()
