@@ -170,7 +170,6 @@ pub struct App {
     pub exec: String,
     pub comment: Option<String>,
     pub icon: Option<String>,
-    pub no_display: bool,
 }
 
 async fn discover_apps() -> futures::channel::mpsc::Receiver<App> {
@@ -209,34 +208,73 @@ fn parse_desktop_entry(content: &str) -> Option<App> {
     let mut app = App::default();
     let mut in_main_section = false;
 
+    let mut has_name = false;
+    let mut has_exec = false;
+    let mut has_type = false;
+    let mut has_icon = false;
+    let mut has_comment = false;
+
     for line in content.lines() {
         let line = line.trim();
-        if line == "[Desktop Entry]" {
-            in_main_section = true;
+
+        if line.is_empty() || line.starts_with('#') {
             continue;
-        } else if line.starts_with('[') {
-            in_main_section = false; // Entered another section like [Desktop Action]
         }
-        // TODO: add  Type=Application check to skip unnecessary files
-        // TODO: skip Hidden=True
+
+        if line.starts_with('[') {
+            if in_main_section {
+                break;
+            }
+            in_main_section = line == "[Desktop Entry]";
+            continue;
+        }
 
         if in_main_section {
             if let Some((key, value)) = line.split_once('=') {
-                match key.trim() {
-                    "Name" => app.name = value.trim().to_string(),
-                    "Exec" => app.exec = value.trim().to_string(),
-                    "Icon" => app.icon = Some(value.trim().to_string()),
-                    "Comment" => app.comment = Some(value.trim().to_string()),
-                    "NoDisplay" => app.no_display = value.trim() == "true",
+                let key = key.trim();
+                let value = value.trim();
+
+                match key {
+                    "Type" => {
+                        if value != "Application" {
+                            return None;
+                        }
+                        has_type = true;
+                    }
+                    "Hidden" | "NoDisplay" => {
+                        if value == "true" {
+                            return None;
+                        }
+                    }
+                    "Name" => {
+                        app.name = value.to_string();
+                        has_name = true;
+                    }
+                    "Exec" => {
+                        app.exec = value.to_string();
+                        has_exec = true;
+                    }
+                    "Icon" => {
+                        app.icon = Some(value.to_string());
+                        has_icon = true;
+                    }
+                    "Comment" => {
+                        app.comment = Some(value.to_string());
+                        has_comment = true;
+                    }
                     _ => {}
+                }
+
+                if has_name && has_exec && has_type && has_icon && has_comment {
+                    return Some(app);
                 }
             }
         }
     }
 
-    if app.name.is_empty() || app.no_display {
-        None
-    } else {
+    if has_name && has_exec && has_type {
         Some(app)
+    } else {
+        None
     }
 }
