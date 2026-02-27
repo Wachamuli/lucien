@@ -1,4 +1,6 @@
+use std::ffi::OsStr;
 use std::fmt::Write;
+use std::os::unix::ffi::{OsStrExt, OsStringExt};
 use std::{
     path::{Path, PathBuf},
     process,
@@ -60,27 +62,28 @@ impl Provider for AppProvider {
     }
 
     fn launch(entry: &Entry) -> Task<Message> {
-        let raw_command_without_placeholders = entry
-            .id
-            .split_whitespace()
-            .filter(|arg| !arg.starts_with('%'))
-            .collect::<Vec<_>>();
+        let bytes = entry.id.clone().into_vec();
+        let raw_command_without_placeholders: Vec<&OsStr> = bytes
+            .split(|&b| b == b' ')
+            .filter(|chunk| !chunk.is_empty() && !chunk.starts_with(b"%"))
+            .map(OsStr::from_bytes)
+            .collect();
 
         let [binary, args @ ..] = raw_command_without_placeholders.as_slice() else {
             tracing::warn!("Launch failed: provided ID resulted in an empty command.");
             return Task::none();
         };
 
-        let mut command = process::Command::new(binary);
+        let mut command = process::Command::new(&binary);
         command.args(args);
-        tracing::info!(binary = %binary, args = ?args, "Attempting to launch detached process.");
+        tracing::info!(binary = ?binary, args = ?args, "Attempting to launch detached process.");
 
         if let Err(e) = spawn_with_new_session(&mut command) {
-            tracing::error!(error = %e, binary = %binary, "Failed to spawn process.");
+            tracing::error!(error = %e, binary = ?binary, "Failed to spawn process.");
             return Task::none();
         }
 
-        tracing::info!(binary = %binary, "Process launched successfully.");
+        tracing::info!(binary = ?binary, "Process launched successfully.");
         window::latest().and_then(window::close)
     }
 }
@@ -163,7 +166,7 @@ fn load_raster_icon(path: PathBuf, size: u32, opts: &usvg::Options) -> Option<im
 }
 
 pub struct AppMetadata {
-    pub id: String,
+    pub id: Id,
     pub name: String,
     pub description: Option<String>,
     pub icon: EntryIcon,
@@ -173,14 +176,14 @@ impl From<gio::AppInfo> for AppMetadata {
     fn from(app: gio::AppInfo) -> Self {
         let id = app
             .commandline()
-            .map(|c| c.to_string_lossy().into_owned())
+            .map(|c| c.into_os_string())
             .unwrap_or_default();
         let name = app.name().to_string();
         let description = app.description().map(|d| d.to_string());
         let icon = app
             .icon()
             .and_then(|i| i.to_string())
-            .map(|s| EntryIcon::Lazy(s.to_string()))
+            .map(|s| EntryIcon::Lazy(s.into()))
             .unwrap_or_else(|| EntryIcon::Handle(APPLICATION_DEFAULT.clone()));
 
         Self {

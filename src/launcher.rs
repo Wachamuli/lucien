@@ -114,7 +114,7 @@ impl Lucien {
         // Toggle_favorite is a very opaque function. It actually
         // modifies the in-memory favorite_apps variable.
         // Maybe I should expose this assignnment operation at this level.
-        let favorite_apps = self.preferences.toggle_favorite(id);
+        let favorite_apps = self.preferences.toggle_favorite(id.to_string_lossy());
         self.entry_registry
             .sort_by_rank(&self.preferences, &self.matcher, &self.prompt);
 
@@ -170,7 +170,10 @@ impl Lucien {
         };
 
         // 1. Get coordinates from injected layout
-        let is_fav = self.preferences.favorite_apps.contains(&entry.id);
+        let is_fav = self
+            .preferences
+            .favorite_apps
+            .contains(&entry.id.to_string_lossy().into_owned());
         let selection_top = layout.y_for_index(self.selected_entry, is_fav);
         let selection_bottom = selection_top + layout.item_height;
 
@@ -254,7 +257,7 @@ impl Lucien {
                     Task::none()
                 }
                 ScannerState::Errored(id, error) => {
-                    tracing::error!(error = error, "An error ocurred while scanning {id}");
+                    tracing::error!(error = error, "An error ocurred while scanning {id:?}");
                     Task::none()
                 }
             },
@@ -374,7 +377,10 @@ impl Lucien {
             .extend(show_sections.then(|| section("General").into()));
 
         for (index, entry) in self.entry_registry.iter_visible().enumerate() {
-            let is_favorite = self.preferences.favorite_apps.contains(&entry.id);
+            let is_favorite = self
+                .preferences
+                .favorite_apps
+                .contains(&entry.id.to_string_lossy().into_owned());
             let is_selected = self.selected_entry == index;
             let is_hovered = self.hovered_entry == index;
 

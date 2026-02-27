@@ -2,6 +2,7 @@ use crate::preferences::Preferences;
 use crate::providers::app::AppProvider;
 use crate::providers::file::FileProvider;
 use crate::ui::entry::Entry;
+use std::ffi::OsString;
 use std::hash::{Hash, Hasher};
 use std::{io, os::unix::process::CommandExt, path::PathBuf, process};
 
@@ -59,7 +60,7 @@ impl ScanRequest {
     }
 }
 
-pub type Id = String;
+pub type Id = OsString;
 
 #[derive(Debug, Clone)]
 pub enum ScannerState {
