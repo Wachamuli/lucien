@@ -256,8 +256,8 @@ impl Lucien {
                     self.is_scan_completed = true;
                     Task::none()
                 }
-                ScannerState::Errored(id, error) => {
-                    tracing::error!(error = error, "An error ocurred while scanning {id:?}");
+                ScannerState::Errored(error) => {
+                    tracing::error!(error = %error, "An error occurred while scanning");
                     Task::none()
                 }
             },

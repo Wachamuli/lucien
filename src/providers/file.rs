@@ -37,10 +37,10 @@ impl Provider for FileProvider {
                     scanner.load(parent_entry).await;
                 }
 
-                let mut child_directories = tokio::fs::read_dir(&req.path).await.unwrap();
-                while let Some(child_dir) = child_directories.next_entry().await.unwrap() {
+                let mut child_directories = tokio::fs::read_dir(&req.path).await?;
+                while let Some(child_dir) = child_directories.next_entry().await? {
                     let path = child_dir.path();
-                    let main_display = path.file_name().unwrap().to_string_lossy();
+                    let main_display = path.file_name().and_then(|s| s.to_str()).unwrap_or("..");
                     let child_entry = Entry::new(
                         path.as_os_str().to_os_string(),
                         main_display,
@@ -49,6 +49,8 @@ impl Provider for FileProvider {
                     );
                     scanner.load(child_entry).await;
                 }
+
+                Ok(())
             })
             .await
         })

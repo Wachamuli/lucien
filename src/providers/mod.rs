@@ -4,6 +4,7 @@ use crate::providers::file::FileProvider;
 use crate::ui::entry::Entry;
 use std::ffi::OsString;
 use std::hash::{Hash, Hasher};
+use std::sync::Arc;
 use std::{io, os::unix::process::CommandExt, path::PathBuf, process};
 
 use iced::futures::channel::mpsc::Sender as FuturesSender;
@@ -67,7 +68,7 @@ pub enum ScannerState {
     Started,
     Found(Vec<Entry>),
     Finished,
-    Errored(Id, String),
+    Errored(Arc<anyhow::Error>),
 }
 
 struct Scanner {
@@ -181,13 +182,22 @@ impl AsyncScanner {
             .await;
     }
 
+    pub async fn error(&mut self, e: anyhow::Error) {
+        let _ = self
+            .sender
+            .send(Message::ScanEvent(ScannerState::Errored(Arc::new(e))))
+            .await;
+    }
+
     pub async fn run<F>(request: ScanRequest, sender: FuturesSender<Message>, f: F)
     where
-        F: AsyncFn(&ScanRequest, &mut AsyncScanner),
+        F: AsyncFn(&ScanRequest, &mut AsyncScanner) -> anyhow::Result<()>,
     {
         let mut scanner = AsyncScanner::new(sender, request.preferences.scan_batch_size);
         scanner.start().await;
-        f(&request, &mut scanner).await;
+        if let Err(e) = f(&request, &mut scanner).await {
+            scanner.error(e).await;
+        }
         scanner.finish().await;
     }
 }
