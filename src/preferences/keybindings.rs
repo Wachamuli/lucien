@@ -1,6 +1,6 @@
 use std::{collections::HashMap, str::FromStr};
 
-use gio::glib::bitflags::bitflags;
+use bitflags::bitflags;
 use serde::{self, Deserializer, Serializer};
 use serde::{Deserialize, Serialize};
 

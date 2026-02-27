@@ -128,7 +128,7 @@ impl AsyncScanner {
 
     pub async fn run<F>(request: ScanRequest, sender: FuturesSender<Message>, f: F)
     where
-        F: AsyncFn(&ScanRequest, &mut AsyncScanner) -> anyhow::Result<()> + Send + 'static,
+        F: AsyncFn(&ScanRequest, &mut AsyncScanner) -> anyhow::Result<()>,
     {
         let mut scanner = AsyncScanner::new(sender, request.preferences.scan_batch_size);
         scanner.start().await;
