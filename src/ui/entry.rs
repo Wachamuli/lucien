@@ -35,7 +35,7 @@ pub const FONT_ITALIC: Font = Font {
 
 #[derive(Debug, Clone)]
 pub enum EntryIcon {
-    Lazy(Id),
+    Lazy(String),
     Handle(iced::widget::image::Handle),
 }
 
@@ -49,7 +49,7 @@ pub struct Entry {
 
 impl Entry {
     pub fn new(
-        id: impl Into<String>,
+        id: impl Into<Id>,
         main: impl Into<String>,
         secondary: Option<impl Into<String>>,
         icon: EntryIcon,
@@ -275,8 +275,12 @@ impl EntryRegistry {
         ranked.sort_by(|(score_a, index_a), (score_b, index_b)| {
             let entry_a = &self.entries[*index_a];
             let entry_b = &self.entries[*index_b];
-            let a_is_fav = preferences.favorite_apps.contains(&entry_a.id);
-            let b_is_fav = preferences.favorite_apps.contains(&entry_b.id);
+            let a_is_fav = preferences
+                .favorite_apps
+                .contains(&entry_a.id.to_string_lossy().into_owned());
+            let b_is_fav = preferences
+                .favorite_apps
+                .contains(&entry_b.id.to_string_lossy().into_owned());
 
             match (a_is_fav, b_is_fav) {
                 (true, false) => std::cmp::Ordering::Less,

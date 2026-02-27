@@ -23,37 +23,34 @@ use super::{Provider, spawn_with_new_session};
 pub struct FileProvider;
 
 impl Provider for FileProvider {
-    // FIXME: Unix-like systems accept non-UTF-8 valid sequences
-    // as valid file names. Right now, these entries are being skip.
-    // In order to fix this, id should be a PathBuf or similar.
-    // This funcion call is the culprit: Path::to_str() -> Option<&str>
-    fn scan(ctx: ScanRequest) -> impl Stream<Item = Message> {
+    fn scan(request: ScanRequest) -> impl Stream<Item = Message> {
         iced::stream::channel(100, async move |output| {
-            AsyncScanner::run(ctx.clone(), output, async move |ctx, scanner| {
-                let icon_size = ctx.preferences.theme.launchpad.entry.icon_size;
-                if let Some(parent_directory) = ctx.path.parent() {
+            AsyncScanner::run(request, output, async move |req, scanner| {
+                let icon_size = req.preferences.theme.launchpad.entry.icon_size;
+                if let Some(parent_directory) = req.path.parent() {
                     let parent_entry = Entry::new(
-                        parent_directory.to_str().unwrap(),
+                        parent_directory.as_os_str().to_os_string(),
                         "..",
                         Some(parent_directory.to_string_lossy()),
-                        EntryIcon::Handle(get_icon_from_mimetype(&parent_directory, icon_size)),
+                        EntryIcon::Handle(get_icon_from_mimetype(parent_directory, icon_size)),
                     );
                     scanner.load(parent_entry).await;
                 }
 
-                let mut child_directories = tokio::fs::read_dir(&ctx.path).await.unwrap();
-                while let Some(child_dir) = child_directories.next_entry().await.unwrap() {
+                let mut child_directories = tokio::fs::read_dir(&req.path).await?;
+                while let Some(child_dir) = child_directories.next_entry().await? {
                     let path = child_dir.path();
-                    let id_str = path.to_string_lossy();
-                    let main_display = path.file_name().unwrap().to_string_lossy();
+                    let main_display = path.file_name().and_then(|s| s.to_str()).unwrap_or("..");
                     let child_entry = Entry::new(
-                        id_str.clone(),
+                        path.as_os_str().to_os_string(),
                         main_display,
-                        Some(id_str),
+                        Some(path.to_string_lossy()),
                         EntryIcon::Handle(get_icon_from_mimetype(&path, icon_size)),
                     );
                     scanner.load(child_entry).await;
                 }
+
+                Ok(())
             })
             .await
         })
