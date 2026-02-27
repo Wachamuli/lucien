@@ -7,14 +7,12 @@ use std::{
     sync::Arc,
 };
 
-use gio::prelude::{AppInfoExt, IconExt};
-
-use iced::futures::Stream;
+use iced::futures::{Stream, StreamExt};
 use iced::{Task, futures::SinkExt, widget::image};
 use iced::{futures, window};
 use resvg::{tiny_skia, usvg};
 
-use crate::providers::{ScanRequest, Scanner};
+use crate::providers::{AsyncScanner, ScanRequest};
 use crate::ui::entry::EntryIcon;
 use crate::{
     launcher::Message,
@@ -30,32 +28,33 @@ pub struct AppProvider;
 impl Provider for AppProvider {
     fn scan(request: ScanRequest) -> impl Stream<Item = Message> {
         iced::stream::channel(100, async move |output| {
-            let xdg_dirs = Arc::new(xdg::BaseDirectories::new());
-            let svg_options = Arc::new(usvg::Options::default());
-            Scanner::run(request, output.clone(), |req, scanner| {
-                let apps = gio::AppInfo::all()
-                    .into_iter()
-                    .filter(|app| app.should_show());
-                for app in apps {
-                    let meta = AppMetadata::from(app);
-                    let entry = Entry::new(
-                        meta.id.clone(),
-                        meta.name,
-                        meta.description,
-                        meta.icon.clone(),
-                    );
-                    if let EntryIcon::Lazy(icon_name) = meta.icon {
+            AsyncScanner::run(request, output.clone(), async move |req, scanner| {
+                let svg_options = Arc::new(usvg::Options::default());
+                let xdg_dirs = Arc::new(xdg::BaseDirectories::new());
+                let icon_size = req.preferences.theme.launchpad.entry.icon_size;
+                let mut app_stream = discover_apps().await;
+                while let Some(app) = app_stream.next().await {
+                    let icon = app
+                        .icon
+                        .map(EntryIcon::Lazy)
+                        .unwrap_or_else(|| EntryIcon::Handle(APPLICATION_DEFAULT.clone()));
+
+                    if let EntryIcon::Lazy(icon_name) = icon.clone() {
                         tokio::spawn(resolve_icon(
-                            meta.id,
+                            app.exec.clone().into(),
                             icon_name,
-                            req.preferences.theme.launchpad.entry.icon_size,
+                            icon_size,
                             xdg_dirs.clone(),
                             svg_options.clone(),
                             output.clone(),
                         ));
                     }
-                    scanner.load(entry);
+
+                    let entry = Entry::new(app.exec, app.name, app.comment, icon);
+                    scanner.load(entry).await;
                 }
+
+                Ok(())
             })
             .await;
         })
@@ -97,7 +96,7 @@ async fn resolve_icon(
     mut output: futures::channel::mpsc::Sender<Message>,
 ) {
     let handle = get_icon_path_from_xdgicon(name, xdg_dirs)
-        .and_then(|path| load_raster_icon(path, size, &opts))
+        .and_then(|path| load_raster_icon(&path, size, opts))
         .unwrap_or_else(|| APPLICATION_DEFAULT.clone());
 
     let _ = output.send(Message::IconResolved { id, handle }).await;
@@ -138,7 +137,7 @@ pub fn get_icon_path_from_xdgicon(
     None
 }
 
-fn rasterize_svg(path: PathBuf, size: u32, opts: &usvg::Options) -> Option<tiny_skia::Pixmap> {
+fn rasterize_svg(path: &Path, size: u32, opts: &usvg::Options) -> Option<tiny_skia::Pixmap> {
     let svg_data = std::fs::read(path).ok()?;
     let tree = usvg::Tree::from_data(&svg_data, &opts).ok()?;
 
@@ -152,7 +151,7 @@ fn rasterize_svg(path: PathBuf, size: u32, opts: &usvg::Options) -> Option<tiny_
     Some(pixmap)
 }
 
-fn load_raster_icon(path: PathBuf, size: u32, opts: &usvg::Options) -> Option<image::Handle> {
+fn load_raster_icon(path: &Path, size: u32, opts: Arc<usvg::Options>) -> Option<image::Handle> {
     let extension = path.extension()?.to_str()?;
 
     match extension {
@@ -165,32 +164,79 @@ fn load_raster_icon(path: PathBuf, size: u32, opts: &usvg::Options) -> Option<im
     }
 }
 
-pub struct AppMetadata {
-    pub id: Id,
+#[derive(Default)]
+pub struct App {
     pub name: String,
-    pub description: Option<String>,
-    pub icon: EntryIcon,
+    pub exec: String,
+    pub comment: Option<String>,
+    pub icon: Option<String>,
+    pub no_display: bool,
 }
 
-impl From<gio::AppInfo> for AppMetadata {
-    fn from(app: gio::AppInfo) -> Self {
-        let id = app
-            .commandline()
-            .map(|c| c.into_os_string())
-            .unwrap_or_default();
-        let name = app.name().to_string();
-        let description = app.description().map(|d| d.to_string());
-        let icon = app
-            .icon()
-            .and_then(|i| i.to_string())
-            .map(|s| EntryIcon::Lazy(s.into()))
-            .unwrap_or_else(|| EntryIcon::Handle(APPLICATION_DEFAULT.clone()));
+async fn discover_apps() -> futures::channel::mpsc::Receiver<App> {
+    let (tx, rx) = futures::channel::mpsc::channel(100);
+    let xdg_dirs = Arc::new(xdg::BaseDirectories::new());
+    let mut search_paths = xdg_dirs.get_data_dirs();
+    search_paths.insert(0, xdg_dirs.get_data_home().unwrap_or_default());
 
-        Self {
-            id,
-            name,
-            description,
-            icon,
+    for path in search_paths {
+        let app_dir = path.join("applications");
+        if let Ok(mut entries) = tokio::fs::read_dir(app_dir).await {
+            while let Ok(Some(entry)) = entries.next_entry().await {
+                let file_path = entry.path();
+                let file_name = entry.file_name().to_string_lossy().into_owned();
+
+                if !file_name.ends_with(".desktop") {
+                    continue;
+                }
+
+                let mut tx_clone = tx.clone();
+                tokio::spawn(async move {
+                    if let Ok(content) = tokio::fs::read_to_string(&file_path).await {
+                        if let Some(app) = parse_desktop_entry(&content) {
+                            let _ = tx_clone.send(app).await;
+                        }
+                    }
+                });
+            }
         }
+    }
+
+    rx
+}
+
+fn parse_desktop_entry(content: &str) -> Option<App> {
+    let mut app = App::default();
+    let mut in_main_section = false;
+
+    for line in content.lines() {
+        let line = line.trim();
+        if line == "[Desktop Entry]" {
+            in_main_section = true;
+            continue;
+        } else if line.starts_with('[') {
+            in_main_section = false; // Entered another section like [Desktop Action]
+        }
+        // TODO: add  Type=Application check to skip unnecessary files
+        // TODO: skip Hidden=True
+
+        if in_main_section {
+            if let Some((key, value)) = line.split_once('=') {
+                match key.trim() {
+                    "Name" => app.name = value.trim().to_string(),
+                    "Exec" => app.exec = value.trim().to_string(),
+                    "Icon" => app.icon = Some(value.trim().to_string()),
+                    "Comment" => app.comment = Some(value.trim().to_string()),
+                    "NoDisplay" => app.no_display = value.trim() == "true",
+                    _ => {}
+                }
+            }
+        }
+    }
+
+    if app.name.is_empty() || app.no_display {
+        None
+    } else {
+        Some(app)
     }
 }

@@ -71,69 +71,6 @@ pub enum ScannerState {
     Errored(Arc<anyhow::Error>),
 }
 
-struct Scanner {
-    sender: FuturesSender<Message>,
-    batch: Vec<Entry>,
-    capacity: usize,
-}
-
-impl Scanner {
-    pub fn new(sender: FuturesSender<Message>, capacity: usize) -> Self {
-        Self {
-            sender,
-            // receiver,
-            batch: Vec::with_capacity(capacity),
-            capacity,
-        }
-    }
-
-    pub fn start(&mut self) {
-        let _ = self
-            .sender
-            .try_send(Message::ScanEvent(ScannerState::Started));
-    }
-
-    pub fn load(&mut self, entry: Entry) {
-        self.batch.push(entry);
-
-        if self.batch.len() >= self.capacity {
-            self.flush()
-        }
-    }
-
-    fn flush(&mut self) {
-        if !self.batch.is_empty() {
-            let ready_batch = std::mem::replace(&mut self.batch, Vec::with_capacity(self.capacity));
-            let _ = self
-                .sender
-                .try_send(Message::ScanEvent(ScannerState::Found(ready_batch)));
-        }
-    }
-
-    fn finish(&mut self) {
-        self.flush();
-        let _ = self
-            .sender
-            .try_send(Message::ScanEvent(ScannerState::Finished));
-    }
-
-    async fn run<F>(request: ScanRequest, sender: FuturesSender<Message>, f: F)
-    where
-        F: Fn(&ScanRequest, &mut Scanner),
-    {
-        let mut scanner = Scanner::new(sender, request.preferences.scan_batch_size);
-        scanner.start();
-        f(&request, &mut scanner);
-        scanner.finish();
-    }
-}
-
-impl Drop for Scanner {
-    fn drop(&mut self) {
-        self.finish();
-    }
-}
-
 pub struct AsyncScanner {
     sender: FuturesSender<Message>,
     batch: Vec<Entry>,
@@ -191,7 +128,7 @@ impl AsyncScanner {
 
     pub async fn run<F>(request: ScanRequest, sender: FuturesSender<Message>, f: F)
     where
-        F: AsyncFn(&ScanRequest, &mut AsyncScanner) -> anyhow::Result<()>,
+        F: AsyncFn(&ScanRequest, &mut AsyncScanner) -> anyhow::Result<()> + Send + 'static,
     {
         let mut scanner = AsyncScanner::new(sender, request.preferences.scan_batch_size);
         scanner.start().await;
