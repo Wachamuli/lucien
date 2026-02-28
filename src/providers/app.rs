@@ -4,7 +4,6 @@ use std::os::unix::ffi::{OsStrExt, OsStringExt};
 use std::{
     path::{Path, PathBuf},
     process,
-    sync::Arc,
 };
 
 use iced::futures::{Stream, StreamExt};
@@ -29,11 +28,10 @@ impl Provider for AppProvider {
     fn scan(request: ScanRequest) -> impl Stream<Item = Message> {
         iced::stream::channel(100, async move |output| {
             AsyncScanner::run(request, output.clone(), async move |req, scanner| {
-                let svg_options = Arc::new(usvg::Options::default());
-                let xdg_dirs = Arc::new(xdg::BaseDirectories::new());
                 let icon_size = req.preferences.theme.launchpad.entry.icon_size;
                 let mut app_stream = discover_apps().await;
                 while let Some(app) = app_stream.next().await {
+                    let id = app.exec;
                     let icon = app
                         .icon
                         .map(EntryIcon::Lazy)
@@ -41,16 +39,14 @@ impl Provider for AppProvider {
 
                     if let EntryIcon::Lazy(icon_name) = icon.clone() {
                         tokio::spawn(resolve_icon(
-                            app.exec.clone().into(),
+                            id.clone().into(),
                             icon_name,
                             icon_size,
-                            xdg_dirs.clone(),
-                            svg_options.clone(),
                             output.clone(),
                         ));
                     }
 
-                    let entry = Entry::new(app.exec, app.name, app.comment, icon);
+                    let entry = Entry::new(id, app.name, app.comment, icon);
                     scanner.load(entry).await;
                 }
 
@@ -91,26 +87,22 @@ async fn resolve_icon(
     id: Id,
     name: String,
     size: u32,
-    xdg_dirs: Arc<xdg::BaseDirectories>,
-    opts: Arc<usvg::Options<'_>>,
     mut output: futures::channel::mpsc::Sender<Message>,
 ) {
-    let handle = get_icon_path_from_xdgicon(name, xdg_dirs)
-        .and_then(|path| load_raster_icon(&path, size, opts))
+    let handle = get_icon_path_from_xdgicon(&name)
+        .and_then(|path| load_raster_icon(&path, size))
         .unwrap_or_else(|| APPLICATION_DEFAULT.clone());
 
     let _ = output.send(Message::IconResolved { id, handle }).await;
 }
 
-pub fn get_icon_path_from_xdgicon(
-    icon_name: String,
-    xdg_dirs: Arc<xdg::BaseDirectories>,
-) -> Option<PathBuf> {
-    let path_iconname = Path::new(&icon_name);
+pub fn get_icon_path_from_xdgicon(icon_name: &str) -> Option<PathBuf> {
+    let path_iconname = Path::new(icon_name);
     if path_iconname.is_absolute() && path_iconname.exists() {
         return Some(path_iconname.to_path_buf());
     }
 
+    let xdg_dirs = xdg::BaseDirectories::new();
     let mut path_str = String::with_capacity(128);
 
     write!(path_str, "icons/hicolor/scalable/apps/{}.svg", icon_name).ok()?;
@@ -137,8 +129,9 @@ pub fn get_icon_path_from_xdgicon(
     None
 }
 
-fn rasterize_svg(path: &Path, size: u32, opts: &usvg::Options) -> Option<tiny_skia::Pixmap> {
+fn rasterize_svg(path: &Path, size: u32) -> Option<tiny_skia::Pixmap> {
     let svg_data = std::fs::read(path).ok()?;
+    let opts = usvg::Options::default();
     let tree = usvg::Tree::from_data(&svg_data, &opts).ok()?;
 
     let mut pixmap = tiny_skia::Pixmap::new(size, size)?;
@@ -151,12 +144,12 @@ fn rasterize_svg(path: &Path, size: u32, opts: &usvg::Options) -> Option<tiny_sk
     Some(pixmap)
 }
 
-fn load_raster_icon(path: &Path, size: u32, opts: Arc<usvg::Options>) -> Option<image::Handle> {
+fn load_raster_icon(path: &Path, size: u32) -> Option<image::Handle> {
     let extension = path.extension()?.to_str()?;
 
     match extension {
         "svg" => {
-            let pixmap = rasterize_svg(path, size, &opts)?;
+            let pixmap = rasterize_svg(path, size)?;
             Some(image::Handle::from_rgba(size, size, pixmap.data().to_vec()))
         }
         "png" => Some(image::Handle::from_path(path)),
@@ -174,7 +167,7 @@ pub struct App {
 
 async fn discover_apps() -> futures::channel::mpsc::Receiver<App> {
     let (tx, rx) = futures::channel::mpsc::channel(100);
-    let xdg_dirs = Arc::new(xdg::BaseDirectories::new());
+    let xdg_dirs = xdg::BaseDirectories::new();
     let mut search_paths = xdg_dirs.get_data_dirs();
     search_paths.insert(0, xdg_dirs.get_data_home().unwrap_or_default());
     let current_desktop = std::env::var("XDG_CURRENT_DESKTOP")
