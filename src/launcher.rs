@@ -88,10 +88,6 @@ impl Lucien {
             path: PathBuf::from(env!("HOME")),
         };
 
-        if std::env::var("BENCHMARK").is_ok() {
-            std::process::exit(0);
-        }
-
         (initial_values, load_preferences_task)
     }
 

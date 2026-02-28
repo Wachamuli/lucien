@@ -39,6 +39,10 @@ fn main() -> anyhow::Result<()> {
     let _log_guard = setup_tracing_subscriber(xdg_cache_directory, "logs")?;
     tracing::info!("Running {package_name} v.{package_version}...");
 
+    if std::env::var("BENCHMARK").is_ok() {
+        std::process::exit(0);
+    }
+
     iced::application(Lucien::new, Lucien::update, Lucien::view)
         .subscription(Lucien::subscription)
         .theme(Lucien::theme)
