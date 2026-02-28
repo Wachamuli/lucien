@@ -4,17 +4,14 @@ use std::os::unix::ffi::{OsStrExt, OsStringExt};
 use std::{
     path::{Path, PathBuf},
     process,
-    sync::Arc,
 };
 
-use gio::prelude::{AppInfoExt, IconExt};
-
-use iced::futures::Stream;
+use iced::futures::{Stream, StreamExt};
 use iced::{Task, futures::SinkExt, widget::image};
 use iced::{futures, window};
 use resvg::{tiny_skia, usvg};
 
-use crate::providers::{ScanRequest, Scanner};
+use crate::providers::{AsyncScanner, ScanRequest};
 use crate::ui::entry::EntryIcon;
 use crate::{
     launcher::Message,
@@ -30,32 +27,30 @@ pub struct AppProvider;
 impl Provider for AppProvider {
     fn scan(request: ScanRequest) -> impl Stream<Item = Message> {
         iced::stream::channel(100, async move |output| {
-            let xdg_dirs = Arc::new(xdg::BaseDirectories::new());
-            let svg_options = Arc::new(usvg::Options::default());
-            Scanner::run(request, output.clone(), |req, scanner| {
-                let apps = gio::AppInfo::all()
-                    .into_iter()
-                    .filter(|app| app.should_show());
-                for app in apps {
-                    let meta = AppMetadata::from(app);
-                    let entry = Entry::new(
-                        meta.id.clone(),
-                        meta.name,
-                        meta.description,
-                        meta.icon.clone(),
-                    );
-                    if let EntryIcon::Lazy(icon_name) = meta.icon {
+            AsyncScanner::run(request, output.clone(), async move |req, scanner| {
+                let icon_size = req.preferences.theme.launchpad.entry.icon_size;
+                let mut app_stream = discover_apps().await;
+                while let Some(app) = app_stream.next().await {
+                    let id = app.exec;
+                    let icon = app
+                        .icon
+                        .map(EntryIcon::Lazy)
+                        .unwrap_or_else(|| EntryIcon::Handle(APPLICATION_DEFAULT.clone()));
+
+                    if let EntryIcon::Lazy(icon_name) = icon.clone() {
                         tokio::spawn(resolve_icon(
-                            meta.id,
+                            id.clone().into(),
                             icon_name,
-                            req.preferences.theme.launchpad.entry.icon_size,
-                            xdg_dirs.clone(),
-                            svg_options.clone(),
+                            icon_size,
                             output.clone(),
                         ));
                     }
-                    scanner.load(entry);
+
+                    let entry = Entry::new(id, app.name, app.comment, icon);
+                    scanner.load(entry).await;
                 }
+
+                Ok(())
             })
             .await;
         })
@@ -92,26 +87,22 @@ async fn resolve_icon(
     id: Id,
     name: String,
     size: u32,
-    xdg_dirs: Arc<xdg::BaseDirectories>,
-    opts: Arc<usvg::Options<'_>>,
     mut output: futures::channel::mpsc::Sender<Message>,
 ) {
-    let handle = get_icon_path_from_xdgicon(name, xdg_dirs)
-        .and_then(|path| load_raster_icon(path, size, &opts))
+    let handle = get_icon_path_from_xdgicon(&name)
+        .and_then(|path| load_raster_icon(&path, size))
         .unwrap_or_else(|| APPLICATION_DEFAULT.clone());
 
     let _ = output.send(Message::IconResolved { id, handle }).await;
 }
 
-pub fn get_icon_path_from_xdgicon(
-    icon_name: String,
-    xdg_dirs: Arc<xdg::BaseDirectories>,
-) -> Option<PathBuf> {
-    let path_iconname = Path::new(&icon_name);
+pub fn get_icon_path_from_xdgicon(icon_name: &str) -> Option<PathBuf> {
+    let path_iconname = Path::new(icon_name);
     if path_iconname.is_absolute() && path_iconname.exists() {
         return Some(path_iconname.to_path_buf());
     }
 
+    let xdg_dirs = xdg::BaseDirectories::new();
     let mut path_str = String::with_capacity(128);
 
     write!(path_str, "icons/hicolor/scalable/apps/{}.svg", icon_name).ok()?;
@@ -138,8 +129,9 @@ pub fn get_icon_path_from_xdgicon(
     None
 }
 
-fn rasterize_svg(path: PathBuf, size: u32, opts: &usvg::Options) -> Option<tiny_skia::Pixmap> {
+fn rasterize_svg(path: &Path, size: u32) -> Option<tiny_skia::Pixmap> {
     let svg_data = std::fs::read(path).ok()?;
+    let opts = usvg::Options::default();
     let tree = usvg::Tree::from_data(&svg_data, &opts).ok()?;
 
     let mut pixmap = tiny_skia::Pixmap::new(size, size)?;
@@ -152,12 +144,12 @@ fn rasterize_svg(path: PathBuf, size: u32, opts: &usvg::Options) -> Option<tiny_
     Some(pixmap)
 }
 
-fn load_raster_icon(path: PathBuf, size: u32, opts: &usvg::Options) -> Option<image::Handle> {
+fn load_raster_icon(path: &Path, size: u32) -> Option<image::Handle> {
     let extension = path.extension()?.to_str()?;
 
     match extension {
         "svg" => {
-            let pixmap = rasterize_svg(path, size, &opts)?;
+            let pixmap = rasterize_svg(path, size)?;
             Some(image::Handle::from_rgba(size, size, pixmap.data().to_vec()))
         }
         "png" => Some(image::Handle::from_path(path)),
@@ -165,32 +157,130 @@ fn load_raster_icon(path: PathBuf, size: u32, opts: &usvg::Options) -> Option<im
     }
 }
 
-pub struct AppMetadata {
-    pub id: Id,
+#[derive(Default)]
+pub struct App {
     pub name: String,
-    pub description: Option<String>,
-    pub icon: EntryIcon,
+    pub exec: String,
+    pub comment: Option<String>,
+    pub icon: Option<String>,
 }
 
-impl From<gio::AppInfo> for AppMetadata {
-    fn from(app: gio::AppInfo) -> Self {
-        let id = app
-            .commandline()
-            .map(|c| c.into_os_string())
-            .unwrap_or_default();
-        let name = app.name().to_string();
-        let description = app.description().map(|d| d.to_string());
-        let icon = app
-            .icon()
-            .and_then(|i| i.to_string())
-            .map(|s| EntryIcon::Lazy(s.into()))
-            .unwrap_or_else(|| EntryIcon::Handle(APPLICATION_DEFAULT.clone()));
+async fn discover_apps() -> futures::channel::mpsc::Receiver<App> {
+    let (tx, rx) = futures::channel::mpsc::channel(100);
+    let xdg_dirs = xdg::BaseDirectories::new();
+    let mut search_paths = xdg_dirs.get_data_dirs();
+    search_paths.insert(0, xdg_dirs.get_data_home().unwrap_or_default());
+    let current_desktop = std::env::var("XDG_CURRENT_DESKTOP")
+        .unwrap_or_default()
+        .split(":")
+        .map(|s| s.to_string())
+        .collect::<Vec<_>>();
 
-        Self {
-            id,
-            name,
-            description,
-            icon,
+    for path in search_paths {
+        let app_dir = path.join("applications");
+        if let Ok(mut entries) = tokio::fs::read_dir(app_dir).await {
+            while let Ok(Some(entry)) = entries.next_entry().await {
+                let file_path = entry.path();
+                let file_name = entry.file_name().to_string_lossy().into_owned();
+
+                if !file_name.ends_with(".desktop") {
+                    continue;
+                }
+
+                let mut tx_clone = tx.clone();
+                let current_de_clone = current_desktop.clone();
+                tokio::spawn(async move {
+                    if let Ok(content) = tokio::fs::read_to_string(&file_path).await {
+                        if let Some(app) = parse_desktop_entry(&content, current_de_clone) {
+                            let _ = tx_clone.send(app).await;
+                        }
+                    }
+                });
+            }
         }
+    }
+
+    rx
+}
+
+fn parse_desktop_entry(content: &str, current_desktops: Vec<String>) -> Option<App> {
+    let mut app = App::default();
+    let mut in_main_section = false;
+
+    let mut has_name = false;
+    let mut has_exec = false;
+    let mut has_type = false;
+    let mut should_hide = false;
+
+    for line in content.lines() {
+        let line = line.trim();
+
+        if line.is_empty() || line.starts_with('#') {
+            continue;
+        }
+
+        if line.starts_with('[') {
+            if in_main_section {
+                break;
+            }
+            in_main_section = line == "[Desktop Entry]";
+            continue;
+        }
+
+        if in_main_section {
+            if let Some((key, value)) = line.split_once('=') {
+                let key = key.trim();
+                let value = value.trim();
+
+                match key {
+                    "Type" => {
+                        if value != "Application" {
+                            return None;
+                        }
+                        has_type = true;
+                    }
+                    "NoDisplay" | "Hidden" => {
+                        if value == "true" {
+                            should_hide = true;
+                        }
+                    }
+                    "OnlyShowIn" => {
+                        let mut required_desktops = value.split(';').filter(|s| !s.is_empty());
+                        let is_match =
+                            required_desktops.any(|d| current_desktops.iter().any(|c| c == d));
+
+                        if !is_match {
+                            should_hide = true;
+                        }
+                    }
+                    "NotShowIn" => {
+                        let mut required_desktops = value.split(';').filter(|s| !s.is_empty());
+                        let is_match =
+                            required_desktops.any(|d| current_desktops.iter().any(|c| c == d));
+
+                        if is_match {
+                            should_hide = true;
+                        }
+                    }
+                    "Name" => {
+                        app.name = value.to_string();
+                        has_name = true;
+                    }
+                    "Exec" => {
+                        app.exec = value.to_string();
+                        has_exec = true;
+                    }
+                    "Icon" => app.icon = Some(value.to_string()),
+                    "Comment" => app.comment = Some(value.to_string()),
+                    _ => {}
+                }
+            }
+        }
+    }
+
+    if !should_hide && has_name && has_exec && has_type {
+        Some(app)
+    } else {
+        None
     }
 }
