@@ -48,7 +48,7 @@ pub struct Lucien {
     matcher: SkimMatcherV2,
     preferences: Preferences,
     selected_entry: usize,
-    hovered_entry: usize,
+    hovered_entry: Option<usize>,
     last_viewport: Option<Viewport>,
     search_handle: Option<iced::task::Handle>,
     path: PathBuf,
@@ -76,7 +76,7 @@ impl Lucien {
 
         let initial_values = Self {
             selected_entry: 0,
-            hovered_entry: 0,
+            hovered_entry: None,
             entry_registry: EntryRegistry::default(),
             is_scan_completed: false,
             provider: ProviderKind::App,
@@ -322,12 +322,12 @@ impl Lucien {
                 Task::none()
             }
             Message::HoveredEntry(index) => {
-                self.hovered_entry = index;
+                self.hovered_entry = Some(index);
                 Task::none()
             }
             Message::HoveredExit(index) => {
-                if self.hovered_entry == index {
-                    self.hovered_entry = self.selected_entry;
+                if self.hovered_entry == Some(index) {
+                    self.hovered_entry = None;
                 }
                 Task::none()
             }
@@ -382,7 +382,7 @@ impl Lucien {
                 .favorite_apps
                 .contains(&entry.id.to_string_lossy().into_owned());
             let is_selected = self.selected_entry == index;
-            let is_hovered = self.hovered_entry == index;
+            let is_hovered = self.hovered_entry.map(|i| i == index).unwrap_or(false);
 
             let entry_view = mouse_area(
                 container(ui::entry::display_entry(
