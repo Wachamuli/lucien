@@ -187,15 +187,11 @@ async fn discover_apps() -> futures::channel::mpsc::Receiver<App> {
                     continue;
                 }
 
-                let mut tx_clone = tx.clone();
-                let current_de_clone = current_desktop.clone();
-                tokio::spawn(async move {
-                    if let Ok(content) = tokio::fs::read_to_string(&file_path).await {
-                        if let Some(app) = parse_desktop_entry(&content, current_de_clone) {
-                            let _ = tx_clone.send(app).await;
-                        }
+                if let Ok(content) = tokio::fs::read_to_string(&file_path).await {
+                    if let Some(app) = parse_desktop_entry(&content, current_desktop.clone()) {
+                        let _ = tx.clone().send(app).await;
                     }
-                });
+                }
             }
         }
     }
