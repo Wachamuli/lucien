@@ -177,6 +177,11 @@ async fn discover_apps() -> futures::channel::mpsc::Receiver<App> {
     let xdg_dirs = Arc::new(xdg::BaseDirectories::new());
     let mut search_paths = xdg_dirs.get_data_dirs();
     search_paths.insert(0, xdg_dirs.get_data_home().unwrap_or_default());
+    let current_desktop = std::env::var("XDG_CURRENT_DESKTOP")
+        .unwrap_or_default()
+        .split(":")
+        .map(|s| s.to_string())
+        .collect::<Vec<_>>();
 
     for path in search_paths {
         let app_dir = path.join("applications");
@@ -190,9 +195,10 @@ async fn discover_apps() -> futures::channel::mpsc::Receiver<App> {
                 }
 
                 let mut tx_clone = tx.clone();
+                let current_de_clone = current_desktop.clone();
                 tokio::spawn(async move {
                     if let Ok(content) = tokio::fs::read_to_string(&file_path).await {
-                        if let Some(app) = parse_desktop_entry(&content) {
+                        if let Some(app) = parse_desktop_entry(&content, current_de_clone) {
                             let _ = tx_clone.send(app).await;
                         }
                     }
@@ -204,15 +210,14 @@ async fn discover_apps() -> futures::channel::mpsc::Receiver<App> {
     rx
 }
 
-fn parse_desktop_entry(content: &str) -> Option<App> {
+fn parse_desktop_entry(content: &str, current_desktops: Vec<String>) -> Option<App> {
     let mut app = App::default();
     let mut in_main_section = false;
 
     let mut has_name = false;
     let mut has_exec = false;
     let mut has_type = false;
-    let mut has_icon = false;
-    let mut has_comment = false;
+    let mut should_hide = false;
 
     for line in content.lines() {
         let line = line.trim();
@@ -241,9 +246,27 @@ fn parse_desktop_entry(content: &str) -> Option<App> {
                         }
                         has_type = true;
                     }
-                    "Hidden" | "NoDisplay" => {
+                    "NoDisplay" | "Hidden" => {
                         if value == "true" {
-                            return None;
+                            should_hide = true;
+                        }
+                    }
+                    "OnlyShowIn" => {
+                        let mut required_desktops = value.split(';').filter(|s| !s.is_empty());
+                        let is_match =
+                            required_desktops.any(|d| current_desktops.iter().any(|c| c == d));
+
+                        if !is_match {
+                            should_hide = true;
+                        }
+                    }
+                    "NotShowIn" => {
+                        let mut required_desktops = value.split(';').filter(|s| !s.is_empty());
+                        let is_match =
+                            required_desktops.any(|d| current_desktops.iter().any(|c| c == d));
+
+                        if is_match {
+                            should_hide = true;
                         }
                     }
                     "Name" => {
@@ -254,25 +277,15 @@ fn parse_desktop_entry(content: &str) -> Option<App> {
                         app.exec = value.to_string();
                         has_exec = true;
                     }
-                    "Icon" => {
-                        app.icon = Some(value.to_string());
-                        has_icon = true;
-                    }
-                    "Comment" => {
-                        app.comment = Some(value.to_string());
-                        has_comment = true;
-                    }
+                    "Icon" => app.icon = Some(value.to_string()),
+                    "Comment" => app.comment = Some(value.to_string()),
                     _ => {}
-                }
-
-                if has_name && has_exec && has_type && has_icon && has_comment {
-                    return Some(app);
                 }
             }
         }
     }
 
-    if has_name && has_exec && has_type {
+    if !should_hide && has_name && has_exec && has_type {
         Some(app)
     } else {
         None
