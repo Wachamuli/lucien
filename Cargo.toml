@@ -11,7 +11,6 @@ codegen-units = 1
 
 [dependencies]
 iced = { version = "0.14.0", default-features = false, features = ["image", "tokio", "advanced", "lazy", "wgpu", "wayland"] }
-gio = "0.21.5"
 xdg = "3.0.0"
 fuzzy-matcher = "0.3.7"
 resvg = { version = "0.45.1", default-features = false }
@@ -25,6 +24,7 @@ toml_edit = "0.24.0"
 tokio = { version = "1.49.0", features = ["fs", "sync"] }
 anyhow = "1.0.100"
 dhat = { version = "0.3.3", optional = true }
+bitflags = "2.11.0"
 
 [features]
 dhat-heap = ["dep:dhat"]
