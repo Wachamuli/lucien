@@ -4,10 +4,9 @@ version = "0.1.0"
 edition = "2024"
 
 [profile.release]
-strip = true
-lto = true
+lto = "fat"
 codegen-units = 1
-# debug = true
+strip = "symbols"
 
 [dependencies]
 iced = { version = "0.14.0", default-features = false, features = ["image", "tokio", "advanced", "lazy", "wgpu", "wayland"] }
