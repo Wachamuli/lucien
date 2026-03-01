@@ -7,7 +7,7 @@ use iced::{Task, futures::Stream, widget::image, window};
 
 use crate::{
     launcher::Message,
-    providers::{AsyncScanner, ScanRequest},
+    providers::{ScanRequest, Scanner},
     ui::{
         entry::{Entry, EntryIcon},
         icon::{
@@ -24,35 +24,44 @@ pub struct FileProvider;
 
 impl Provider for FileProvider {
     fn scan(request: ScanRequest) -> impl Stream<Item = Message> {
+        let icon_size = request.preferences.theme.launchpad.entry.icon_size;
         iced::stream::channel(100, async move |output| {
-            AsyncScanner::run(request, output, async move |req, scanner| {
-                let icon_size = req.preferences.theme.launchpad.entry.icon_size;
-                if let Some(parent_directory) = req.path.parent() {
-                    let parent_entry = Entry::new(
-                        parent_directory.as_os_str().to_os_string(),
-                        "..",
-                        Some(parent_directory.to_string_lossy()),
-                        EntryIcon::Handle(get_icon_from_mimetype(parent_directory, icon_size)),
-                    );
-                    scanner.load(parent_entry).await;
-                }
+            let mut scanner = Scanner::new(output, request.preferences.scan_batch_size);
+            scanner.start().await;
+            if let Some(parent_directory) = request.path.parent() {
+                let parent_entry = Entry::new(
+                    parent_directory.as_os_str().to_os_string(),
+                    "..",
+                    Some(parent_directory.to_string_lossy()),
+                    EntryIcon::Handle(get_icon_from_mimetype(parent_directory, icon_size)),
+                );
+                scanner.load(parent_entry).await;
+            }
 
-                let mut child_directories = tokio::fs::read_dir(&req.path).await?;
-                while let Some(child_dir) = child_directories.next_entry().await? {
-                    let path = child_dir.path();
-                    let main_display = path.file_name().and_then(|s| s.to_str()).unwrap_or("..");
-                    let child_entry = Entry::new(
-                        path.as_os_str().to_os_string(),
-                        main_display,
-                        Some(path.to_string_lossy()),
-                        EntryIcon::Handle(get_icon_from_mimetype(&path, icon_size)),
-                    );
-                    scanner.load(child_entry).await;
-                }
+            let mut child_directories = match tokio::fs::read_dir(&request.path).await {
+                Ok(dir) => dir,
+                Err(e) => return scanner.error(anyhow::anyhow!(e)).await,
+            };
 
-                Ok(())
-            })
-            .await
+            loop {
+                let child_dir = match child_directories.next_entry().await {
+                    Ok(Some(entry)) => entry,
+                    Ok(None) => break,
+                    Err(e) => return scanner.error(anyhow::anyhow!(e)).await,
+                };
+
+                let path = child_dir.path();
+                let main_display = path.file_name().and_then(|s| s.to_str()).unwrap_or("..");
+                let child_entry = Entry::new(
+                    path.as_os_str().to_os_string(),
+                    main_display,
+                    Some(path.to_string_lossy()),
+                    EntryIcon::Handle(get_icon_from_mimetype(&path, icon_size)),
+                );
+                scanner.load(child_entry).await;
+            }
+
+            scanner.finish().await;
         })
     }
 

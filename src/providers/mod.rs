@@ -71,13 +71,13 @@ pub enum ScannerState {
     Errored(Arc<anyhow::Error>),
 }
 
-pub struct AsyncScanner {
+pub struct Scanner {
     sender: FuturesSender<Message>,
     batch: Vec<Entry>,
     capacity: usize,
 }
 
-impl AsyncScanner {
+impl Scanner {
     fn new(sender: FuturesSender<Message>, capacity: usize) -> Self {
         Self {
             sender,
@@ -124,18 +124,6 @@ impl AsyncScanner {
             .sender
             .send(Message::ScanEvent(ScannerState::Errored(Arc::new(e))))
             .await;
-    }
-
-    pub async fn run<F>(request: ScanRequest, sender: FuturesSender<Message>, f: F)
-    where
-        F: AsyncFn(&ScanRequest, &mut AsyncScanner) -> anyhow::Result<()>,
-    {
-        let mut scanner = AsyncScanner::new(sender, request.preferences.scan_batch_size);
-        scanner.start().await;
-        if let Err(e) = f(&request, &mut scanner).await {
-            scanner.error(e).await;
-        }
-        scanner.finish().await;
     }
 }
 
