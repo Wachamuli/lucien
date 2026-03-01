@@ -11,7 +11,7 @@ use iced::{Task, futures::SinkExt, widget::image};
 use iced::{futures, window};
 use resvg::{tiny_skia, usvg};
 
-use crate::providers::{AsyncScanner, ScanRequest};
+use crate::providers::{ScanRequest, Scanner};
 use crate::ui::entry::EntryIcon;
 use crate::{
     launcher::Message,
@@ -26,33 +26,32 @@ pub struct AppProvider;
 
 impl Provider for AppProvider {
     fn scan(request: ScanRequest) -> impl Stream<Item = Message> {
+        let icon_size = request.preferences.theme.launchpad.entry.icon_size;
+        let scan_batch_size = request.preferences.scan_batch_size;
         iced::stream::channel(100, async move |output| {
-            AsyncScanner::run(request, output.clone(), async move |req, scanner| {
-                let icon_size = req.preferences.theme.launchpad.entry.icon_size;
-                let mut app_stream = discover_apps().await;
-                while let Some(app) = app_stream.next().await {
-                    let id = app.exec;
-                    let icon = app
-                        .icon
-                        .map(EntryIcon::Lazy)
-                        .unwrap_or_else(|| EntryIcon::Handle(APPLICATION_DEFAULT.clone()));
+            let mut app_stream = discover_apps().await;
+            let mut scanner = Scanner::new(output.clone(), scan_batch_size);
+            scanner.start().await;
+            while let Some(app) = app_stream.next().await {
+                let id = app.exec;
+                let icon = app
+                    .icon
+                    .map(EntryIcon::Lazy)
+                    .unwrap_or_else(|| EntryIcon::Handle(APPLICATION_DEFAULT.clone()));
 
-                    if let EntryIcon::Lazy(icon_name) = icon.clone() {
-                        tokio::spawn(resolve_icon(
-                            id.clone().into(),
-                            icon_name,
-                            icon_size,
-                            output.clone(),
-                        ));
-                    }
-
-                    let entry = Entry::new(id, app.name, app.comment, icon);
-                    scanner.load(entry).await;
+                if let EntryIcon::Lazy(icon_name) = icon.clone() {
+                    tokio::spawn(resolve_icon(
+                        id.clone().into(),
+                        icon_name,
+                        icon_size,
+                        output.clone(),
+                    ));
                 }
 
-                Ok(())
-            })
-            .await;
+                let entry = Entry::new(id, app.name, app.comment, icon);
+                scanner.load(entry).await;
+            }
+            scanner.finish().await;
         })
     }
 
@@ -187,15 +186,11 @@ async fn discover_apps() -> futures::channel::mpsc::Receiver<App> {
                     continue;
                 }
 
-                let mut tx_clone = tx.clone();
-                let current_de_clone = current_desktop.clone();
-                tokio::spawn(async move {
-                    if let Ok(content) = tokio::fs::read_to_string(&file_path).await {
-                        if let Some(app) = parse_desktop_entry(&content, current_de_clone) {
-                            let _ = tx_clone.send(app).await;
-                        }
+                if let Ok(content) = tokio::fs::read_to_string(&file_path).await {
+                    if let Some(app) = parse_desktop_entry(&content, current_desktop.clone()) {
+                        let _ = tx.clone().send(app).await;
                     }
-                });
+                }
             }
         }
     }
