@@ -13,7 +13,7 @@ mod ui;
 
 use anyhow::Context;
 use nix::sys::socket::{self, AddressFamily, SockFlag, SockType, UnixAddr};
-use sqlx::Connection;
+use sqlx::{Connection, sqlite::SqliteConnectOptions};
 use tracing::Level;
 use tracing_subscriber::{EnvFilter, fmt, prelude::*};
 
@@ -119,7 +119,17 @@ fn get_single_instance(name: &str) -> anyhow::Result<OwnedFd> {
 }
 
 async fn handle_clipboard_insertion(content: &str) -> anyhow::Result<()> {
-    let mut conn = sqlx::SqliteConnection::connect("/home/wachamuli/clipboard.db").await?;
+    let clipboard_dir = xdg::BaseDirectories::with_prefix(env!("CARGO_PKG_NAME"))
+        .place_data_file("clipboard.db")
+        .unwrap();
+    let conn_options = SqliteConnectOptions::new()
+        .filename(&clipboard_dir)
+        .journal_mode(sqlx::sqlite::SqliteJournalMode::Wal)
+        .synchronous(sqlx::sqlite::SqliteSynchronous::Normal)
+        .create_if_missing(true);
+    let mut conn = sqlx::SqliteConnection::connect_with(&conn_options)
+        .await
+        .unwrap();
     let mut transaction = conn.begin().await?;
     sqlx::query(
         r#"
