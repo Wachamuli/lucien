@@ -14,6 +14,7 @@ use iced::{Subscription, Task};
 use crate::launcher::Message;
 
 pub mod app;
+pub mod clipboard;
 pub mod file;
 
 pub trait Provider {

@@ -10,6 +10,7 @@ strip = "symbols"
 
 [dependencies]
 iced = { version = "0.14.0", default-features = false, features = ["image", "tokio", "advanced", "lazy", "wgpu", "wayland"] }
+sqlx = { version = "0.8", features = [ "runtime-tokio", "sqlite" ] }
 xdg = "3.0.0"
 fuzzy-matcher = "0.3.7"
 resvg = { version = "0.45.1", default-features = false }
