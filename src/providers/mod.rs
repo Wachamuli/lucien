@@ -1,5 +1,6 @@
 use crate::preferences::Preferences;
 use crate::providers::app::AppProvider;
+use crate::providers::clipboard::ClipboardProvider;
 use crate::providers::file::FileProvider;
 use crate::ui::entry::Entry;
 use std::hash::{Hash, Hasher};
@@ -25,6 +26,7 @@ pub trait Provider {
 pub enum ProviderKind {
     App,
     File,
+    Clipboard,
 }
 
 impl ProviderKind {
@@ -32,6 +34,7 @@ impl ProviderKind {
         match self {
             ProviderKind::App => AppProvider::launch(entry),
             ProviderKind::File => FileProvider::launch(entry),
+            ProviderKind::Clipboard => ClipboardProvider::launch(entry),
         }
     }
 }
@@ -56,6 +59,9 @@ impl ScanRequest {
             ProviderKind::App => Subscription::run_with(self, |ctx| AppProvider::scan(ctx.clone())),
             ProviderKind::File => {
                 Subscription::run_with(self, |ctx| FileProvider::scan(ctx.clone()))
+            }
+            ProviderKind::Clipboard => {
+                Subscription::run_with(self, |ctx| ClipboardProvider::scan(ctx.clone()))
             }
         }
     }

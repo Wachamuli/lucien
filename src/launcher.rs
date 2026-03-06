@@ -29,7 +29,10 @@ use crate::{
     ui::{
         self,
         entry::{EntryIcon, EntryRegistry, FONT_ITALIC, section},
-        icon::{CUBE_ACTIVE, CUBE_INACTIVE, FOLDER_ACTIVE, FOLDER_INACTIVE, MAGNIFIER},
+        icon::{
+            CLIPBOARD_ACTIVE, CLIPBOARD_INACTIVE, CUBE_ACTIVE, CUBE_INACTIVE, FOLDER_ACTIVE,
+            FOLDER_INACTIVE, MAGNIFIER,
+        },
         prompt::Prompt,
     },
 };
@@ -289,8 +292,9 @@ impl Lucien {
                 }
 
                 match self.prompt.as_str() {
-                    "@" => self.provider = ProviderKind::App,
-                    "/" => self.provider = ProviderKind::File,
+                    "!" => self.provider = ProviderKind::App,
+                    "@" => self.provider = ProviderKind::File,
+                    "#" => self.provider = ProviderKind::Clipboard,
                     _ => {}
                 };
 
@@ -463,11 +467,16 @@ impl Lucien {
             ProviderKind::File => FOLDER_ACTIVE.clone(),
             _ => FOLDER_INACTIVE.clone(),
         };
+        let clipboard_icon = match self.provider {
+            ProviderKind::Clipboard => CLIPBOARD_ACTIVE.clone(),
+            _ => CLIPBOARD_INACTIVE.clone(),
+        };
 
         container(
             row![
                 image(apps_icon).width(18).height(18),
                 image(folder_icon).width(18).height(18),
+                image(clipboard_icon).width(18).height(18),
             ]
             .spacing(10),
         )

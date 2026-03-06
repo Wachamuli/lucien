@@ -10,8 +10,7 @@ use crate::{
     ui::entry::Entry,
 };
 
-#[allow(unused)]
-struct ClipboardProvider;
+pub struct ClipboardProvider;
 
 impl Provider for ClipboardProvider {
     fn scan(request: ScanRequest) -> impl Stream<Item = Message> {

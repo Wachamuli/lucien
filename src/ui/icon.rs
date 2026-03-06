@@ -34,6 +34,11 @@ pub static FOLDER_ACTIVE: LazyLock<image::Handle> =
 pub static FOLDER_INACTIVE: LazyLock<image::Handle> =
     bake_icon!("../../assets/icons/proicons--folder-inactive.png");
 
+pub static CLIPBOARD_ACTIVE: LazyLock<image::Handle> =
+    bake_icon!("../../assets/icons/clipboard-active.png");
+pub static CLIPBOARD_INACTIVE: LazyLock<image::Handle> =
+    bake_icon!("../../assets/icons/clipboard-inactive.png");
+
 pub static ICON_PLACEHOLDER: LazyLock<image::Handle> =
     bake_icon!("../../assets/icons/icon-placeholder.png");
 
