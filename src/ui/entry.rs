@@ -156,7 +156,7 @@ pub fn display_entry<'a>(
         .extend(mark_favorite)
         .push(shortcut_label)
         .align_y(Alignment::Center);
-    let main = text(&entry.main)
+    let main = text(truncate_with_elipsis(&entry.main, 70))
         .size(style.font_size)
         .width(Length::Fill)
         .font(FONT_BOLD);
@@ -175,10 +175,7 @@ pub fn display_entry<'a>(
             .width(style.icon_size)
             .height(style.icon_size)
             .into(),
-        EntryIcon::Empty => space()
-            .width(style.icon_size)
-            .height(style.icon_size)
-            .into(),
+        EntryIcon::Empty => space().into(),
     };
 
     button(

@@ -1,4 +1,5 @@
 use std::{
+    io::Read,
     os::fd::{AsRawFd, OwnedFd},
     path::PathBuf,
 };
@@ -12,6 +13,7 @@ mod ui;
 
 use anyhow::Context;
 use nix::sys::socket::{self, AddressFamily, SockFlag, SockType, UnixAddr};
+use sqlx::Connection;
 use tracing::Level;
 use tracing_subscriber::{EnvFilter, fmt, prelude::*};
 
@@ -20,6 +22,23 @@ use tracing_subscriber::{EnvFilter, fmt, prelude::*};
 static ALLOC: dhat::Alloc = dhat::Alloc;
 
 fn main() -> anyhow::Result<()> {
+    let args: Vec<String> = std::env::args().collect();
+
+    if args.contains(&"clipboard-listener".to_string()) {
+        let mut buffer = String::new();
+        std::io::stdin().read_to_string(&mut buffer)?;
+        let content = buffer.trim().to_string();
+
+        if !content.is_empty() {
+            let rt = tokio::runtime::Builder::new_current_thread()
+                .enable_all()
+                .build()?;
+
+            rt.block_on(handle_clipboard_insertion(&content))?;
+        }
+        std::process::exit(0);
+    }
+
     std::panic::set_hook(Box::new(|info| {
         tracing::error!("Application panicked: {info}");
     }));
@@ -97,4 +116,30 @@ fn get_single_instance(name: &str) -> anyhow::Result<OwnedFd> {
         UnixAddr::new_abstract(name.as_bytes()).context("Invalid name for an abstract socket.")?;
     socket::bind(sock.as_raw_fd(), &address).context("An Instance is already running.")?;
     Ok(sock)
+}
+
+async fn handle_clipboard_insertion(content: &str) -> anyhow::Result<()> {
+    let mut conn = sqlx::SqliteConnection::connect("/home/wachamuli/clipboard.db").await?;
+    let mut transaction = conn.begin().await?;
+    sqlx::query(
+        r#"
+        CREATE TABLE IF NOT EXISTS entries (
+                    id TEXT PRIMARY KEY,
+                    main TEXT NOT NULL,
+                    secondary TEXT,
+                    icon BLOB
+                )
+        "#,
+    )
+    .execute(&mut *transaction)
+    .await?;
+    sqlx::query("INSERT OR IGNORE INTO entries (id, main, secondary, icon) VALUES (?, ?, ?, NULL)")
+        .bind(content)
+        .bind(content)
+        .bind("Text")
+        .execute(&mut *transaction)
+        .await?;
+
+    transaction.commit().await?;
+    Ok(())
 }
