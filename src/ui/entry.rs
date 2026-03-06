@@ -5,6 +5,7 @@ use iced::{
     Alignment, Element, Font, Length, font,
     widget::{Container, button, container, image, row, space, text},
 };
+use sqlx::prelude::FromRow;
 
 use crate::{
     launcher::{Message, SECTION_HEIGHT},
@@ -13,7 +14,6 @@ use crate::{
         keybindings::Action,
         theme::{ButtonClass, CustomTheme, Entry as EntryStyle, TextClass},
     },
-    providers::Id,
     ui::icon::{ENTER, ICON_PLACEHOLDER, STAR_ACTIVE, STAR_INACTIVE},
 };
 
@@ -37,11 +37,68 @@ pub const FONT_ITALIC: Font = Font {
 pub enum EntryIcon {
     Lazy(String),
     Handle(iced::widget::image::Handle),
+    Empty,
 }
 
-#[derive(Debug, Clone)]
+impl EntryIcon {
+    pub fn into_bytes(&self) -> Option<Vec<u8>> {
+        match self {
+            EntryIcon::Lazy(id) => {
+                let mut v = vec![0x00];
+                v.extend_from_slice(id.as_bytes());
+                Some(v)
+            }
+            EntryIcon::Handle(handle) => {
+                let mut v = vec![0x01];
+                let handle_bytes = match handle {
+                    image::Handle::Path(_, path_buf) => std::fs::read(path_buf).unwrap_or_default(),
+                    image::Handle::Bytes(_, bytes) => bytes.to_vec(),
+                    image::Handle::Rgba { pixels, .. } => pixels.to_vec(),
+                };
+                v.extend(handle_bytes);
+                Some(v)
+            }
+            EntryIcon::Empty => None,
+        }
+    }
+
+    pub fn from_bytes(bytes: &[u8]) -> Self {
+        match bytes.split_first() {
+            Some((&0x01, rest)) => EntryIcon::Handle(image::Handle::from_bytes(rest.to_vec())),
+            Some((&0x00, rest)) => EntryIcon::Lazy(String::from_utf8_lossy(rest).into_owned()),
+            _ => EntryIcon::Empty,
+        }
+    }
+}
+
+impl sqlx::Type<sqlx::Sqlite> for EntryIcon {
+    fn type_info() -> sqlx::sqlite::SqliteTypeInfo {
+        <Vec<u8> as sqlx::Type<sqlx::Sqlite>>::type_info()
+    }
+}
+
+impl<'r> sqlx::Decode<'r, sqlx::Sqlite> for EntryIcon {
+    fn decode(value: sqlx::sqlite::SqliteValueRef<'r>) -> Result<Self, sqlx::error::BoxDynError> {
+        let bytes = <Vec<u8> as sqlx::Decode<sqlx::Sqlite>>::decode(value)?;
+        Ok(EntryIcon::from_bytes(&bytes))
+    }
+}
+
+impl<'q> sqlx::Encode<'q, sqlx::Sqlite> for EntryIcon {
+    fn encode_by_ref(
+        &self,
+        buf: &mut <sqlx::Sqlite as sqlx::Database>::ArgumentBuffer<'q>,
+    ) -> Result<sqlx::encode::IsNull, sqlx::error::BoxDynError> {
+        match self.into_bytes() {
+            Some(bytes) => <Vec<u8> as sqlx::Encode<sqlx::Sqlite>>::encode_by_ref(&bytes, buf),
+            None => Ok(sqlx::encode::IsNull::Yes),
+        }
+    }
+}
+
+#[derive(Debug, Clone, FromRow)]
 pub struct Entry {
-    pub id: Id,
+    pub id: String,
     pub main: String,
     pub secondary: Option<String>,
     pub icon: EntryIcon,
@@ -49,7 +106,7 @@ pub struct Entry {
 
 impl Entry {
     pub fn new(
-        id: impl Into<Id>,
+        id: impl Into<String>,
         main: impl Into<String>,
         secondary: Option<impl Into<String>>,
         icon: EntryIcon,
@@ -118,6 +175,10 @@ pub fn display_entry<'a>(
             .width(style.icon_size)
             .height(style.icon_size)
             .into(),
+        EntryIcon::Empty => space()
+            .width(style.icon_size)
+            .height(style.icon_size)
+            .into(),
     };
 
     button(
@@ -172,7 +233,7 @@ pub fn section(name: &str) -> Container<'_, Message, CustomTheme> {
 pub struct EntryRegistry {
     entries: Vec<Entry>,
     projection: Vec<usize>,
-    registry: HashMap<Id, usize>,
+    registry: HashMap<String, usize>,
 }
 
 impl EntryRegistry {
@@ -219,7 +280,7 @@ impl EntryRegistry {
     }
 
     #[allow(dead_code)]
-    pub fn get_by_id(&self, id: &Id) -> Option<&Entry> {
+    pub fn get_by_id(&self, id: &str) -> Option<&Entry> {
         if let Some(index) = self.registry.get(id) {
             return self.get_by_index(*index);
         }
@@ -227,7 +288,7 @@ impl EntryRegistry {
         None
     }
 
-    pub fn get_mut_by_id(&mut self, id: &Id) -> Option<&mut Entry> {
+    pub fn get_mut_by_id(&mut self, id: &str) -> Option<&mut Entry> {
         if let Some(index) = self.registry.get(id) {
             return self.get_mut_by_index(*index);
         }
@@ -275,12 +336,8 @@ impl EntryRegistry {
         ranked.sort_by(|(score_a, index_a), (score_b, index_b)| {
             let entry_a = &self.entries[*index_a];
             let entry_b = &self.entries[*index_b];
-            let a_is_fav = preferences
-                .favorite_apps
-                .contains(&entry_a.id.to_string_lossy().into_owned());
-            let b_is_fav = preferences
-                .favorite_apps
-                .contains(&entry_b.id.to_string_lossy().into_owned());
+            let a_is_fav = preferences.favorite_apps.contains(&entry_a.id);
+            let b_is_fav = preferences.favorite_apps.contains(&entry_b.id);
 
             match (a_is_fav, b_is_fav) {
                 (true, false) => std::cmp::Ordering::Less,
