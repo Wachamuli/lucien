@@ -1,6 +1,12 @@
+use std::{
+    io::Write,
+    process::{Command, Stdio},
+};
+
 use iced::{
     Task,
     futures::{Stream, StreamExt},
+    window,
 };
 use sqlx::Connection;
 
@@ -31,7 +37,26 @@ impl Provider for ClipboardProvider {
         })
     }
 
-    fn launch(_entry: &Entry) -> Task<Message> {
-        todo!("Copied into clipboard")
+    fn launch(entry: &Entry) -> Task<Message> {
+        let content = entry.id.as_str();
+        let command = Command::new("wl-copy")
+            .arg("--trim-newline")
+            .stdin(Stdio::piped())
+            .stderr(Stdio::null())
+            .stdout(Stdio::null())
+            .spawn();
+
+        let Ok(mut child) = command else {
+            tracing::error!("");
+            return Task::none();
+        };
+
+        if let Some(mut stdin) = child.stdin.take() {
+            if let Err(e) = stdin.write_all(content.as_bytes()) {
+                tracing::error!("Failed to write to wl-copy stdin: {}", e);
+            }
+        }
+
+        window::latest().and_then(window::close)
     }
 }
