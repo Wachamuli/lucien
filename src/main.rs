@@ -13,16 +13,18 @@ mod ui;
 
 use anyhow::Context;
 use nix::sys::socket::{self, AddressFamily, SockFlag, SockType, UnixAddr};
-use sqlx::{Connection, sqlite::SqliteConnectOptions};
+use providers::clipboard::handle_clipboard_insertion;
 use tracing::Level;
 use tracing_subscriber::{EnvFilter, fmt, prelude::*};
 
-#[cfg(feature = "dhat-heap")]
-#[global_allocator]
-static ALLOC: dhat::Alloc = dhat::Alloc;
-
 fn main() -> anyhow::Result<()> {
+    std::panic::set_hook(Box::new(|info| {
+        tracing::error!("Application panicked: {info}");
+    }));
+
     let args: Vec<String> = std::env::args().collect();
+    let package_name = env!("CARGO_PKG_NAME");
+    let package_version = env!("CARGO_PKG_VERSION");
 
     if args.contains(&"clipboard-listener".to_string()) {
         let mut buffer = String::new();
@@ -34,20 +36,10 @@ fn main() -> anyhow::Result<()> {
                 .enable_all()
                 .build()?;
 
-            rt.block_on(handle_clipboard_insertion(&content))?;
+            rt.block_on(handle_clipboard_insertion(&content, package_name))?;
         }
         std::process::exit(0);
     }
-
-    std::panic::set_hook(Box::new(|info| {
-        tracing::error!("Application panicked: {info}");
-    }));
-
-    #[cfg(feature = "dhat-heap")]
-    let _profiler = dhat::Profiler::new_heap();
-
-    let package_name = env!("CARGO_PKG_NAME");
-    let package_version = env!("CARGO_PKG_VERSION");
 
     let _single_instance_lock = get_single_instance(package_name)?;
 
@@ -104,7 +96,7 @@ fn setup_tracing_subscriber(
     Ok(guard)
 }
 
-fn get_single_instance(name: &str) -> anyhow::Result<OwnedFd> {
+fn get_single_instance(package_name: &str) -> anyhow::Result<OwnedFd> {
     let sock = socket::socket(
         AddressFamily::Unix,
         SockType::Stream,
@@ -112,44 +104,8 @@ fn get_single_instance(name: &str) -> anyhow::Result<OwnedFd> {
         None,
     )
     .context("Unable to create socket.")?;
-    let address =
-        UnixAddr::new_abstract(name.as_bytes()).context("Invalid name for an abstract socket.")?;
+    let address = UnixAddr::new_abstract(package_name.as_bytes())
+        .context("Invalid name for an abstract socket.")?;
     socket::bind(sock.as_raw_fd(), &address).context("An Instance is already running.")?;
     Ok(sock)
-}
-
-async fn handle_clipboard_insertion(content: &str) -> anyhow::Result<()> {
-    let clipboard_dir = xdg::BaseDirectories::with_prefix(env!("CARGO_PKG_NAME"))
-        .place_data_file("clipboard.db")
-        .unwrap();
-    let conn_options = SqliteConnectOptions::new()
-        .filename(&clipboard_dir)
-        .journal_mode(sqlx::sqlite::SqliteJournalMode::Wal)
-        .synchronous(sqlx::sqlite::SqliteSynchronous::Normal)
-        .create_if_missing(true);
-    let mut conn = sqlx::SqliteConnection::connect_with(&conn_options)
-        .await
-        .unwrap();
-    let mut transaction = conn.begin().await?;
-    sqlx::query(
-        r#"
-        CREATE TABLE IF NOT EXISTS entries (
-                    id TEXT PRIMARY KEY,
-                    main TEXT NOT NULL,
-                    secondary TEXT,
-                    icon BLOB
-                )
-        "#,
-    )
-    .execute(&mut *transaction)
-    .await?;
-    sqlx::query("INSERT OR IGNORE INTO entries (id, main, secondary, icon) VALUES (?, ?, ?, NULL)")
-        .bind(content)
-        .bind(content)
-        .bind("Text")
-        .execute(&mut *transaction)
-        .await?;
-
-    transaction.commit().await?;
-    Ok(())
 }

@@ -23,8 +23,4 @@ toml = "0.9.11"
 toml_edit = "0.24.0"
 tokio = { version = "1.49.0", features = ["fs", "sync"] }
 anyhow = "1.0.100"
-dhat = { version = "0.3.3", optional = true }
 bitflags = "2.11.0"
-
-[features]
-dhat-heap = ["dep:dhat"]

@@ -39,7 +39,6 @@ impl Provider for ClipboardProvider {
 
             sqlx::query(
                 r#"
-
                 CREATE TABLE IF NOT EXISTS entries (
                     id TEXT PRIMARY KEY,
                     main TEXT NOT NULL,
@@ -86,4 +85,40 @@ impl Provider for ClipboardProvider {
 
         window::latest().and_then(window::close)
     }
+}
+
+pub async fn handle_clipboard_insertion(content: &str, package_name: &str) -> anyhow::Result<()> {
+    let clipboard_dir = xdg::BaseDirectories::with_prefix(package_name)
+        .place_data_file("clipboard.db")
+        .unwrap();
+    let conn_options = SqliteConnectOptions::new()
+        .filename(&clipboard_dir)
+        .journal_mode(sqlx::sqlite::SqliteJournalMode::Wal)
+        .synchronous(sqlx::sqlite::SqliteSynchronous::Normal)
+        .create_if_missing(true);
+    let mut conn = sqlx::SqliteConnection::connect_with(&conn_options)
+        .await
+        .unwrap();
+    let mut transaction = conn.begin().await?;
+    sqlx::query(
+        r#"
+        CREATE TABLE IF NOT EXISTS entries (
+                    id TEXT PRIMARY KEY,
+                    main TEXT NOT NULL,
+                    secondary TEXT,
+                    icon BLOB
+                )
+        "#,
+    )
+    .execute(&mut *transaction)
+    .await?;
+    sqlx::query("INSERT OR IGNORE INTO entries (id, main, secondary, icon) VALUES (?, ?, ?, NULL)")
+        .bind(content)
+        .bind(content)
+        .bind("Text")
+        .execute(&mut *transaction)
+        .await?;
+
+    transaction.commit().await?;
+    Ok(())
 }
