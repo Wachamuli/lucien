@@ -1,6 +1,6 @@
 # Lucien
 
-Lucien is a refined, lightweight application launcher built with Rust with Wayland environments in mind. It prioritizes speed, minimal memory overhead, and a clean aesthetic.
+Lucien is a refined, lightweight application launcher built with Rust with _Wayland_ environments in mind. It prioritizes speed, minimal memory overhead, and a clean aesthetic.
 
 ![Lucien launcher in action](./assets/lucien.png)
 
@@ -23,7 +23,7 @@ Lucien is a refined, lightweight application launcher built with Rust with Wayla
 
 To run Lucien, your environment must meet the following criteria:
 
-- **Display Server:** While optimized for Wayland, Lucien is no longer strictly locked to it. It can be compiled and run on X11 with minor source-code adjustments to the windowing backend.
+- **Display Server:** While optimized for _Wayland_, Lucien is no longer strictly locked to it. It can be compiled and run on _X11_ with minor source-code adjustments to the windowing backend.
 
 - **Build Dependencies**: Compiling from source requires the [Rust toolchain](https://rust-lang.org/tools/install/).
 
@@ -42,8 +42,11 @@ Lucien looks for settings in the following location: `$XDG_CONFIG_HOME/lucien/pr
 | Shift + Tab | Select previous entry                         |
 | Ctrl + 1-5  | Launch the specific entry (1 through 5)       |
 | Ctrl + f    | Toggle favorite status for the selected entry |
+| Shift + 1   | Change to application provider (default)      |
+| Shift + 2   | Change to file provider                       |
+| Shift + 3   | Change to clipboard provider                  |
 
-You can redefine any of the default keyboard shortcuts within the [keybindings] section of your preferences.toml. For example:
+You can redefine any of the default keyboard shortcuts within the `[keybindings]` section of your `preferences.toml`. For example:
 
 ```toml
 [keybindings]
@@ -69,9 +72,9 @@ cp target/release/lucien ~/.local/bin/
 
 ## Clipboard Manager Listener
 
-To enable the Clipboard Provider, you must set up a background listener. Because Wayland handles clipboard data strictly, copied items will not be persisted unless a listener captures them.
+To enable the Clipboard Provider, you must set up a background listener. Because _Wayland_ handles clipboard data strictly, copied items will not be persisted unless a listener captures them.
 
-Most Wayland compositors allow you to execute a command on startup. Add the following command to your compositor's autostart configuration (e.g., in your hyprland.conf or sway/config):
+Most _Wayland_ compositors allow you to execute a command on startup. Add the following command to your compositor's autostart configuration (e.g., in your `hyprland.conf` or `sway/config`):
 
 ```bash
 # Ensure lucien is in your $PATH

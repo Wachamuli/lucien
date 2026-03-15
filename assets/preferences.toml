@@ -5,7 +5,8 @@ favorite_apps = []
 
 # Available modifiers: , `alt`, `shift`, and `control`.
 # Available keys: `any character`, `tab`, `escape`, and `arrow buttons`.
-# Available actions: `toggle_favorite`, `previous_entry`, `next_entry`, launch_entry(int), and `close`.
+# Available actions: `toggle_favorite`, `previous_entry`, `next_entry`, launch_entry(int), `close`,
+# `change_provider(provider)` where `provider` can be `app`, `file`, or `clipboard`.
 [keybindings]
 control-k = "previous_entry"
 control-j = "next_entry"
