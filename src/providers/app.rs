@@ -1,6 +1,4 @@
-use std::ffi::OsStr;
 use std::fmt::Write;
-use std::os::unix::ffi::{OsStrExt, OsStringExt};
 use std::{
     path::{Path, PathBuf},
     process,
@@ -15,7 +13,6 @@ use crate::providers::{ScanRequest, Scanner};
 use crate::ui::entry::EntryIcon;
 use crate::{
     launcher::Message,
-    providers::Id,
     ui::icon::{APPLICATION_DEFAULT, ICON_EXTENSIONS, ICON_SIZES},
 };
 
@@ -56,11 +53,10 @@ impl Provider for AppProvider {
     }
 
     fn launch(entry: &Entry) -> Task<Message> {
-        let bytes = entry.id.clone().into_vec();
-        let raw_command_without_placeholders: Vec<&OsStr> = bytes
-            .split(|&b| b == b' ')
-            .filter(|chunk| !chunk.is_empty() && !chunk.starts_with(b"%"))
-            .map(OsStr::from_bytes)
+        let raw_command_without_placeholders: Vec<_> = entry
+            .id
+            .split_whitespace()
+            .filter(|chunk| !chunk.is_empty() && !chunk.starts_with("%"))
             .collect();
 
         let [binary, args @ ..] = raw_command_without_placeholders.as_slice() else {
@@ -83,7 +79,7 @@ impl Provider for AppProvider {
 }
 
 async fn resolve_icon(
-    id: Id,
+    id: String,
     name: String,
     size: u32,
     mut output: futures::channel::mpsc::Sender<Message>,

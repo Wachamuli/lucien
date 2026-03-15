@@ -1,8 +1,8 @@
 use crate::preferences::Preferences;
 use crate::providers::app::AppProvider;
+use crate::providers::clipboard::ClipboardProvider;
 use crate::providers::file::FileProvider;
 use crate::ui::entry::Entry;
-use std::ffi::OsString;
 use std::hash::{Hash, Hasher};
 use std::sync::Arc;
 use std::{io, os::unix::process::CommandExt, path::PathBuf, process};
@@ -14,6 +14,7 @@ use iced::{Subscription, Task};
 use crate::launcher::Message;
 
 pub mod app;
+pub mod clipboard;
 pub mod file;
 
 pub trait Provider {
@@ -25,6 +26,7 @@ pub trait Provider {
 pub enum ProviderKind {
     App,
     File,
+    Clipboard,
 }
 
 impl ProviderKind {
@@ -32,6 +34,7 @@ impl ProviderKind {
         match self {
             ProviderKind::App => AppProvider::launch(entry),
             ProviderKind::File => FileProvider::launch(entry),
+            ProviderKind::Clipboard => ClipboardProvider::launch(entry),
         }
     }
 }
@@ -57,11 +60,12 @@ impl ScanRequest {
             ProviderKind::File => {
                 Subscription::run_with(self, |ctx| FileProvider::scan(ctx.clone()))
             }
+            ProviderKind::Clipboard => {
+                Subscription::run_with(self, |ctx| ClipboardProvider::scan(ctx.clone()))
+            }
         }
     }
 }
-
-pub type Id = OsString;
 
 #[derive(Debug, Clone)]
 pub enum ScannerState {

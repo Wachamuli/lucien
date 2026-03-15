@@ -25,11 +25,14 @@ use crate::{
         keybindings::{Action, Keystrokes},
         theme::{ContainerClass, CustomTheme, TextClass},
     },
-    providers::{Id, ProviderKind, ScanRequest, ScannerState},
+    providers::{ProviderKind, ScanRequest, ScannerState},
     ui::{
         self,
         entry::{EntryIcon, EntryRegistry, FONT_ITALIC, section},
-        icon::{CUBE_ACTIVE, CUBE_INACTIVE, FOLDER_ACTIVE, FOLDER_INACTIVE, MAGNIFIER},
+        icon::{
+            CLIPBOARD_ACTIVE, CLIPBOARD_INACTIVE, CUBE_ACTIVE, CUBE_INACTIVE, FOLDER_ACTIVE,
+            FOLDER_INACTIVE, MAGNIFIER,
+        },
         prompt::Prompt,
     },
 };
@@ -63,7 +66,7 @@ pub enum Message {
     TriggerActionByKeybinding(Keystrokes),
     ScrollableViewport(Viewport),
     SaveIntoDisk(Result<PathBuf, Arc<tokio::io::Error>>),
-    IconResolved { id: Id, handle: image::Handle },
+    IconResolved { id: String, handle: image::Handle },
     HoveredEntry(usize),
     HoveredExit(usize),
     PreferencesLoaded(Result<Preferences, Arc<tokio::io::Error>>),
@@ -110,7 +113,7 @@ impl Lucien {
         // Toggle_favorite is a very opaque function. It actually
         // modifies the in-memory favorite_apps variable.
         // Maybe I should expose this assignnment operation at this level.
-        let favorite_apps = self.preferences.toggle_favorite(id.to_string_lossy());
+        let favorite_apps = self.preferences.toggle_favorite(id);
         self.entry_registry
             .sort_by_rank(&self.preferences, &self.matcher, &self.prompt);
 
@@ -166,10 +169,7 @@ impl Lucien {
         };
 
         // 1. Get coordinates from injected layout
-        let is_fav = self
-            .preferences
-            .favorite_apps
-            .contains(&entry.id.to_string_lossy().into_owned());
+        let is_fav = self.preferences.favorite_apps.contains(&entry.id);
         let selection_top = layout.y_for_index(self.selected_entry, is_fav);
         let selection_bottom = selection_top + layout.item_height;
 
@@ -292,8 +292,9 @@ impl Lucien {
                 }
 
                 match self.prompt.as_str() {
-                    "@" => self.provider = ProviderKind::App,
-                    "/" => self.provider = ProviderKind::File,
+                    "!" => self.provider = ProviderKind::App,
+                    "@" => self.provider = ProviderKind::File,
+                    "#" => self.provider = ProviderKind::Clipboard,
                     _ => {}
                 };
 
@@ -373,10 +374,7 @@ impl Lucien {
             .extend(show_sections.then(|| section("General").into()));
 
         for (index, entry) in self.entry_registry.iter_visible().enumerate() {
-            let is_favorite = self
-                .preferences
-                .favorite_apps
-                .contains(&entry.id.to_string_lossy().into_owned());
+            let is_favorite = self.preferences.favorite_apps.contains(&entry.id);
             let is_selected = self.selected_entry == index;
             let is_hovered = self.hovered_entry.map(|i| i == index).unwrap_or(false);
 
@@ -469,11 +467,16 @@ impl Lucien {
             ProviderKind::File => FOLDER_ACTIVE.clone(),
             _ => FOLDER_INACTIVE.clone(),
         };
+        let clipboard_icon = match self.provider {
+            ProviderKind::Clipboard => CLIPBOARD_ACTIVE.clone(),
+            _ => CLIPBOARD_INACTIVE.clone(),
+        };
 
         container(
             row![
                 image(apps_icon).width(18).height(18),
                 image(folder_icon).width(18).height(18),
+                image(clipboard_icon).width(18).height(18),
             ]
             .spacing(10),
         )

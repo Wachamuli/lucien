@@ -30,7 +30,7 @@ impl Provider for FileProvider {
             scanner.start().await;
             if let Some(parent_directory) = request.path.parent() {
                 let parent_entry = Entry::new(
-                    parent_directory.as_os_str().to_os_string(),
+                    parent_directory.to_string_lossy(),
                     "..",
                     Some(parent_directory.to_string_lossy()),
                     EntryIcon::Handle(get_icon_from_mimetype(parent_directory, icon_size)),
@@ -53,7 +53,7 @@ impl Provider for FileProvider {
                 let path = child_dir.path();
                 let main_display = path.file_name().and_then(|s| s.to_str()).unwrap_or("..");
                 let child_entry = Entry::new(
-                    path.as_os_str().to_os_string(),
+                    path.to_string_lossy(),
                     main_display,
                     Some(path.to_string_lossy()),
                     EntryIcon::Handle(get_icon_from_mimetype(&path, icon_size)),

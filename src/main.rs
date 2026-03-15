@@ -1,4 +1,5 @@
 use std::{
+    io::Read,
     os::fd::{AsRawFd, OwnedFd},
     path::PathBuf,
 };
@@ -12,23 +13,33 @@ mod ui;
 
 use anyhow::Context;
 use nix::sys::socket::{self, AddressFamily, SockFlag, SockType, UnixAddr};
+use providers::clipboard::handle_clipboard_insertion;
 use tracing::Level;
 use tracing_subscriber::{EnvFilter, fmt, prelude::*};
-
-#[cfg(feature = "dhat-heap")]
-#[global_allocator]
-static ALLOC: dhat::Alloc = dhat::Alloc;
 
 fn main() -> anyhow::Result<()> {
     std::panic::set_hook(Box::new(|info| {
         tracing::error!("Application panicked: {info}");
     }));
 
-    #[cfg(feature = "dhat-heap")]
-    let _profiler = dhat::Profiler::new_heap();
-
+    let args: Vec<String> = std::env::args().collect();
     let package_name = env!("CARGO_PKG_NAME");
     let package_version = env!("CARGO_PKG_VERSION");
+
+    if args.contains(&"clipboard-listener".to_string()) {
+        let mut buffer = String::new();
+        std::io::stdin().read_to_string(&mut buffer)?;
+        let content = buffer.trim().to_string();
+
+        if !content.is_empty() {
+            let rt = tokio::runtime::Builder::new_current_thread()
+                .enable_all()
+                .build()?;
+
+            rt.block_on(handle_clipboard_insertion(&content, package_name))?;
+        }
+        std::process::exit(0);
+    }
 
     let _single_instance_lock = get_single_instance(package_name)?;
 
@@ -85,7 +96,7 @@ fn setup_tracing_subscriber(
     Ok(guard)
 }
 
-fn get_single_instance(name: &str) -> anyhow::Result<OwnedFd> {
+fn get_single_instance(package_name: &str) -> anyhow::Result<OwnedFd> {
     let sock = socket::socket(
         AddressFamily::Unix,
         SockType::Stream,
@@ -93,8 +104,8 @@ fn get_single_instance(name: &str) -> anyhow::Result<OwnedFd> {
         None,
     )
     .context("Unable to create socket.")?;
-    let address =
-        UnixAddr::new_abstract(name.as_bytes()).context("Invalid name for an abstract socket.")?;
+    let address = UnixAddr::new_abstract(package_name.as_bytes())
+        .context("Invalid name for an abstract socket.")?;
     socket::bind(sock.as_raw_fd(), &address).context("An Instance is already running.")?;
     Ok(sock)
 }
