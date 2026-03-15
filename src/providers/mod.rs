@@ -4,6 +4,7 @@ use crate::providers::clipboard::ClipboardProvider;
 use crate::providers::file::FileProvider;
 use crate::ui::entry::Entry;
 use std::hash::{Hash, Hasher};
+use std::str::FromStr;
 use std::sync::Arc;
 use std::{io, os::unix::process::CommandExt, path::PathBuf, process};
 
@@ -22,11 +23,24 @@ pub trait Provider {
     fn launch(entry: &Entry) -> Task<Message>;
 }
 
-#[derive(Debug, Clone, Copy, Hash)]
+#[derive(Debug, Clone, Copy, Hash, Eq, PartialEq)]
 pub enum ProviderKind {
     App,
     File,
     Clipboard,
+}
+
+impl FromStr for ProviderKind {
+    type Err = String;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s {
+            "app" => Ok(Self::App),
+            "file" => Ok(Self::File),
+            "clipboard" => Ok(Self::Clipboard),
+            _ => Err("Invalid provider kind".to_string()),
+        }
+    }
 }
 
 impl ProviderKind {

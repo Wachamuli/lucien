@@ -4,6 +4,8 @@ use bitflags::bitflags;
 use serde::{self, Deserializer, Serializer};
 use serde::{Deserialize, Serialize};
 
+use crate::providers::ProviderKind;
+
 const KEYSTROKE_SEPARATOR: &str = "-";
 
 bitflags! {
@@ -123,6 +125,7 @@ impl FromStr for Key {
 
 #[derive(Debug, Hash, Eq, PartialEq, Copy, Clone)]
 pub enum Action {
+    ChangeProvider(ProviderKind),
     ToggleFavorite,
     Close,
     NextEntry,
@@ -157,6 +160,10 @@ impl FromStr for Action {
                 let index: usize = extract_parameter(param)?;
                 Ok(Action::LaunchEntry(index))
             }
+            "change_provider" if param.ends_with(")") => {
+                let provider: ProviderKind = extract_parameter(param)?;
+                Ok(Action::ChangeProvider(provider))
+            }
             _ => Err(format!(
                 "unknown action '{action}'. Available actions are: 'toggle_favorite', \
                 'close', 'next_entry', 'previous_entry', 'launch_entry(index)'"
@@ -171,11 +178,14 @@ impl Serialize for Action {
         S: Serializer,
     {
         match self {
+            Action::ChangeProvider(provider) => {
+                serializer.serialize_str(&format!("change_provider({provider:?})"))
+            }
             Action::ToggleFavorite => serializer.serialize_str("toggle_favorite"),
             Action::Close => serializer.serialize_str("close"),
             Action::NextEntry => serializer.serialize_str("next_entry"),
             Action::PreviousEntry => serializer.serialize_str("previous_entry"),
-            Action::LaunchEntry(n) => serializer.serialize_str(&format!("launch_entry({})", n)),
+            Action::LaunchEntry(n) => serializer.serialize_str(&format!("launch_entry({n})")),
         }
     }
 }
@@ -320,6 +330,18 @@ pub type Keybindings = HashMap<Keystrokes, Action>;
 pub fn default_keybindings() -> HashMap<Keystrokes, Action> {
     HashMap::from([
         (Keystrokes::new([], Key::Escape), Action::Close),
+        (
+            Keystrokes::new([Modifiers::SHIFT], Key::Character('1')),
+            Action::ChangeProvider(ProviderKind::App),
+        ),
+        (
+            Keystrokes::new([Modifiers::SHIFT], Key::Character('2')),
+            Action::ChangeProvider(ProviderKind::File),
+        ),
+        (
+            Keystrokes::new([Modifiers::SHIFT], Key::Character('3')),
+            Action::ChangeProvider(ProviderKind::Clipboard),
+        ),
         (
             Keystrokes::new([Modifiers::CONTROL], Key::Character('f')),
             Action::ToggleFavorite,

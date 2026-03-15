@@ -148,6 +148,11 @@ impl Lucien {
         Task::none()
     }
 
+    fn change_provider(&mut self, provider: ProviderKind) -> Task<Message> {
+        self.provider = provider;
+        Task::none()
+    }
+
     fn handle_action(&mut self, action: Action) -> Task<Message> {
         tracing::debug!(?action, "Action triggered");
         match action {
@@ -156,6 +161,7 @@ impl Lucien {
             Action::PreviousEntry => self.go_to_entry(-1),
             Action::ToggleFavorite => self.toggle_favorite(self.selected_entry),
             Action::LaunchEntry(index) => self.launch_entry(index),
+            Action::ChangeProvider(provider) => self.change_provider(provider),
         }
     }
 
@@ -290,13 +296,6 @@ impl Lucien {
                 if self.prompt.is_empty() {
                     return Task::done(Message::DebouncedFilter);
                 }
-
-                match self.prompt.as_str() {
-                    "!" => self.provider = ProviderKind::App,
-                    "@" => self.provider = ProviderKind::File,
-                    "#" => self.provider = ProviderKind::Clipboard,
-                    _ => {}
-                };
 
                 let (task, handle) = Task::future(async {
                     tokio::time::sleep(std::time::Duration::from_millis(100)).await;
