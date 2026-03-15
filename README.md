@@ -8,7 +8,14 @@ Lucien is a refined, lightweight application launcher built with Rust with Wayla
 
 - **Fuzzy Search**: Quickly find applications with approximate matching.
 
-- **Favorites**: Mark your most-used apps for instant access.
+- **Favorites:** Mark your most-used apps for instant access. (Note: This feature is currently in active development and may be unstable).
+
+- **Providers:** Lucien goes beyond simple launching with dedicated modules for:
+  - Application Launcher: Search and run desktop entries.
+
+  - File Browser: Navigate and open files directly from the search bar.
+
+  - Clipboard Manager: Access and manage your clipboard history.
 
 - **Minimalist Design**: Built with the _Iced GUI_ library for a modern look-and-feel and snappiness.
 
@@ -16,9 +23,7 @@ Lucien is a refined, lightweight application launcher built with Rust with Wayla
 
 To run Lucien, your environment must meet the following criteria:
 
-- **Display Server**: Wayland.
-
-- **Protocol Support**: Your compositor must support the _wlr-layer-shell_ protocol (common in _Sway_, _Hyprland_, _Niri_, etc.).
+- **Display Server:** While optimized for Wayland, Lucien is no longer strictly locked to it. It can be compiled and run on X11 with minor source-code adjustments to the windowing backend.
 
 - **Build Dependencies**: Compiling from source requires the [Rust toolchain](https://rust-lang.org/tools/install/).
 
@@ -61,6 +66,20 @@ cargo build --release
 ```bash
 cp target/release/lucien ~/.local/bin/
 ```
+
+## Clipboard Manager Listener
+
+To enable the Clipboard Provider, you must set up a background listener. Because Wayland handles clipboard data strictly, copied items will not be persisted unless a listener captures them.
+
+Most Wayland compositors allow you to execute a command on startup. Add the following command to your compositor's autostart configuration (e.g., in your hyprland.conf or sway/config):
+
+```bash
+# Ensure lucien is in your $PATH
+wl-paste --type text --watch lucien clipboard-listener
+```
+
+Lucien uses a local database to persist your clipboard history. Elements are stored in a SQLite database located at:
+`$XDG_DATA_HOME/lucien/clipboard.db`.
 
 ## Troubleshooting
 
