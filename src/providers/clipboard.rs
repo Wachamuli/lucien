@@ -24,20 +24,25 @@ impl Provider for ClipboardProvider {
             let scan_batch_size = request.preferences.scan_batch_size;
             let mut scanner = Scanner::new(output, scan_batch_size);
             scanner.start().await;
+
             let clipboard_dir = xdg::BaseDirectories::with_prefix(env!("CARGO_PKG_NAME"))
                 .place_data_file("clipboard.db")
-                .unwrap();
+                .unwrap_or_default();
 
             let conn_options = SqliteConnectOptions::new()
                 .filename(&clipboard_dir)
                 .journal_mode(sqlx::sqlite::SqliteJournalMode::Wal)
                 .synchronous(sqlx::sqlite::SqliteSynchronous::Normal)
                 .create_if_missing(true);
-            let mut conn = sqlx::SqliteConnection::connect_with(&conn_options)
-                .await
-                .unwrap();
 
-            migrate(&mut conn).await;
+            let mut conn = match sqlx::SqliteConnection::connect_with(&conn_options).await {
+                Ok(conn) => conn,
+                Err(e) => return scanner.error(anyhow::anyhow!(e)).await,
+            };
+
+            if let Err(e) = migrate(&mut conn).await {
+                return scanner.error(anyhow::anyhow!(e)).await;
+            }
 
             let mut entries =
                 sqlx::query_as::<_, Entry>("SELECT * FROM entries ORDER BY created_at DESC")
@@ -112,19 +117,16 @@ async fn migrate(conn: &mut sqlx::SqliteConnection) -> Result<(), sqlx::Error> {
 }
 
 pub async fn handle_clipboard_insertion(content: &str, package_name: &str) -> anyhow::Result<()> {
-    let clipboard_dir = xdg::BaseDirectories::with_prefix(package_name)
-        .place_data_file("clipboard.db")
-        .unwrap();
+    let clipboard_dir =
+        xdg::BaseDirectories::with_prefix(package_name).place_data_file("clipboard.db")?;
     let conn_options = SqliteConnectOptions::new()
         .filename(&clipboard_dir)
         .journal_mode(sqlx::sqlite::SqliteJournalMode::Wal)
         .synchronous(sqlx::sqlite::SqliteSynchronous::Normal)
         .create_if_missing(true);
-    let mut conn = sqlx::SqliteConnection::connect_with(&conn_options)
-        .await
-        .unwrap();
+    let mut conn = sqlx::SqliteConnection::connect_with(&conn_options).await?;
 
-    migrate(&mut conn).await;
+    migrate(&mut conn).await?;
 
     sqlx::query("INSERT OR IGNORE INTO entries (id, main, secondary, icon) VALUES (?, ?, ?, NULL)")
         .bind(content)
